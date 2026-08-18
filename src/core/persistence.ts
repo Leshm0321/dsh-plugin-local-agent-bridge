@@ -7,6 +7,7 @@ import {
   type KvTable,
 } from '@deepseek-ai/dsh-storage-domain'
 import type {
+  BridgeContextUsage,
   BridgeEvent,
   BridgeSessionStatus,
   PendingInteractionView,
@@ -28,6 +29,12 @@ export interface PersistedBridgeSession {
   queuedInputs: string[]
   archived: boolean
   persistenceVersion: number
+  /**
+   * Latest context usage the product reported. Optional so a record written
+   * before this existed parses unchanged — the field is additive and the domain
+   * version deliberately does not move for that.
+   */
+  contextUsage?: BridgeContextUsage | null
   nextSequence: number
   events: BridgeEvent[]
   pendingInteraction: PendingInteractionView | null

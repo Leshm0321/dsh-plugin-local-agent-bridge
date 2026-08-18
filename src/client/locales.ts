@@ -76,6 +76,11 @@ export const zh = {
   'browse.cancel': '取消',
   'browse.unavailable': '当前 Profile 没有提供目录浏览能力，请直接输入绝对路径。',
 
+  // Context window usage, as each product reports it.
+  'usage.tokens': '{used} tokens',
+  'usage.ofWindow': '{used} / {max}（{percent}%）',
+  'usage.title': '上下文用量',
+
   // Session list and toolbar.
   'sessions.heading': '会话',
   'sessions.empty': '选择或新建一个会话',
@@ -227,6 +232,10 @@ export const en = {
   'browse.useThis': 'Use this directory',
   'browse.cancel': 'Cancel',
   'browse.unavailable': 'This Profile provides no directory browsing; type an absolute path instead.',
+
+  'usage.tokens': '{used} tokens',
+  'usage.ofWindow': '{used} / {max} ({percent}%)',
+  'usage.title': 'Context used',
 
   'sessions.heading': 'Sessions',
   'sessions.empty': 'Select or create a session',

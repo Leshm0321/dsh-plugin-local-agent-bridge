@@ -114,6 +114,24 @@ export type BridgeErrorCode =
   | 'CLEANUP_FAILED'
   | 'INVALID_REQUEST'
 
+/**
+ * How much of the model's context the session has consumed.
+ *
+ * Both products report this, in different shapes and through different
+ * mechanisms — Claude Code answers a control request on a live query, Codex
+ * pushes a notification — so the bridge reduces both to the two numbers a reader
+ * acts on. The per-category breakdown each product offers is deliberately not
+ * carried: Claude Code's includes memory-file paths, which are Host filesystem
+ * detail with no business in a browser.
+ */
+export interface BridgeContextUsage {
+  readonly usedTokens: number
+  /** The model's context window, or null when the product did not report one. */
+  readonly maxTokens: number | null
+  /** Model name as the product reports it, or null. */
+  readonly model: string | null
+}
+
 export interface BridgeSessionView {
   readonly bridgeSessionId: string
   readonly providerId: ProviderId
@@ -127,6 +145,12 @@ export interface BridgeSessionView {
   readonly queuedInputCount: number
   readonly archived: boolean
   readonly persistenceVersion: number
+  /**
+   * Latest context usage the product reported, or null before it has said
+   * anything. Carried on the session rather than fetched separately so it
+   * arrives with every read the browser already makes.
+   */
+  readonly contextUsage: BridgeContextUsage | null
 }
 
 export interface BridgeTurnView {

@@ -29,6 +29,7 @@ import type {
   BridgeCatalogResult,
   BridgeCompletion,
   BridgeCompletionsResult,
+  BridgeContextUsage,
   BridgeErrorCode,
   BridgeEvent,
   BridgeNativeSessionsResult,
@@ -458,6 +459,52 @@ function DirectoryBrowser({
       </div>
     </div>
   )
+}
+
+/**
+ * Context usage as a quiet meter beside the session title.
+ *
+ * Both products report the numbers differently and one of them may report no
+ * window at all, so a missing maximum degrades to the raw count rather than
+ * inventing a percentage. Rendered small and grey until it is nearly full,
+ * because it only matters when it is.
+ */
+function ContextUsage({ usage, t }: { usage: BridgeContextUsage; t: PanelTranslate }) {
+  const percent = usage.maxTokens === null || usage.maxTokens === 0
+    ? null
+    : Math.min(100, Math.round((usage.usedTokens / usage.maxTokens) * 100))
+  const label = percent === null
+    ? t('usage.tokens', { used: formatTokens(usage.usedTokens) })
+    : t('usage.ofWindow', {
+      used: formatTokens(usage.usedTokens),
+      max: formatTokens(usage.maxTokens ?? 0),
+      percent,
+    })
+  return (
+    <span className="lab-usage" title={usage.model === null ? t('usage.title') : `${t('usage.title')} · ${usage.model}`}>
+      <span className="lab-usage-text">{label}</span>
+      {percent !== null && (
+        <span className="lab-usage-bar" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label={t('usage.title')}>
+          <span
+            className={`lab-usage-fill${percent >= 90 ? ' lab-usage-fill--full' : percent >= 70 ? ' lab-usage-fill--warn' : ''}`}
+            style={{ width: `${percent}%` }}
+          />
+        </span>
+      )}
+    </span>
+  )
+}
+
+/**
+ * Compact a token count the way a status line should: exact while small, then
+ * thousands, so the width stops changing on every delta.
+ * @param tokens - raw count.
+ * @returns a short label.
+ */
+function formatTokens(tokens: number): string {
+  if (tokens < 1_000) return String(tokens)
+  if (tokens < 1_000_000) return `${(tokens / 1_000).toFixed(tokens < 10_000 ? 1 : 0)}k`
+  return `${(tokens / 1_000_000).toFixed(1)}M`
 }
 
 /**
@@ -1402,6 +1449,9 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                   </div>
                   {snapshot !== undefined && (
                     <div className="lab-toolbar-actions">
+                      {snapshot.session.contextUsage !== null && (
+                        <ContextUsage usage={snapshot.session.contextUsage} t={t} />
+                      )}
                       <ActionButton
                         danger
                         disabled={!BUSY_STATUSES.includes(snapshot.session.status)}

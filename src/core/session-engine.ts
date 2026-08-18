@@ -76,6 +76,7 @@ function sessionView(record: PersistedBridgeSession): BridgeSessionView {
     queuedInputCount: record.queuedInputs.length,
     archived: record.archived,
     persistenceVersion: record.persistenceVersion,
+    contextUsage: record.contextUsage ?? null,
   }
 }
 
@@ -457,6 +458,14 @@ export class BridgeSessionEngine {
           nativeSessionLocator: runtime.record.nativeSessionLocator,
           signal: controller.signal,
           emit: event => this.append(runtime, turn.bridgeTurnId, event),
+          reportContextUsage: async (usage) => {
+            runtime.record.contextUsage = {
+              usedTokens: Math.max(0, Math.trunc(usage.usedTokens)),
+              maxTokens: usage.maxTokens === null ? null : Math.max(0, Math.trunc(usage.maxTokens)),
+              model: usage.model === null ? null : redactText(usage.model, 128),
+            }
+            await this.touch(runtime)
+          },
           setNativeSessionLocator: async (locator) => {
             if (locator.trim().length === 0) throw new BridgeError('PROVIDER_PROTOCOL_ERROR')
             runtime.record.nativeSessionLocator = redactText(locator, 512)

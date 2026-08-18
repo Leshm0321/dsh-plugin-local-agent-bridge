@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type {
   BridgeCompletion,
+  BridgeContextUsage,
   BridgeNativeSession,
   BridgeSessionView,
   BridgeWorkspaceView,
@@ -49,6 +50,14 @@ const directoryPublishRequestSchema = z.object({
 
 const _workspaceShapeIsExact: Exact<z.infer<typeof workspaceSchema>, BridgeWorkspaceView> = true
 
+const contextUsageSchema = z.object({
+  usedTokens: z.number(),
+  maxTokens: z.number().nullable(),
+  model: z.string().nullable(),
+}).strict()
+
+const _contextUsageShapeIsExact: Exact<z.infer<typeof contextUsageSchema>, BridgeContextUsage> = true
+
 const sessionStatusSchema = z.enum([
   'creating', 'idle', 'running', 'awaiting-approval', 'awaiting-answer',
   'cancelling', 'disconnected', 'auth-required', 'failed', 'orphaned',
@@ -67,6 +76,7 @@ const sessionSchema = z.object({
   queuedInputCount: z.number(),
   archived: z.boolean(),
   persistenceVersion: z.number(),
+  contextUsage: contextUsageSchema.nullable(),
 }).strict()
 
 const _sessionShapeIsExact: Exact<z.infer<typeof sessionSchema>, BridgeSessionView> = true

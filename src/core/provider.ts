@@ -1,5 +1,6 @@
 import type {
   BridgeCompletionsResult,
+  BridgeContextUsage,
   BridgeNativeSessionsResult,
   BridgeEvent,
   BridgeInteractionRespondRequest,
@@ -31,6 +32,16 @@ export interface ProviderTurnHooks {
   readonly signal: AbortSignal
   emit(event: BridgeEventDraft): Promise<void>
   setNativeSessionLocator(locator: string): Promise<void>
+  /**
+   * Record how much context the product says the session has consumed.
+   *
+   * A hook rather than a return value because the two products deliver it
+   * differently — Claude Code answers a control request during the turn, Codex
+   * pushes a notification whenever it changes — and both want to report more than
+   * once per turn.
+   * @param usage - the product's latest figures.
+   */
+  reportContextUsage(usage: BridgeContextUsage): Promise<void>
   requestInteraction(request: ProviderInteractionRequest): Promise<ProviderInteractionResolution>
 }
 

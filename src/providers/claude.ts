@@ -8,6 +8,7 @@ import {
   type PermissionResult,
   type Query,
   type SDKMessage,
+  type SDKControlGetContextUsageResponse,
   type SDKPartialAssistantMessage,
   type SpawnOptions,
 } from '@anthropic-ai/claude-agent-sdk'
@@ -352,6 +353,32 @@ async function projectMessage(
 }
 
 /**
+ * Ask the SDK how much context the session has consumed and record it.
+ *
+ * Only the totals cross to the browser. The response also carries a per-category
+ * breakdown including memory-file paths, which is Host filesystem detail with no
+ * business in a browser, so it is dropped here rather than filtered later.
+ *
+ * Silent on failure: an SDK build without this control request must not disturb
+ * the turn, and a missing figure is simply not shown.
+ * @param query - the live SDK query for the turn.
+ * @param hooks - the turn's hooks, for reporting back.
+ */
+async function reportUsage(query: Query, hooks: ProviderTurnHooks): Promise<void> {
+  let usage: SDKControlGetContextUsageResponse
+  try {
+    usage = await query.getContextUsage()
+  } catch {
+    return
+  }
+  await hooks.reportContextUsage({
+    usedTokens: usage.totalTokens,
+    maxTokens: usage.maxTokens > 0 ? usage.maxTokens : null,
+    model: usage.model.length === 0 ? null : usage.model,
+  })
+}
+
+/**
  * Run an optional SDK control request, distinguishing failure from an empty answer.
  *
  * Null rather than an empty list, because the two mean different things to the
@@ -429,10 +456,14 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
       // its own failures, and an unhandled rejection here would surface as a
       // process-level error during an unrelated test or, worse, in production.
       void this.captureCompletions(hooks.bridgeSessionId, active.query).catch(() => {})
+      // Read once the query is open and again when the turn ends, so the figure
+      // reflects the turn that just ran rather than the one before it.
+      void reportUsage(active.query, hooks).catch(() => {})
       for await (const message of active.query) {
         await projectMessage(message, hooks, projection)
       }
       if (!projection.sawResult) throw new BridgeError('PROVIDER_PROTOCOL_ERROR')
+      await reportUsage(active.query, hooks).catch(() => {})
     } finally {
       hooks.signal.removeEventListener('abort', relayAbort)
       await this.cleanup(active)

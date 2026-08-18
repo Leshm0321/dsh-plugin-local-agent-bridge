@@ -404,7 +404,28 @@ export const PANEL_STYLES = `
 }
 .lab-toolbar-title { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.005em; }
 .lab-toolbar-meta { margin: 2px 0 0; font-size: 12px; color: var(--lab-text-3); }
-.lab-toolbar-actions { display: flex; gap: 8px; flex: none; }
+.lab-toolbar-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+
+/* Context usage reads as a quiet meter, not a headline: it matters when it is
+   nearly full and should be ignorable otherwise. */
+.lab-usage { display: flex; align-items: center; gap: 7px; flex: none; }
+.lab-usage-text { font-family: var(--lab-mono); font-size: 11px; color: var(--lab-text-3); white-space: nowrap; }
+.lab-usage-bar {
+  width: 46px;
+  height: 4px;
+  border-radius: var(--lab-r-chip);
+  background: var(--lab-fill-strong);
+  overflow: hidden;
+}
+.lab-usage-fill {
+  height: 100%;
+  border-radius: var(--lab-r-chip);
+  background: var(--lab-text-3);
+  transition: width var(--lab-slow) var(--lab-ease), background var(--lab-slow) var(--lab-ease);
+}
+/* Only shifts colour once it is worth acting on. */
+.lab-usage-fill--warn { background: var(--lab-warn); }
+.lab-usage-fill--full { background: var(--lab-danger); }
 
 /* --------------------------------------------------------------- timeline */
 

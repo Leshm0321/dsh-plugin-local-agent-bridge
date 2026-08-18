@@ -769,6 +769,25 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
       if (state.activeTurnId === null) state.pendingTurnId = turnId
       return
     }
+    if (method === 'thread/tokenUsage/updated') {
+      // Codex pushes usage rather than answering a query, and does so whenever it
+      // changes — so this arrives several times per turn and simply overwrites.
+      const threadId = readString(readProperty(rawParams, 'threadId'))
+      const state = threadId === null ? undefined : this.stateForThread(threadId)
+      const usage = readProperty(rawParams, 'tokenUsage')
+      const total = readProperty(usage, 'total')
+      const used = readProperty(total, 'totalTokens')
+      const hooks = state?.hooks ?? null
+      if (hooks === null || typeof used !== 'number') return
+      const window = readProperty(usage, 'modelContextWindow')
+      await hooks.reportContextUsage({
+        usedTokens: used,
+        maxTokens: typeof window === 'number' && window > 0 ? window : null,
+        // Codex reports the model on the thread, not here.
+        model: null,
+      })
+      return
+    }
     if (method === 'item/agentMessage/delta') {
       const params = validate<{ threadId: string; turnId: string; itemId: string; delta: string }>(method, rawParams)
       const state = this.activeState(params.threadId, params.turnId)

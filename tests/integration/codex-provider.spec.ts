@@ -12,6 +12,7 @@ import type {
   ProviderInteractionResolution,
   ProviderTurnHooks,
 } from '../../src/core/provider.ts'
+import type { BridgeContextUsage } from '../../src/types.ts'
 import { CodexProviderAdapter } from '../../src/providers/codex.ts'
 
 type JsonObject = Record<string, unknown>
@@ -228,6 +229,7 @@ function createHooks(options: {
 } = {}) {
   const events: BridgeEventDraft[] = []
   const locators: string[] = []
+  const usages: BridgeContextUsage[] = []
   const interactions: ProviderInteractionRequest[] = []
   const controller = new AbortController()
   const hooks: ProviderTurnHooks = {
@@ -238,6 +240,7 @@ function createHooks(options: {
     signal: controller.signal,
     emit: async event => { events.push(event) },
     setNativeSessionLocator: async locator => { locators.push(locator) },
+    reportContextUsage: async usage => { usages.push(usage) },
     requestInteraction: async request => {
       interactions.push(request)
       return options.resolveInteraction?.(request)
@@ -246,7 +249,7 @@ function createHooks(options: {
           : { kind: 'question', answers: { mode: ['Fast'] } })
     },
   }
-  return { controller, events, hooks, interactions, locators }
+  return { controller, events, hooks, interactions, locators, usages }
 }
 
 async function nextTask(): Promise<void> {

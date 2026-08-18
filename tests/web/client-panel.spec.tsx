@@ -69,6 +69,7 @@ const session: BridgeSessionView = {
   queuedInputCount: 0,
   archived: false,
   persistenceVersion: 1,
+  contextUsage: null,
 }
 
 const catalog: BridgeCatalogResult = {
@@ -719,6 +720,38 @@ describe('LocalAgentPanel', () => {
     expect(fixture.directoryAdd).not.toHaveBeenCalled()
     // Dismissing returns to the offer rather than hiding it.
     expect(screen.getByRole('button', { name: en['workspace.browse'] })).toBeTruthy()
+  })
+
+  it('shows context usage, and degrades to a raw count without a window', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      session: {
+        ...session,
+        contextUsage: { usedTokens: 42_500, maxTokens: 200_000, model: 'claude-opus-5' },
+      },
+      events: [],
+      latestSequence: 0,
+    }))
+    renderPanel(fixture.remote())
+
+    // Counts are compacted so the status line stops resizing on every delta.
+    expect(await screen.findByText('43k / 200k (21%)')).toBeTruthy()
+    const meter = screen.getByRole('progressbar', { name: en['usage.title'] })
+    expect(meter.getAttribute('aria-valuenow')).toBe('21')
+    cleanup()
+
+    // A product that reports no window gets no invented percentage.
+    const noWindow = new RemoteFixture()
+    noWindow.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    noWindow.pushRead(snapshot({
+      session: { ...session, contextUsage: { usedTokens: 900, maxTokens: null, model: null } },
+      events: [],
+      latestSequence: 0,
+    }))
+    renderPanel(noWindow.remote())
+    expect(await screen.findByText('900 tokens')).toBeTruthy()
+    expect(screen.queryByRole('progressbar')).toBeNull()
   })
 
   it('sends on Enter and inserts a newline on Shift+Enter', async () => {

@@ -18,6 +18,7 @@ import type {
   ProviderInteractionResolution,
   ProviderTurnHooks,
 } from '../../src/core/provider.ts'
+import type { BridgeContextUsage } from '../../src/types.ts'
 
 const sdk = vi.hoisted(() => ({ query: vi.fn() }))
 
@@ -76,6 +77,7 @@ function createHooks(options: {
   const events: BridgeEventDraft[] = []
   const interactions: ProviderInteractionRequest[] = []
   const locators: string[] = []
+  const usages: BridgeContextUsage[] = []
   const controller = new AbortController()
   const hooks: ProviderTurnHooks = {
     bridgeSessionId: 'bridge-session-claude',
@@ -85,6 +87,7 @@ function createHooks(options: {
     signal: controller.signal,
     emit: async event => { events.push(event) },
     setNativeSessionLocator: async locator => { locators.push(locator) },
+    reportContextUsage: async usage => { usages.push(usage) },
     requestInteraction: async request => {
       interactions.push(request)
       return options.resolveInteraction?.(request)
@@ -93,7 +96,7 @@ function createHooks(options: {
           : { kind: 'question', answers: Object.fromEntries(request.questions.map(question => [question.id, ['Fast']])) })
     },
   }
-  return { controller, events, hooks, interactions, locators }
+  return { controller, events, hooks, interactions, locators, usages }
 }
 
 function message(value: unknown): SDKMessage {
