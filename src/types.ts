@@ -7,6 +7,7 @@ export type ProviderCompatibility = 'supported' | 'unsupported' | 'unknown'
 export type ProviderHealth =
   | 'not-installed'
   | 'installed'
+  | 'unsupported'
   | 'ready'
   | 'auth-required'
   | 'error'

@@ -3,8 +3,10 @@ import { credentialLeakMarkers, redactText, redactValue } from '../../src/core/r
 import {
   compatibilityFor,
   parseProductVersion,
+  publicProvider,
   supportedVersionRange,
 } from '../../src/core/version.ts'
+import type { NativeProviderView, ProviderCompatibility, ProviderHealth } from '../../src/types.ts'
 import { LOCAL_AGENT_BRIDGE_INVOCATIONS } from '../../src/typert.shared.ts'
 
 describe('redaction', () => {
@@ -69,6 +71,55 @@ describe('version compatibility', () => {
     expect(compatibilityFor('claude', '2.1.219', false)).toBe('unsupported')
     expect(compatibilityFor('claude', '2.2.0', false)).toBe('unsupported')
     expect(compatibilityFor('claude', '2.2.0', true)).toBe('unknown')
+  })
+})
+
+describe('provider health projection', () => {
+  const discovered = (
+    overrides: Partial<NativeProviderView & { executablePath: string | null }>
+      & { compatibility: ProviderCompatibility; health: ProviderHealth },
+  ): NativeProviderView & { readonly executablePath: string | null } => ({
+    id: 'codex',
+    displayName: 'Codex',
+    installed: true,
+    version: '0.144.6',
+    message: null,
+    executablePath: '/host/path/codex',
+    ...overrides,
+  })
+
+  it('surfaces an installed-but-rejected product as unsupported so the browser can explain it', () => {
+    const view = publicProvider(discovered({ compatibility: 'unsupported', health: 'installed' }), false)
+    expect(view.health).toBe('unsupported')
+    expect(view.version).toBe('0.144.6')
+  })
+
+  it('surfaces an unverifiable version as unsupported until experimental admission promotes it', () => {
+    expect(publicProvider(discovered({ compatibility: 'unknown', health: 'installed' }), false).health)
+      .toBe('unsupported')
+    expect(publicProvider(discovered({ compatibility: 'unknown', health: 'installed' }), true).health)
+      .toBe('ready')
+  })
+
+  it('never overwrites a health state that already names its own cause', () => {
+    expect(publicProvider(discovered({
+      compatibility: 'unknown',
+      health: 'not-installed',
+      installed: false,
+      version: null,
+      executablePath: null,
+    }), false).health).toBe('not-installed')
+    expect(publicProvider(discovered({
+      compatibility: 'unknown',
+      health: 'error',
+      version: null,
+    }), false).health).toBe('error')
+  })
+
+  it('drops the Host executable path from the browser-facing view', () => {
+    const view = publicProvider(discovered({ compatibility: 'supported', health: 'installed' }), true)
+    expect(view).not.toHaveProperty('executablePath')
+    expect(JSON.stringify(view)).not.toContain('/host/path')
   })
 })
 

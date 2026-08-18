@@ -6,7 +6,7 @@ import type { NativeProviderAdapter } from './core/provider.ts'
 import { BridgePersistence } from './core/persistence.ts'
 import { BridgeSessionEngine } from './core/session-engine.ts'
 import { BridgeError } from './core/errors.ts'
-import { discoverProvider } from './core/version.ts'
+import { discoverProvider, publicProvider } from './core/version.ts'
 import { ClaudeProviderAdapter } from './providers/claude.ts'
 import { CodexProviderAdapter } from './providers/codex.ts'
 import { FakeProviderAdapter } from './providers/fake.ts'
@@ -47,21 +47,6 @@ interface ResolvedConfig {
 declare module '@deepseek-ai/cordis' {
   interface Context {
     localAgentBridge: LocalAgentBridgeService
-  }
-}
-
-function publicProvider(
-  provider: NativeProviderView & { readonly executablePath: string | null },
-  ready: boolean,
-): NativeProviderView {
-  return {
-    id: provider.id,
-    displayName: provider.displayName,
-    installed: provider.installed,
-    version: provider.version,
-    compatibility: provider.compatibility,
-    health: ready ? 'ready' : provider.health,
-    message: provider.message,
   }
 }
 

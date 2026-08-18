@@ -107,6 +107,38 @@ export async function discoverProvider(
   }
 }
 
+/**
+ * Project one discovered product into the browser-facing view, dropping the
+ * Host filesystem path and resolving the health the operator must act on.
+ *
+ * A product whose version was read but rejected reports `unsupported` rather
+ * than the raw `installed`: that is the state the operations Health table
+ * documents, and the Client needs it to explain why the product is present
+ * yet unusable. `not-installed` and `error` already describe themselves and
+ * are never overwritten.
+ * @param provider - discovery result including its resolved executable path.
+ * @param ready - whether a usable adapter was constructed for this product.
+ * @returns the redacted provider view.
+ */
+export function publicProvider(
+  provider: NativeProviderView & { readonly executablePath: string | null },
+  ready: boolean,
+): NativeProviderView {
+  return {
+    id: provider.id,
+    displayName: provider.displayName,
+    installed: provider.installed,
+    version: provider.version,
+    compatibility: provider.compatibility,
+    health: ready
+      ? 'ready'
+      : provider.health === 'installed' && provider.compatibility !== 'supported'
+        ? 'unsupported'
+        : provider.health,
+    message: provider.message,
+  }
+}
+
 export function assertProviderSupported(provider: NativeProviderView): void {
   if (!provider.installed) throw new BridgeError('EXECUTABLE_NOT_FOUND')
   if (provider.compatibility !== 'supported') throw new BridgeError('UNSUPPORTED_VERSION')
