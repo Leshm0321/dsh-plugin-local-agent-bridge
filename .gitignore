@@ -49,6 +49,15 @@ node_modules/
 .AppleDouble
 .LSOverride
 
+# Archives of this tree. macOS Finder's "Compress" writes 归档.zip / Archive.zip
+# beside the source, and it includes `.git` — one appeared here at 62 MB, a full
+# duplicate of the history sitting one `git add -A` away from being committed.
+# `__MACOSX/` is the metadata sidecar such an archive unpacks into.
+*.zip
+*.tar
+*.tar.gz
+__MACOSX/
+
 # Windows, since the Host is supported there and a contributor may work there.
 Thumbs.db
 Thumbs.db:encryptable
