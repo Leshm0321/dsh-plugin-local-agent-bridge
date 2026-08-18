@@ -2,9 +2,9 @@
 
 ## Startup
 
-1. Verify `codex --version` and `claude --version` in the same Windows account that starts DSH.
+1. Verify `codex --version` and `claude --version` **in the shell that starts DSH**, under the same OS account. A product that works in another terminal is not enough — see [Product is installed but not listed](#product-is-installed-but-not-listed).
 2. Confirm each product already works from a local terminal without a new login flow.
-3. For remote operation, merge [`remote-web.patch.yml`](../examples/profile/remote-web.patch.yml) into the built-in `web` Profile so workspace selection uses DSH's in-browser picker instead of a native dialog on the Host desktop.
+3. For remote operation, merge [`remote-web.patch.yml`](../examples/profile/remote-web.patch.yml) into the built-in `web` Profile so DSH's own workspace selection uses the in-browser picker instead of a native dialog on the Host desktop. `Local Agents` can register a workspace by absolute path without this, in any Profile.
 4. Run `dsh --profile web --dump-config` and confirm both browse-picker rows load without a name-mismatch warning.
 5. Start the `web` Profile while DSH remains loopback-bound.
 6. Verify the authenticated access layer before using a remote browser.
@@ -16,8 +16,8 @@ Loading the plugin performs version discovery only. It does not start a long-liv
 
 | State | Operator action |
 | --- | --- |
-| `not-installed` | Install the product on the Host `PATH`. |
-| `unsupported` | Install a supported version or validate and explicitly enable experimental compatibility. |
+| `not-installed` | The product was not on the `PATH` of the DSH process. Install it, or fix that process's `PATH` — see [Product is installed but not listed](#product-is-installed-but-not-listed). |
+| `unsupported` | The version was read and rejected. The panel names both the installed version and the admitted range. Install a supported version, or validate and explicitly enable experimental compatibility. |
 | `ready` | The provider can create bridge sessions. |
 | `auth-required` | Reauthenticate in a terminal on the Host, then refresh the catalog. |
 | `error` | Inspect redacted Host diagnostics and verify executable/version output. |
@@ -37,10 +37,46 @@ After shutdown, verify no unexpected `codex app-server` or SDK-owned `claude` ch
 
 ## Troubleshooting
 
-### Provider is installed but not ready
+### Product is installed but not listed
 
-- Run the product's `--version` command locally.
-- Compare the result with [compatibility.md](compatibility.md).
+The bridge resolves `codex` and `claude` from the `PATH` of the **process running
+DSH**, which is not necessarily the `PATH` of the terminal you tested in. This is
+the most common false alarm on macOS and Linux, where a version manager gives
+each shell its own `PATH`: a product installed under one Node version is
+invisible to a DSH started under another, and the panel correctly reports
+`not-installed` for a product you can run by hand.
+
+Confirm which `PATH` DSH actually has, then start it from a shell that resolves
+the product:
+
+```sh
+# macOS, Linux — inspect the running DSH process
+ps eww -p "$(pgrep -f 'dsh web' | head -1)" | tr ' ' '\n' | grep '^PATH='
+
+# Windows PowerShell — inspect the current shell before starting DSH
+$env:PATH -split ';'
+```
+
+Prepending the product's directory before launching DSH is enough:
+
+```sh
+# macOS, Linux
+PATH="$PATH:/path/to/product/bin" dsh --profile web
+```
+
+```powershell
+# Windows PowerShell
+$env:PATH += ';C:\path\to\product'; dsh --profile web
+```
+
+The `Local Agents` panel shows this hint inline next to any `not-installed`
+product, so the operator does not have to reach for this document.
+
+### Product is installed but not ready
+
+- Run the product's `--version` command in the shell that starts DSH.
+- Compare the result with [compatibility.md](compatibility.md); the panel also
+  names the admitted range next to the rejected version.
 - Keep `allowExperimentalVersions` disabled unless protocol testing has passed.
 
 ### Browser shows authentication required
@@ -51,7 +87,13 @@ After shutdown, verify no unexpected `codex app-server` or SDK-owned `claude` ch
 
 ### Workspace selection opens on the Host desktop
 
-- The built-in Web Profile selected the automatic/native directory picker because DSH is loopback-bound.
+- `Local Agents` can register a workspace by absolute path from inside the
+  panel, which needs no picker at all; the `Browse…` button is only shown when
+  the composed Profile provides a chooser.
+- For DSH's own sidebar flow: the built-in Web Profile selected the
+  automatic/native directory picker because DSH is loopback-bound. On Windows
+  that is the folder dialog, on macOS the open panel, on Linux a desktop portal
+  — all of them open on the Host.
 - Apply [`remote-web.patch.yml`](../examples/profile/remote-web.patch.yml), restart the Profile, and verify the composed config contains `directory-picker-browse` and `ui-directory-picker-browse`.
 - Do not change the existing `directory-picker` row's `name`; Cordis treats that value as an assertion and skips a mismatched patch. Disable the row, then insert the browse pair under distinct IDs as shown in the example.
 

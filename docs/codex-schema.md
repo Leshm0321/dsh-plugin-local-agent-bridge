@@ -2,7 +2,7 @@
 
 The JSON Schema files under `generated/codex/0.147.0/schema/` were generated from the Host-installed Codex CLI `0.147.0` with the experimental App Server generators:
 
-```powershell
+```sh
 codex app-server generate-ts --experimental --out generated/codex/0.147.0/ts
 codex app-server generate-json-schema --experimental --out generated/codex/0.147.0/schema
 ```

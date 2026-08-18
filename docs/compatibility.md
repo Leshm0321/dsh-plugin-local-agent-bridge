@@ -9,7 +9,9 @@
 | Claude Code CLI | `>=2.1.220 <2.2.0` | Patch releases inside 2.1 are admitted; `2.2` requires revalidation. Validated with SDK `0.3.220`. |
 | Claude Agent SDK | `0.3.220` | Exact dependency pin. |
 | Node.js | `^22.19.0` or `>=24.0.0` | Matches the target DSH baseline. |
-| Windows | 10/11 x64 | Primary validated process model. |
+| Windows | 10/11 x64 | Validated against the real products. A `.cmd`/`.bat` shim is launched through `cmd.exe`. |
+| macOS | 13+ (Intel/Apple silicon) | Validated against the real products. The resolved executable is exec'd directly. |
+| Linux | x64/arm64 | Shares the macOS launch path and is covered by the automated per-platform tests; no real-product smoke run yet. |
 
 An unparsable version is `unknown`. A parsed version outside the supported range is `unsupported`. Both are blocked unless `allowExperimentalVersions` is explicitly enabled; that option changes admission only and does not suppress protocol validation.
 
@@ -20,7 +22,7 @@ The Claude row is a technical compatibility claim, not an authentication or dist
 1. Install the target Codex version on an isolated trusted Host.
 2. Generate fresh artifacts:
 
-```powershell
+```sh
 codex app-server generate-ts --experimental --out generated/codex/<version>/ts
 codex app-server generate-json-schema --experimental --out generated/codex/<version>/schema
 ```
@@ -33,7 +35,7 @@ codex app-server generate-json-schema --experimental --out generated/codex/<vers
 
 1. Review the Agent SDK release notes, package README license, Anthropic Commercial Terms, and Claude Code compatibility guidance.
 2. Upgrade the SDK and CLI together only when their supported pairing is known.
-3. Run session creation, `resume`, partial messages, tool projection, `canUseTool`, AskUserQuestion, form elicitation, URL elicitation decline, cancellation, query close, and Windows process cleanup tests.
+3. Run session creation, `resume`, partial messages, tool projection, `canUseTool`, AskUserQuestion, form elicitation, URL elicitation decline, cancellation, query close, and process cleanup tests on each Host platform you support.
 4. Run a redacted real three-turn smoke before changing the supported version.
 
 ## DSH upgrade

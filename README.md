@@ -6,6 +6,9 @@ The bridge is not an LLM adapter and does not call model HTTP APIs. Codex runs t
 
 The confirmed product scope and acceptance contract are recorded in [the development task brief](docs/plans/2026-08-18-local-agent-bridge-development-task.md).
 
+The browser UI ships in Chinese and English, following the DeepSeek Harness
+language preference.
+
 ## Supported baseline
 
 | Component | Supported baseline |
@@ -16,7 +19,7 @@ The confirmed product scope and acceptance contract are recorded in [the develop
 | Codex CLI | `0.147.x` |
 | Claude Code CLI | `>=2.1.220 <2.2.0` |
 | Claude Agent SDK | `0.3.220` |
-| Primary Host | Windows 10/11 x64 |
+| Host platforms | Windows 10/11 x64, macOS 13+ (Intel/Apple silicon), Linux x64/arm64 |
 
 Unknown or unsupported product versions are blocked by default. `allowExperimentalVersions: true` is a local operator override, not a compatibility guarantee.
 
@@ -30,7 +33,7 @@ DeepSeek Harness must continue listening on `127.0.0.1`. Remote access requires 
 
 See [Security](docs/security.md) for the deployment contract and threat boundary.
 
-## Build on Windows
+## Build
 
 Prerequisites:
 
@@ -38,34 +41,67 @@ Prerequisites:
 - Node.js and pnpm versions shown above.
 - `codex` and/or `claude` installed on the Host `PATH` and already logged in on that Host.
 
-From PowerShell in this directory:
+The same commands run on Windows (PowerShell or `cmd`), macOS, and Linux:
 
-```powershell
+```sh
 pnpm install --frozen-lockfile
-.\node_modules\.bin\tsc.CMD -p tsconfig.host.json --noEmit
-.\node_modules\.bin\tsc.CMD -p tsconfig.client.json --noEmit
-.\node_modules\.bin\tsdown.CMD --config tsdown.host.config.ts
-.\node_modules\.bin\tsc.CMD -p tsconfig.host.declarations.json
-.\node_modules\.bin\tsc.CMD -p tsconfig.client.declarations.json
-.\node_modules\.bin\tsdown.CMD --config tsdown.client.config.ts
-.\node_modules\.bin\vitest.CMD run
+pnpm run build
+pnpm run typecheck
+pnpm run lint
+pnpm test
 ```
+
+`pnpm run check` runs all of the above plus `pnpm pack --dry-run` in one step.
+
+The test suite pins the launch form for all three Host platforms explicitly, so
+building on any one of them verifies the behaviour of the other two.
 
 ## Install into a remote-capable Web Profile
 
 Build the checkout first, then install it as a local bundle. The package is intentionally private and is not published to npm.
 
-```powershell
-dsh plugin --profile web add "D:\Development\Workspace\dsh-plugin-local-agent-bridge"
+```sh
+# Run from this directory; `dsh plugin` resolves a relative spec against the
+# directory you invoke it from, not against the Profile.
+dsh plugin --profile web add .
 dsh --profile web --dump-config
 dsh --profile web
 ```
+
+If `dsh` is not on your `PATH` because DSH was started through `npx`, call the
+same CLI directly — for example `npx @deepseek-ai/dsh plugin --profile web add .`
+— and keep using one CLI version for every command.
 
 Open the loopback URL printed by DSH, normally `http://127.0.0.1:3080`, or reach that loopback service through the approved private network/authenticated gateway. The sidebar contains a `Local Agents` entry.
 
 The built-in `web` Profile is required because it supplies the DSH Web App, API proxy, frontend assets, and Client runtime. A newly created custom Profile contains only the base bundle unless the operator explicitly adds `@deepseek-ai/dsh-web-app`; installing this plugin into such a base-only Profile does not create a browser UI.
 
-Before remote use, merge [remote-web.patch.yml](examples/profile/remote-web.patch.yml) into the built-in `web` Profile's `cordis.patch.yml` (normally `%USERPROFILE%\.dsh\profiles\web\cordis.patch.yml`). The shipped automatic directory picker opens the native Windows folder dialog on the Host when DSH is loopback-bound; a browser at home cannot operate that dialog. The example replaces it with DSH's in-browser directory picker while leaving the selected path and all filesystem access on the Host. Restart the Profile and confirm `dsh --profile web --dump-config` contains `directory-picker-browse` and `ui-directory-picker-browse` without a loader name-mismatch warning.
+### Workspace selection
+
+`Local Agents` registers a Host directory itself: type an absolute path in
+`Add workspace` and the Host resolves and validates it. That route works in
+every Profile and from any browser, local or remote, so no picker configuration
+is required to get started.
+
+A `Browse…` button appears next to it only when the composed Profile provides a
+directory chooser. DSH's default `directory-picker-auto` resolves to the Host's
+own native dialog on a loopback desktop — the Windows folder dialog, the macOS
+open panel, or a Linux desktop portal — which opens on the Host and cannot be
+operated by a browser somewhere else.
+
+For remote use, merge [remote-web.patch.yml](examples/profile/remote-web.patch.yml)
+into the built-in `web` Profile's `cordis.patch.yml` to swap that auto picker
+for DSH's in-browser one, which keeps the selected path and all filesystem
+access on the Host. The Profile file lives at:
+
+| Host | Path |
+| --- | --- |
+| Windows | `%USERPROFILE%\.dsh\profiles\web\cordis.patch.yml` |
+| macOS, Linux | `~/.dsh/profiles/web/cordis.patch.yml` |
+
+Restart the Profile and confirm `dsh --profile web --dump-config` contains
+`directory-picker-browse` and `ui-directory-picker-browse` without a loader
+name-mismatch warning.
 
 The bundle installs [cordis.patch.yml](cordis.patch.yml). To override its complete config block, use [the enabled example](examples/profile/local-agent-bridge.enabled.patch.yml) in the Profile `cordis.patch.yml`.
 
@@ -75,7 +111,7 @@ To disable without removing the linked package, add the row from [local-agent-br
 
 To uninstall the dependency and bundle layer, first remove the `local-agent-bridge` override row from the Profile's own `cordis.patch.yml`. Then run:
 
-```powershell
+```sh
 dsh plugin --profile web remove dsh-plugin-local-agent-bridge
 ```
 
@@ -105,7 +141,7 @@ Plugin unload disposes active sessions, closes protocol transports, and waits fo
 1. Keep the current working build available for rollback.
 2. Upgrade DeepSeek Harness, Codex, Claude Code, or the Claude Agent SDK one component at a time.
 3. For Codex, regenerate TypeScript and JSON Schema with the target `codex app-server generate-* --experimental` commands and review the diff.
-4. For Claude, rerun session, resume, partial streaming, approval, question, cancellation, and Windows spawn tests.
+4. For Claude, rerun session, resume, partial streaming, approval, question, cancellation, and the per-platform spawn tests.
 5. Run build, both typechecks, lint, all tests, Profile loader smoke, browser E2E, and redacted real-product smoke before enabling the new version.
 6. Leave `allowExperimentalVersions` disabled unless the local operator accepts the unverified protocol risk.
 
@@ -115,7 +151,7 @@ See [Compatibility and upgrades](docs/compatibility.md) and [Codex schema proven
 
 Automated fixtures do not require personal vendor credentials. Real-product validation must run only on a trusted Host that is already logged in, and reports must omit account data, private source, full prompts, and tokens.
 
-Linux and macOS Hosts are not yet claimed as validated. The MVP is single-user/self-hosted and provides no multi-tenant isolation or RBAC. Attachments, image input, session fork, PTY mode, and automatic vendor login are out of scope.
+Windows and macOS Hosts have both been exercised against the real products; Linux shares the macOS launch path and is covered by the automated per-platform tests but has not had a real-product smoke run. The MVP is single-user/self-hosted and provides no multi-tenant isolation or RBAC. Attachments, image input, session fork, PTY mode, and automatic vendor login are out of scope.
 
 See [Validation](docs/validation.md) and [Operations](docs/operations.md).
 
