@@ -320,6 +320,36 @@ describe('LocalAgentPanel', () => {
     }
   })
 
+  it('renders persisted status events from any build without leaking a dictionary key', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      events: [
+        // Written by this build.
+        event(1, { type: 'bridge/session-status', data: { status: 'cancelling', note: 'cancelling-turn' } }),
+        // Written before `note` existed: the property is absent entirely, and
+        // `undefined` is not `null`, which is what put `note.undefined` on screen.
+        event(2, { type: 'bridge/session-status', data: { status: 'running' } } as unknown as Parameters<typeof event>[1]),
+        // Written by a newer Host with a note this build has never heard of.
+        event(3, { type: 'bridge/session-status', data: { status: 'idle', note: 'some-future-note' } } as unknown as Parameters<typeof event>[1]),
+      ],
+      latestSequence: 3,
+    }))
+    renderPanel(fixture.remote())
+
+    // The known note is phrased; the other two say nothing rather than exposing
+    // a key. Every status word still renders, so no row is lost. `Idle` also
+    // labels the session in the toolbar, hence getAllByText.
+    expect(await screen.findByText(en['note.cancelling-turn'])).toBeTruthy()
+    for (const status of ['cancelling', 'running', 'idle'] as const) {
+      expect(screen.getAllByText(en[`status.${status}`]).length).toBeGreaterThan(0)
+    }
+    const rendered = document.documentElement.textContent ?? ''
+    expect(rendered).not.toContain('note.undefined')
+    expect(rendered).not.toContain('note.some-future-note')
+    expect(rendered).not.toContain('some-future-note')
+  })
+
   it('explains an unusable product instead of silently omitting it', async () => {
     const fixture = new RemoteFixture()
     fixture.catalog.mockResolvedValue({

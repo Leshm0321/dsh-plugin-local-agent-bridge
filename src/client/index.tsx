@@ -30,6 +30,7 @@ import type {
   BridgeEvent,
   BridgeQuestion,
   BridgeSessionView,
+  BridgeStatusNote,
   NativeProviderView,
   PendingInteractionView,
 } from '../types.ts'
@@ -214,6 +215,33 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
+ * Status notes this Client build knows how to phrase.
+ *
+ * Events are persisted, so the timeline mixes events written by this build with
+ * events written by older or newer ones. An older event has no `note` property
+ * at all; a newer Host may send a note this dictionary has never heard of.
+ * `t()` deliberately returns the key itself on a miss — right for a developer
+ * typo, wrong here, where it filled the timeline with `note.undefined`. An
+ * unrecognized note therefore renders as nothing: the status word above it
+ * already carries the meaning.
+ */
+const STATUS_NOTES: readonly BridgeStatusNote[] = [
+  'cancelling-turn',
+  'host-restarted-resumable',
+  'host-restarted-orphaned',
+]
+
+/**
+ * Phrase a status note, or return empty for one this build does not know.
+ * @param t - the panel's translate function.
+ * @param note - the event's note property, from persisted data of any vintage.
+ * @returns reader-facing text, or '' when there is nothing safe to say.
+ */
+function statusNoteText(t: PanelTranslate, note: unknown): string {
+  return STATUS_NOTES.includes(note as BridgeStatusNote) ? t(`note.${note as BridgeStatusNote}`) : ''
+}
+
+/**
  * Localize one bridge error code, falling back to the Host's own sentence for
  * a code this Client build does not know — a newer Host must still be able to
  * say something, and an untranslated sentence beats a bare identifier.
@@ -271,7 +299,7 @@ function timeline(events: readonly BridgeEvent[], t: PanelTranslate): TimelineRo
         // A note is present only when it adds something the status word does
         // not already say; an error-driven transition leaves it null because
         // the bridge/error row above already named the cause.
-        text: event.data.note === null ? '' : t(`note.${event.data.note}`),
+        text: statusNoteText(t, event.data.note),
       })
     }
   }
