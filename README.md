@@ -57,7 +57,7 @@ throughout, and keep using one CLI version for every command.
 ### From a clone (recommended)
 
 ```sh
-git clone https://github.com/<owner>/dsh-plugin-local-agent-bridge.git
+git clone https://github.com/Leshm0321/dsh-plugin-local-agent-bridge.git
 cd dsh-plugin-local-agent-bridge
 pnpm install --frozen-lockfile
 
@@ -83,7 +83,7 @@ sidebar has a `Local Agents` entry.
 One command, at the cost of a per-commit allowlist entry:
 
 ```sh
-dsh plugin --profile web add github:<owner>/dsh-plugin-local-agent-bridge
+dsh plugin --profile web add github:Leshm0321/dsh-plugin-local-agent-bridge
 ```
 
 pnpm refuses to run the plugin's build script until you allow it, and prints the
