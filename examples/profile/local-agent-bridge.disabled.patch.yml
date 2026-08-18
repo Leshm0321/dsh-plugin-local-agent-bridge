@@ -1,0 +1,4 @@
+# Add this row to the profile's cordis.patch.yml to unmount the bridge without
+# removing the local package dependency. Remove disabled:true to enable it again.
+- id: local-agent-bridge
+  disabled: true

@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node", "react", "react-dom"],
+    "rootDir": "."
+  },
+  "include": [
+    "src/client/**/*.ts",
+    "src/client/**/*.tsx",
+    "src/types.ts",
+    "tests/web/**/*.ts",
+    "tests/web/**/*.tsx",
+    "tsdown.client.config.ts",
+    "build/**/*.ts"
+  ]
+}
+

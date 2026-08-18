@@ -1,0 +1,9 @@
+node_modules/
+lib/
+coverage/
+test-results/
+playwright-report/
+.research/
+.dsh-home/
+*.tgz
+

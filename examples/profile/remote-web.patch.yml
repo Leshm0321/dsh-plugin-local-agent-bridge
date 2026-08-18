@@ -1,0 +1,13 @@
+# Merge these entries into the built-in `web` Profile's cordis.patch.yml when
+# the browser, rather than a person sitting at the Host, must select workspaces.
+# The shipped `directory-picker` row is the auto chooser and resolves to the
+# Host's native OS dialog on a loopback Windows desktop. Cordis patch `name`
+# values are assertions, so replacement requires disabling that row and
+# inserting the browse Host and Client pair under new IDs.
+- id: directory-picker
+  disabled: true
+- insert:
+    - id: directory-picker-browse
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+    - id: ui-directory-picker-browse
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'

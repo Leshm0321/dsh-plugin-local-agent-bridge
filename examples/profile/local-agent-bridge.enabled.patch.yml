@@ -1,0 +1,9 @@
+# Optional profile-level override. A patch replaces the complete config block,
+# so keep every key when changing one value.
+- id: local-agent-bridge
+  config:
+    allowExperimentalVersions: false
+    enableFakeProvider: false
+    eventRetention: 2000
+    longPollMaxMs: 25000
+    processGraceMs: 3000

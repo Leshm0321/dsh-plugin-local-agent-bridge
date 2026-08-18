@@ -1,0 +1,136 @@
+{
+  "name": "dsh-plugin-local-agent-bridge",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness browser control surface for host-native Codex and Claude Code sessions",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "packageManager": "pnpm@11.7.0",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
+    "./typert": {
+      "types": "./lib/types/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/types/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "lib/**/*.map",
+    "generated/codex/0.147.0/schema/**/*.json",
+    "cordis.patch.yml",
+    "docs/**/*.md",
+    "examples/profile/*.yml",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-gateway",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "clean": "rimraf lib coverage test-results playwright-report",
+    "generate:codex": "codex app-server generate-ts --experimental --out generated/codex/0.147.0/ts && codex app-server generate-json-schema --experimental --out generated/codex/0.147.0/schema",
+    "build:host": "tsdown --config tsdown.host.config.ts && tsc -p tsconfig.host.declarations.json && node scripts/verify-built-artifacts.mjs",
+    "build:client": "tsc -p tsconfig.client.declarations.json && tsdown --config tsdown.client.config.ts",
+    "build": "pnpm run clean && pnpm run build:host && pnpm run build:client",
+    "typecheck": "tsc -p tsconfig.host.json --noEmit && tsc -p tsconfig.client.json --noEmit",
+    "lint": "oxlint src tests build scripts",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:web": "vitest run tests/web",
+    "verify:bundle": "node scripts/verify-built-artifacts.mjs",
+    "pack:check": "pnpm pack --dry-run",
+    "check": "pnpm run build && pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run pack:check"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.220",
+    "@deepseek-ai/schemastery": "3.18.1",
+    "ajv": "8.17.1",
+    "semver": "7.7.2",
+    "zod": "4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/cordis-plugin-include": "1.0.6",
+    "@deepseek-ai/dsh-api-gateway": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-ui-sidebar": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-sdk-protocol": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-storage-domain": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-subprocess": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-workspace": "0.1.0-rc.7",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-api-gateway": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-test-runtime": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-ui-sidebar": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-loader-smoke": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-sdk-protocol": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-storage": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-storage-domain": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-subprocess": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-subprocess-local": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-typert-generator": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-typert-registry": "0.1.0-rc.7",
+    "@deepseek-ai/dsh-workspace": "0.1.0-rc.7",
+    "@testing-library/react": "16.3.2",
+    "@types/node": "22.20.0",
+    "@types/react": "18.3.27",
+    "@types/react-dom": "18.3.7",
+    "@types/semver": "7.7.1",
+    "@types/js-yaml": "4.0.9",
+    "jsdom": "29.1.1",
+    "js-yaml": "4.3.1",
+    "lightningcss": "1.32.0",
+    "oxlint": "1.76.0",
+    "react-dom": "18.3.1",
+    "rimraf": "6.1.2",
+    "tsdown": "0.22.2",
+    "typescript": "6.0.3",
+    "vitest": "4.1.8"
+  }
+}

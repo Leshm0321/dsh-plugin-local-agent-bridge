@@ -1,0 +1,10 @@
+# Install the Host service. The Client half is discovered from package.json.
+- insert:
+    - id: local-agent-bridge
+      name: dsh-plugin-local-agent-bridge
+      config:
+        allowExperimentalVersions: false
+        enableFakeProvider: false
+        eventRetention: 2000
+        longPollMaxMs: 25000
+        processGraceMs: 3000
