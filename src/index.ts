@@ -366,11 +366,14 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     const records = persistence.listDirectories().sort((left, right) => right.createdAt - left.createdAt)
     const views: BridgeWorkspaceView[] = []
     for (const record of records) {
+      // Reconciled for display only, never written back. An earlier version
+      // persisted `publishedWorkspaceId: null` whenever this lookup missed,
+      // which turns one unlucky read into permanent state loss — and the write
+      // bought nothing: `directoryPublish` already treats a link that no longer
+      // resolves as unpublished and creates a fresh workspace. Read-only means a
+      // transient miss self-heals on the next catalog.
       const live = record.publishedWorkspaceId !== null
         && this.ctx.workspaceRegistry.get(WorkspaceId(record.publishedWorkspaceId)) !== undefined
-      if (!live && record.publishedWorkspaceId !== null) {
-        await persistence.putDirectory({ ...record, publishedWorkspaceId: null, updatedAt: Date.now() })
-      }
       views.push({
         id: record.directoryId,
         title: record.title,

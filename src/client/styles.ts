@@ -630,6 +630,16 @@ export const PANEL_STYLES = `
   transition: background var(--lab-fast) var(--lab-ease);
 }
 .lab-dir:hover { background: var(--lab-hover); }
+/* The ellipsis needs a constrained ancestor, not just min-width on itself.
+   This wrapper was a bare <span> — an inline box sized by its content — so the
+   grid track could not shrink it and a long directory name ran straight over the
+   switch. A grid box with min-width: 0 is what actually caps the width; the same
+   applies to any future two-column row here. */
+.lab-dir-label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
 .lab-dir-name {
   min-width: 0;
   font-size: 12px;

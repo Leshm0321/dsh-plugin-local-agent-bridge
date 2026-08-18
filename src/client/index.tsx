@@ -1232,7 +1232,7 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                       <div className="lab-dirs">
                         {allWorkspaces.map(workspace => (
                           <div className="lab-dir" key={workspace.id}>
-                            <span>
+                            <span className="lab-dir-label">
                               <span className="lab-dir-name" title={workspace.title}>{workspace.title}</span>
                               {workspace.status !== 'ok' && (
                                 <span className="lab-dir-gone">{t('workspace.missingDir')}</span>
