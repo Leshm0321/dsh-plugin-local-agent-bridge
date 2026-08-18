@@ -31,6 +31,7 @@ import type {
   BridgeCompletionsResult,
   BridgeErrorCode,
   BridgeEvent,
+  BridgeNativeSessionsResult,
   BridgeQuestion,
   BridgeSessionStatus,
   BridgeSessionView,
@@ -460,6 +461,85 @@ function DirectoryBrowser({
 }
 
 /**
+ * Picker for a product-native session to continue.
+ *
+ * Everything here comes from the product's own enumeration API, so the list is
+ * whatever the product itself would offer — including sessions the operator ran
+ * in a terminal, which is the point. Selecting one seeds the new bridge session's
+ * native locator; the bridge does not read or replay the transcript, it hands the
+ * locator to the product's own resume path on the first turn.
+ */
+function NativeSessionPicker({
+  result,
+  loading,
+  selected,
+  t,
+  onSelect,
+  onConfirm,
+  onCancel,
+}: {
+  result: BridgeNativeSessionsResult | undefined
+  loading: boolean
+  selected: string | undefined
+  t: PanelTranslate
+  onSelect: (locator: string) => void
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const sessions = result?.sessions ?? []
+  return (
+    <div className="lab-resume">
+      <div className="lab-resume-list" role="listbox" aria-label={t('resume.title')}>
+        {loading && <p className="lab-browse-note">{t('resume.loading')}</p>}
+        {!loading && result?.unavailable === true && <p className="lab-browse-note">{t('resume.unavailable')}</p>}
+        {!loading && result?.unavailable === false && sessions.length === 0 && (
+          <p className="lab-browse-note">{t('resume.empty')}</p>
+        )}
+        {!loading && sessions.map(session => (
+          <button
+            key={session.locator}
+            type="button"
+            role="option"
+            aria-selected={selected === session.locator}
+            className="lab-resume-row"
+            onClick={() => { onSelect(session.locator) }}
+            onDoubleClick={() => { onSelect(session.locator); onConfirm() }}
+          >
+            <span className="lab-resume-title">{session.title}</span>
+            <span className="lab-resume-meta">
+              <span>{formatWhen(session.updatedAt)}</span>
+              {session.branch !== null && <span>{t('resume.branch', { branch: session.branch })}</span>}
+            </span>
+          </button>
+        ))}
+      </div>
+      <div className="lab-row">
+        <ActionButton primary className="lab-grow" disabled={selected === undefined} onClick={onConfirm}>
+          {t('resume.submit')}
+        </ActionButton>
+        <ActionButton onClick={onCancel}>{t('resume.cancel')}</ActionButton>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Render a timestamp the way a picker needs it: precise enough to tell two of
+ * today's sessions apart, and locale-aware because the panel is bilingual.
+ * @param epochMs - the product's reported last-activity time.
+ * @returns a short local date-time, or an em dash when the product gave none.
+ */
+function formatWhen(epochMs: number): string {
+  if (epochMs <= 0) return '—'
+  return new Date(epochMs).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/**
  * The slash prefix the operator types to open the palette. Not localized: it is
  * the syntax Claude Code itself uses, and Codex skills are filtered by the same
  * gesture even though their names carry no slash.
@@ -674,6 +754,10 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
   const [addingWorkspace, setAddingWorkspace] = useState(false)
   const [completions, setCompletions] = useState<BridgeCompletionsResult>({ completions: [], pending: true })
   const [paletteIndex, setPaletteIndex] = useState(0)
+  const [nativeSessions, setNativeSessions] = useState<BridgeNativeSessionsResult>()
+  const [nativeSessionsOpen, setNativeSessionsOpen] = useState(false)
+  const [nativeSessionsBusy, setNativeSessionsBusy] = useState(false)
+  const [resumeLocator, setResumeLocator] = useState<string>()
   const [browseSupport, setBrowseSupport] = useState<BrowseSupport>('unknown')
   const [listing, setListing] = useState<DirectoryListing>()
   const [listingBusy, setListingBusy] = useState(false)
@@ -845,11 +929,19 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
     await addWorkspace(path)
   }
 
-  const createSession = async (): Promise<void> => {
+  /**
+   * Create a bridge session, fresh or continuing a native one.
+   * @param options - a native locator to continue, and a title to give it.
+   */
+  const createSession = async (options: { resumeLocator?: string; title?: string } = {}): Promise<void> => {
     if (providerId === undefined || workspaceId === undefined) return
     setBusy(true)
     try {
-      const created = unwrap(await remote.sessionCreate({ providerId: providerId as NativeProviderView['id'], workspaceId }))
+      const created = unwrap(await remote.sessionCreate({
+        providerId: providerId as NativeProviderView['id'],
+        workspaceId,
+        ...options,
+      }))
       setSessions(current => [created, ...current])
       setSelectedId(created.bridgeSessionId)
     } catch (cause) {
@@ -872,6 +964,46 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
+  }
+
+  /**
+   * Ask the selected product which of its sessions this workspace already has.
+   *
+   * Deferred to the moment the operator asks, not fetched with the catalog: for
+   * Codex it means starting the App Server, and neither product should be woken
+   * up just because the panel opened.
+   */
+  const openNativeSessions = async (): Promise<void> => {
+    if (providerId === undefined || workspaceId === undefined) return
+    setNativeSessionsOpen(true)
+    setNativeSessionsBusy(true)
+    setResumeLocator(undefined)
+    setError(undefined)
+    try {
+      setNativeSessions(unwrap(await remote.nativeSessions({
+        providerId: providerId as NativeProviderView['id'],
+        workspaceId,
+      })))
+    } catch (cause) {
+      setNativeSessions({ sessions: [], unavailable: true })
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setNativeSessionsBusy(false)
+    }
+  }
+
+  /** Create a bridge session that continues the chosen native one. */
+  const confirmResume = async (): Promise<void> => {
+    if (resumeLocator === undefined) return
+    setNativeSessionsOpen(false)
+    const chosen = nativeSessions?.sessions.find(entry => entry.locator === resumeLocator)
+    await createSession({
+      resumeLocator,
+      // The product's own name for the session, so the bridge list reads the same
+      // as the terminal the operator started it in.
+      ...chosen === undefined ? {} : { title: `${chosen.title} · ${t('resume.badge')}` },
+    })
+    setResumeLocator(undefined)
   }
 
   /**
@@ -1005,6 +1137,14 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                       onClick={() => { void createSession() }}
                     >
                       {busy ? t('create.busy') : t('create.submit')}
+                    </ActionButton>
+                    {/* Listing costs a product round-trip — for Codex, starting
+                        the App Server — so it happens on request, not on open. */}
+                    <ActionButton
+                      disabled={busy || providerId === undefined || workspaceId === undefined}
+                      onClick={() => { void openNativeSessions() }}
+                    >
+                      {t('resume.open')}
                     </ActionButton>
                   </div>
                 </div>
@@ -1167,6 +1307,28 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                 </form>
               </main>
             </div>
+
+            {nativeSessionsOpen && (
+              <div className="lab-sheet-scrim" role="dialog" aria-modal="true" aria-label={t('resume.title')}>
+                <section className="lab-sheet">
+                  <header className="lab-sheet-head">
+                    <h3 className="lab-sheet-title">{t('resume.title')}</h3>
+                    <p className="lab-card-hint" style={{ margin: '4px 0 0' }}>{t('resume.hint')}</p>
+                  </header>
+                  <div className="lab-sheet-body">
+                    <NativeSessionPicker
+                      result={nativeSessions}
+                      loading={nativeSessionsBusy}
+                      selected={resumeLocator}
+                      t={t}
+                      onSelect={setResumeLocator}
+                      onConfirm={() => { void confirmResume() }}
+                      onCancel={() => { setNativeSessionsOpen(false); setResumeLocator(undefined) }}
+                    />
+                  </div>
+                </section>
+              </div>
+            )}
 
             {listing !== undefined && (
               <div className="lab-sheet-scrim" role="dialog" aria-modal="true" aria-label={t('browse.title')}>

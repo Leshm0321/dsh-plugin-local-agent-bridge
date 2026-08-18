@@ -23,7 +23,13 @@ import type {
   ProviderTurnRequest,
 } from '../core/provider.ts'
 import { redactText, redactValue } from '../core/redaction.ts'
-import type { BridgeCompletion, BridgeCompletionsResult, BridgeQuestion } from '../types.ts'
+import type {
+  BridgeCompletion,
+  BridgeCompletionsResult,
+  BridgeNativeSession,
+  BridgeNativeSessionsResult,
+  BridgeQuestion,
+} from '../types.ts'
 
 type JsonObject = Record<string, unknown>
 
@@ -149,6 +155,9 @@ function validate<T>(method: string, params: JsonObject): T {
 
 /** Environment variable carrying the executable path for the Windows spawn. */
 const CODEX_EXECUTABLE_ENV = 'DSH_LOCAL_AGENT_CODEX_EXECUTABLE'
+
+/** How many native threads to offer for resumption; see the Claude adapter's note. */
+const NATIVE_SESSION_LIMIT = 30
 
 /**
  * The argv that starts the Codex App Server over stdio.
@@ -307,6 +316,40 @@ function itemProjection(item: JsonObject): {
 }
 
 /**
+ * Read a `thread/list` reply into resumable sessions.
+ *
+ * Codex reports each thread with an absolute rollout-transcript path under
+ * `~/.codex/sessions`; it is dropped here rather than carried and redacted, so
+ * there is nothing for the browser to leak. Timestamps arrive in seconds, unlike
+ * everything else on this wire, and are converted once at the boundary.
+ *
+ * A thread the bridge itself created is kept: unlike Claude Code, where resuming
+ * a bridge-made session would be a loop, a Codex thread is the operator's work
+ * whichever client started it, and the App Server marks the source rather than
+ * hiding it.
+ * @param reply - the raw JSON-RPC result.
+ * @returns sessions, most recently active first.
+ */
+function codexThreads(reply: unknown): BridgeNativeSession[] {
+  const sessions: BridgeNativeSession[] = []
+  for (const thread of readArray(readProperty(reply, 'data'))) {
+    const locator = readString(readProperty(thread, 'id')) ?? readString(readProperty(thread, 'sessionId'))
+    if (locator === null) continue
+    const name = readString(readProperty(thread, 'name'))
+    const preview = readString(readProperty(thread, 'preview'))
+    const seconds = readProperty(thread, 'updatedAt') ?? readProperty(thread, 'recencyAt')
+    sessions.push({
+      locator: redactText(locator, 128),
+      title: redactText(name ?? preview ?? locator, 200),
+      // Seconds on this call, milliseconds everywhere else in the bridge.
+      updatedAt: typeof seconds === 'number' ? seconds * 1_000 : 0,
+      branch: null,
+    })
+  }
+  return sessions.sort((left, right) => right.updatedAt - left.updatedAt)
+}
+
+/**
  * Read a `skills/list` reply into completions.
  *
  * Codex groups skills by working directory and reports each one with an
@@ -444,6 +487,23 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
       state.completion = null
       state.earlyCompleted = null
     }
+  }
+
+  async listNativeSessions(cwd: string): Promise<BridgeNativeSessionsResult> {
+    if (this.disposed) return { sessions: [], unavailable: true }
+    let connection: CodexConnection
+    try {
+      connection = await this.ensureConnection()
+    } catch {
+      return { sessions: [], unavailable: true }
+    }
+    // `cwd` accepts a path or a list of paths and matches exactly, so scoping to
+    // the workspace is enough — no client-side filtering of a global listing.
+    const reply = await connection.transport
+      .request('thread/list', { cwd, limit: NATIVE_SESSION_LIMIT, archived: false })
+      .catch(() => null)
+    if (reply === null) return { sessions: [], unavailable: true }
+    return { sessions: codexThreads(reply), unavailable: false }
   }
 
   async listCompletions(_bridgeSessionId: string, cwd: string): Promise<BridgeCompletionsResult> {

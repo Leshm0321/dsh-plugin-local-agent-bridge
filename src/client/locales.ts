@@ -45,6 +45,19 @@ export const zh = {
   'workspace.empty': '尚未注册任何工作区。添加一个即可创建会话。',
   'workspace.missingDir': '目录已不存在',
 
+  // Continuing a session the product already has on this Host.
+  'resume.heading': '继续已有会话',
+  'resume.hint': '接管这个工作区里已经存在的原生会话，包括你在终端里跑过的。',
+  'resume.open': '浏览已有会话…',
+  'resume.title': '选择要继续的会话',
+  'resume.loading': '正在向本机 Agent 询问…',
+  'resume.empty': '这个工作区还没有可继续的会话。',
+  'resume.unavailable': '这个 Agent 无法列出它的历史会话。',
+  'resume.submit': '继续这个会话',
+  'resume.cancel': '取消',
+  'resume.branch': '分支 {branch}',
+  'resume.badge': '已接管',
+
   // Inline directory browser, driven by the Host's browse capability.
   'browse.title': '选择目录',
   'browse.home': '主目录',
@@ -178,6 +191,18 @@ export const en = {
   'workspace.browse': 'Browse…',
   'workspace.empty': 'No workspace registered yet. Add one to create a session.',
   'workspace.missingDir': 'Directory is gone',
+
+  'resume.heading': 'Continue a session',
+  'resume.hint': 'Pick up a native session that already exists in this workspace, including ones you ran in a terminal.',
+  'resume.open': 'Browse existing sessions…',
+  'resume.title': 'Choose a session to continue',
+  'resume.loading': 'Asking the agent on this host…',
+  'resume.empty': 'No session to continue in this workspace yet.',
+  'resume.unavailable': 'This agent cannot list its past sessions.',
+  'resume.submit': 'Continue this session',
+  'resume.cancel': 'Cancel',
+  'resume.branch': 'on {branch}',
+  'resume.badge': 'Resumed',
 
   'browse.title': 'Choose a directory',
   'browse.home': 'Home',

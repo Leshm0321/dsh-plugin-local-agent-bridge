@@ -1,5 +1,6 @@
 import type {
   BridgeCompletionsResult,
+  BridgeNativeSessionsResult,
   BridgeEvent,
   BridgeInteractionRespondRequest,
   PendingInteractionView,
@@ -56,6 +57,16 @@ export interface NativeProviderAdapter {
    * from the browser.
    */
   listCompletions?(bridgeSessionId: string, cwd: string): Promise<BridgeCompletionsResult>
+  /**
+   * Sessions the product already has for this directory, which the operator
+   * could continue in the browser.
+   *
+   * Enumerated through the product's own API, never by reading its state
+   * directory. Optional for the same reason as `listCompletions`: a provider
+   * that cannot enumerate reports nothing rather than the bridge guessing.
+   * @param cwd - the workspace directory to scope the listing to.
+   */
+  listNativeSessions?(cwd: string): Promise<BridgeNativeSessionsResult>
   startTurn(request: ProviderTurnRequest): Promise<void>
   steer(bridgeSessionId: string, text: string): Promise<void>
   cancel(bridgeSessionId: string): Promise<void>

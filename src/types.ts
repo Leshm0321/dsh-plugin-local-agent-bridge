@@ -258,6 +258,52 @@ export interface BridgeCompletionsResult {
   readonly pending: boolean
 }
 
+/**
+ * A product-native session the operator could pick up in the browser.
+ *
+ * Enumerated through each product's own API — the Agent SDK's `listSessions`,
+ * Codex's `thread/list` — and never by reading `~/.claude` or `~/.codex`. That
+ * distinction is the whole point: the bridge asks the product what it has, the
+ * same way it asks the product to run a turn, so the promise never to touch
+ * vendor state directories still holds.
+ *
+ * Deliberately narrow. The products report an absolute transcript path for every
+ * session; it is dropped on the Host rather than carried and redacted, so there
+ * is nothing here that could leak a Host filesystem layout.
+ */
+export interface BridgeNativeSession {
+  /**
+   * The product's own session identifier — the same opaque locator the bridge
+   * already passes to `resume`.
+   */
+  readonly locator: string
+  /**
+   * What the product calls this session: a title the operator set, else the
+   * product's own summary, else its first prompt. Redacted and truncated,
+   * because it is the operator's own text coming back out of the product.
+   */
+  readonly title: string
+  /** Last activity, epoch milliseconds, for ordering and for showing recency. */
+  readonly updatedAt: number
+  /** Git branch the session ended on, when the product reports one. */
+  readonly branch: string | null
+}
+
+export interface BridgeNativeSessionsRequest {
+  readonly providerId: ProviderId
+  readonly workspaceId: string
+}
+
+export interface BridgeNativeSessionsResult {
+  readonly sessions: readonly BridgeNativeSession[]
+  /**
+   * True when the product cannot enumerate its sessions at all — an older
+   * build, or a Codex App Server that would not start. Distinct from a product
+   * that enumerated and found none.
+   */
+  readonly unavailable: boolean
+}
+
 export interface BridgeCatalogResult {
   readonly providers: readonly NativeProviderView[]
   readonly workspaces: readonly BridgeWorkspaceView[]
@@ -267,6 +313,17 @@ export interface BridgeSessionCreateRequest {
   readonly providerId: ProviderId
   readonly workspaceId: string
   readonly title?: string
+  /**
+   * A product-native session to continue instead of starting fresh, as reported
+   * by `nativeSessions`.
+   *
+   * The bridge treats it as an opaque locator: it is handed straight to the
+   * product's own resume path and is never parsed, joined onto a path, or used
+   * to read a file. An unknown or expired locator surfaces as the session
+   * becoming `orphaned`, exactly like a locator that stopped resolving after a
+   * Host restart.
+   */
+  readonly resumeLocator?: string
 }
 
 export interface BridgeSessionIdRequest {

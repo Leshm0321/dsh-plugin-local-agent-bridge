@@ -617,6 +617,49 @@ export const PANEL_STYLES = `
 .lab-composer-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
 .lab-composer-hint { display: block; margin-top: 7px; font-size: 11px; color: var(--lab-text-3); }
 
+/* ---------------------------------------------------------- session picker */
+
+.lab-resume { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-height: 0; }
+.lab-resume-list {
+  height: min(320px, 44vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: var(--lab-hairline) solid var(--lab-line-strong);
+  border-radius: var(--lab-r-control);
+  background: var(--lab-bg);
+  padding: 4px;
+}
+.lab-resume-row {
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 8px 9px;
+  color: var(--lab-text);
+  background: transparent;
+  border: var(--lab-hairline) solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-resume-row:hover { background: var(--lab-hover); }
+.lab-resume-row[aria-selected='true'] {
+  background: var(--lab-fill);
+  border-color: var(--lab-line-strong);
+}
+.lab-resume-title {
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-resume-meta { font-size: 11px; color: var(--lab-text-3); display: flex; gap: 8px; }
+
 /* -------------------------------------------------------- command palette */
 
 /* Anchored above the composer rather than as a modal: the operator is mid-typing

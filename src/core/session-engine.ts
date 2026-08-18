@@ -8,6 +8,7 @@ import type {
   BridgeSessionReadRequest,
   BridgeSessionReadResult,
   BridgeCompletionsResult,
+  BridgeNativeSessionsResult,
   BridgeSessionStatus,
   BridgeSessionView,
   BridgeStatusNote,
@@ -161,7 +162,15 @@ export class BridgeSessionEngine {
       createdAt: now,
       updatedAt: now,
       lastTurnId: null,
-      nativeSessionLocator: null,
+      // A resume request seeds the locator the providers already know how to
+      // use: Claude's SDK `resume` and Codex's `thread/resume` both take it on
+      // the first turn, so continuing an existing session needs no new path
+      // through either adapter. The bridge never inspects it — an unknown or
+      // expired locator ends up `orphaned`, the same as one that stopped
+      // resolving across a Host restart.
+      nativeSessionLocator: request.resumeLocator === undefined
+        ? null
+        : redactText(request.resumeLocator, 512),
       queuedInputs: [],
       archived: false,
       persistenceVersion: 1,
@@ -309,6 +318,29 @@ export class BridgeSessionEngine {
       // Enumeration is a convenience; a product that refuses must not turn a
       // panel refresh into an error banner.
       return { completions: [], pending: true }
+    }
+  }
+
+  /**
+   * Product-native sessions for a workspace that the operator could continue.
+   * @param workspaceId - the workspace to scope the listing to.
+   * @returns the product's sessions, or `unavailable` when it cannot enumerate.
+   */
+  async listNativeSessions(
+    providerId: ProviderId,
+    workspaceId: string,
+  ): Promise<BridgeNativeSessionsResult> {
+    this.assertActive()
+    const provider = this.providers.get(providerId)
+    if (provider?.listNativeSessions === undefined) return { sessions: [], unavailable: true }
+    const workspace = await this.resolveWorkspace(workspaceId)
+    if (workspace === undefined || workspace.status !== 'ok') {
+      throw new BridgeError('WORKSPACE_NOT_AVAILABLE')
+    }
+    try {
+      return await provider.listNativeSessions(workspace.cwd)
+    } catch {
+      return { sessions: [], unavailable: true }
     }
   }
 

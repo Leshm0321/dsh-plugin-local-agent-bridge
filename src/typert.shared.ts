@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type {
   BridgeCompletion,
+  BridgeNativeSession,
   BridgeSessionView,
   BridgeWorkspaceView,
   NativeProviderView,
@@ -116,6 +117,25 @@ const completionsResultSchema = z.object({
   pending: z.boolean(),
 }).strict()
 
+const nativeSessionSchema = z.object({
+  locator: z.string(),
+  title: z.string(),
+  updatedAt: z.number(),
+  branch: z.string().nullable(),
+}).strict()
+
+const _nativeSessionShapeIsExact: Exact<z.infer<typeof nativeSessionSchema>, BridgeNativeSession> = true
+
+const nativeSessionsResultSchema = z.object({
+  sessions: z.array(nativeSessionSchema),
+  unavailable: z.boolean(),
+}).strict()
+
+const nativeSessionsRequestSchema = z.object({
+  providerId: z.enum(['codex', 'claude', 'fake']),
+  workspaceId: z.string(),
+}).strict()
+
 const catalogSchema = z.object({
   providers: z.array(providerSchema),
   workspaces: z.array(workspaceSchema),
@@ -125,6 +145,7 @@ const createRequestSchema = z.object({
   providerId: z.enum(['codex', 'claude', 'fake']),
   workspaceId: z.string(),
   title: z.string().optional(),
+  resumeLocator: z.string().optional(),
 }).strict()
 
 const sessionIdRequestSchema = z.object({ bridgeSessionId: z.string() }).strict()
@@ -202,4 +223,5 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('sessionArchive', [parameter('request', archiveRequestSchema)], sessionSchema),
   invocation('interactionRespond', [parameter('request', interactionResponseSchema)], z.object({ accepted: z.literal(true) }).strict()),
   invocation('sessionCompletions', [parameter('request', sessionIdRequestSchema)], completionsResultSchema),
+  invocation('nativeSessions', [parameter('request', nativeSessionsRequestSchema)], nativeSessionsResultSchema),
 ] as const

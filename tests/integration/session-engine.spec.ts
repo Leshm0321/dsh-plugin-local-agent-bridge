@@ -308,6 +308,43 @@ describe('BridgeSessionEngine with FakeProviderAdapter', () => {
     await engine.dispose()
   })
 
+  it('seeds a resumed native locator so the product continues instead of starting fresh', async () => {
+    const { engine, memory } = await createEngine()
+    const session = await engine.createSession({
+      providerId: 'fake',
+      workspaceId: workspace.id,
+      resumeLocator: 'native-session-from-a-terminal',
+    })
+
+    // Present from creation, before any turn: this is what the provider hands to
+    // the product's own resume path on the first message.
+    expect(memory.snapshot(session.bridgeSessionId).nativeSessionLocator)
+      .toBe('native-session-from-a-terminal')
+
+    await engine.send(session.bridgeSessionId, 'continue where we left off')
+    await waitFor(engine, session.bridgeSessionId, result => result.session.status === 'idle')
+
+    // The fake provider only assigns a locator when it finds none, so an
+    // unchanged value proves the seeded one was the one used.
+    expect(memory.snapshot(session.bridgeSessionId).nativeSessionLocator)
+      .toBe('native-session-from-a-terminal')
+    await engine.dispose()
+  })
+
+  it('starts a session with no locator when no resume was requested', async () => {
+    const { engine, memory } = await createEngine()
+    const session = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id })
+    expect(memory.snapshot(session.bridgeSessionId).nativeSessionLocator).toBeNull()
+
+    await engine.send(session.bridgeSessionId, 'first message')
+    await waitFor(engine, session.bridgeSessionId, result => result.session.status === 'idle')
+
+    // The provider captured its own, which is the pre-existing behaviour.
+    expect(memory.snapshot(session.bridgeSessionId).nativeSessionLocator)
+      .toBe(`fake-${session.bridgeSessionId}`)
+    await engine.dispose()
+  })
+
   it('marks retained-history gaps as reset', async () => {
     const { engine } = await createEngine(new MemoryPersistence(), 5)
     const session = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id })

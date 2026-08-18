@@ -1,4 +1,5 @@
 import {
+  listSessions,
   query as claudeQuery,
   type CanUseTool,
   type ElicitationRequest,
@@ -23,8 +24,20 @@ import type {
   ProviderTurnRequest,
 } from '../core/provider.ts'
 import { redactText, redactValue } from '../core/redaction.ts'
-import type { BridgeCompletion, BridgeCompletionsResult, BridgeQuestion } from '../types.ts'
+import type {
+  BridgeCompletion,
+  BridgeCompletionsResult,
+  BridgeNativeSessionsResult,
+  BridgeQuestion,
+} from '../types.ts'
 import { claudeSpawnSpec, ManagedClaudeProcess } from './claude-process.ts'
+
+/**
+ * How many native sessions to offer for resumption. A picker exists for
+ * recognising recent work, not for browsing an archive, and every entry carries
+ * operator-authored text that has to cross to the browser.
+ */
+const NATIVE_SESSION_LIMIT = 30
 
 interface ActiveClaudeTurn {
   readonly controller: AbortController
@@ -424,6 +437,36 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
       hooks.signal.removeEventListener('abort', relayAbort)
       await this.cleanup(active)
       this.active.delete(hooks.bridgeSessionId)
+    }
+  }
+
+  async listNativeSessions(cwd: string): Promise<BridgeNativeSessionsResult> {
+    try {
+      const sessions = await listSessions({
+        dir: cwd,
+        // The SDK's own guidance for a session picker: excluding programmatic
+        // entrypoints gives the same set the operator sees from `/resume` in a
+        // terminal, and in particular hides the sessions this bridge created
+        // itself — offering those back would be a loop, not a feature.
+        includeProgrammatic: false,
+        limit: NATIVE_SESSION_LIMIT,
+      })
+      return {
+        sessions: sessions.map(session => ({
+          locator: session.sessionId,
+          // customTitle is what the operator named it; summary is the product's
+          // own; firstPrompt is the last resort. All three are the operator's
+          // text round-tripping through the product, so all three are redacted.
+          title: redactText(session.customTitle ?? session.summary ?? session.firstPrompt ?? session.sessionId, 200),
+          updatedAt: session.lastModified,
+          branch: session.gitBranch === undefined ? null : redactText(session.gitBranch, 120),
+        })),
+        unavailable: false,
+      }
+    } catch {
+      // An SDK build without session enumeration, or an unreadable store. The
+      // browser then offers no resume rather than an error.
+      return { sessions: [], unavailable: true }
     }
   }
 

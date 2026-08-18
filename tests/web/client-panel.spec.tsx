@@ -48,6 +48,8 @@ import type {
   BridgeCatalogResult,
   BridgeCompletion,
   BridgeEvent,
+  BridgeNativeSession,
+  BridgeSessionCreateRequest,
   BridgeSessionReadResult,
   BridgeSessionView,
   PendingInteractionView,
@@ -135,7 +137,12 @@ function interaction(kind: 'approval' | 'question'): PendingInteractionView {
 class RemoteFixture {
   readonly catalog = vi.fn(async () => ({ ok: true as const, value: catalog }))
   readonly sessionsList = vi.fn(async () => ({ ok: true as const, value: [] as BridgeSessionView[] }))
-  readonly sessionCreate = vi.fn(async () => ({ ok: true as const, value: session }))
+  // Typed parameter so the assertions below can read what the panel actually
+  // requested; an untyped vi.fn gives mock.calls the empty-tuple type.
+  readonly sessionCreate = vi.fn(async (_request: BridgeSessionCreateRequest) => ({
+    ok: true as const,
+    value: session,
+  }))
   readonly sessionSend = vi.fn(async () => ({
     ok: true as const,
     value: { delivery: 'started' as const, bridgeTurnId: 'turn-1' },
@@ -146,6 +153,10 @@ class RemoteFixture {
   readonly sessionCompletions = vi.fn(async () => ({
     ok: true as const,
     value: { completions: [] as BridgeCompletion[], pending: false },
+  }))
+  readonly nativeSessions = vi.fn(async () => ({
+    ok: true as const,
+    value: { sessions: [] as BridgeNativeSession[], unavailable: false },
   }))
   readonly sessionRead = vi.fn((request: { bridgeSessionId: string }, signal?: AbortSignal) => {
     const next = this.reads.shift()
@@ -786,6 +797,97 @@ describe('LocalAgentPanel', () => {
     // which one it is.
     expect(await screen.findByText(en['palette.pending'])).toBeTruthy()
     expect(screen.queryByText(en['palette.none'])).toBeNull()
+  })
+
+  it('continues a native session by seeding its locator into a new bridge session', async () => {
+    const fixture = new RemoteFixture()
+    fixture.nativeSessions.mockResolvedValue({
+      ok: true,
+      value: {
+        unavailable: false,
+        sessions: [
+          { locator: 'native-newer', title: 'Refactor the parser', updatedAt: 1_787_000_000_000, branch: 'main' },
+          { locator: 'native-older', title: 'Investigate the flake', updatedAt: 1_786_000_000_000, branch: null },
+        ],
+      },
+    })
+    renderPanel(fixture.remote())
+
+    // Not fetched on open: listing costs a product round-trip, and for Codex it
+    // means starting the App Server.
+    await screen.findByRole('button', { name: en['create.submit'] })
+    expect(fixture.nativeSessions).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: en['resume.open'] }))
+    expect(await screen.findByText('Refactor the parser')).toBeTruthy()
+    expect(screen.getByText('Investigate the flake')).toBeTruthy()
+    // Scoped to the selected provider and workspace, not a global listing.
+    expect(fixture.nativeSessions).toHaveBeenCalledWith({ providerId: 'codex', workspaceId: 'workspace-1' })
+    // A branch is shown when the product reports one.
+    expect(screen.getByText(/main/)).toBeTruthy()
+
+    // Nothing is created until a session is actually chosen.
+    const confirm = screen.getByRole('button', { name: en['resume.submit'] }) as HTMLButtonElement
+    expect(confirm.disabled).toBe(true)
+
+    fireEvent.click(screen.getByText('Investigate the flake'))
+    fireEvent.click(screen.getByRole('button', { name: en['resume.submit'] }))
+
+    await waitFor(() => { expect(fixture.sessionCreate).toHaveBeenCalledTimes(1) })
+    const request = fixture.sessionCreate.mock.calls[0]?.[0]
+    // The locator is passed through untouched — the bridge never parses it.
+    expect(request).toMatchObject({ providerId: 'codex', workspaceId: 'workspace-1', resumeLocator: 'native-older' })
+    // And the bridge session is named after the product's own session, so the
+    // list reads the same as the terminal it was started in.
+    expect(request?.title).toContain('Investigate the flake')
+    expect(request?.title).toContain(en['resume.badge'])
+  })
+
+  it('creates a fresh session with no locator when resume is not used', async () => {
+    const fixture = new RemoteFixture()
+    renderPanel(fixture.remote())
+
+    fireEvent.click(await screen.findByRole('button', { name: en['create.submit'] }))
+    await waitFor(() => { expect(fixture.sessionCreate).toHaveBeenCalledTimes(1) })
+    // Absent, not null or empty: the Host treats any present value as a resume.
+    expect(fixture.sessionCreate.mock.calls[0]?.[0]).not.toHaveProperty('resumeLocator')
+  })
+
+  it('distinguishes an agent with no past sessions from one that cannot list them', async () => {
+    const fixture = new RemoteFixture()
+    fixture.nativeSessions.mockResolvedValue({ ok: true, value: { sessions: [], unavailable: false } })
+    renderPanel(fixture.remote())
+    fireEvent.click(await screen.findByRole('button', { name: en['resume.open'] }))
+    expect(await screen.findByText(en['resume.empty'])).toBeTruthy()
+    expect(screen.queryByText(en['resume.unavailable'])).toBeNull()
+    cleanup()
+
+    const cannot = new RemoteFixture()
+    cannot.nativeSessions.mockResolvedValue({ ok: true, value: { sessions: [], unavailable: true } })
+    renderPanel(cannot.remote())
+    fireEvent.click(await screen.findByRole('button', { name: en['resume.open'] }))
+    expect(await screen.findByText(en['resume.unavailable'])).toBeTruthy()
+    expect(screen.queryByText(en['resume.empty'])).toBeNull()
+  })
+
+  it('abandons a resume without creating anything', async () => {
+    const fixture = new RemoteFixture()
+    fixture.nativeSessions.mockResolvedValue({
+      ok: true,
+      value: { unavailable: false, sessions: [{ locator: 'native-1', title: 'Some work', updatedAt: 1_787_000_000_000, branch: null }] },
+    })
+    renderPanel(fixture.remote())
+
+    fireEvent.click(await screen.findByRole('button', { name: en['resume.open'] }))
+    fireEvent.click(await screen.findByText('Some work'))
+    fireEvent.click(screen.getByRole('button', { name: en['resume.cancel'] }))
+
+    await waitFor(() => { expect(screen.queryByRole('button', { name: en['resume.submit'] })).toBeNull() })
+    expect(fixture.sessionCreate).not.toHaveBeenCalled()
+    // Reopening starts from no selection, so a stale pick cannot be confirmed.
+    fireEvent.click(screen.getByRole('button', { name: en['resume.open'] }))
+    await screen.findByText('Some work')
+    expect((screen.getByRole('button', { name: en['resume.submit'] }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('has no vendor login surface, vendor request, storage residue, or credential canary', async () => {

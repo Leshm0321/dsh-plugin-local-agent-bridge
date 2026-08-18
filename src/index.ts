@@ -13,6 +13,8 @@ import { FakeProviderAdapter } from './providers/fake.ts'
 import type {
   BridgeCatalogResult,
   BridgeCompletionsResult,
+  BridgeNativeSessionsRequest,
+  BridgeNativeSessionsResult,
   BridgeInteractionRespondRequest,
   BridgeInteractionRespondResult,
   BridgeSendResult,
@@ -215,6 +217,17 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   @Remote('sessionCompletions')
   async sessionCompletions(request: BridgeSessionIdRequest): Promise<BridgeCompletionsResult> {
     return await this.requireEngine().listCompletions(request.bridgeSessionId)
+  }
+
+  @Remote('nativeSessions')
+  async nativeSessions(request: BridgeNativeSessionsRequest): Promise<BridgeNativeSessionsResult> {
+    const provider = this.providerViews.find(candidate => candidate.id === request.providerId)
+    if (provider === undefined || provider.health !== 'ready') {
+      // Nothing to enumerate for a product that cannot back a session anyway,
+      // and asking would start an App Server for no reason.
+      return { sessions: [], unavailable: true }
+    }
+    return await this.requireEngine().listNativeSessions(request.providerId, request.workspaceId)
   }
 
   @Remote('interactionRespond')
