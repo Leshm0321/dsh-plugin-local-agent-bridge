@@ -88,8 +88,10 @@ product, so the operator does not have to reach for this document.
 ### Workspace selection opens on the Host desktop
 
 - `Local Agents` can register a workspace by absolute path from inside the
-  panel, which needs no picker at all; the `Browse…` button is only shown when
-  the composed Profile provides a chooser.
+  panel, which needs no picker at all. Its `Browse…` button probes the Host with
+  a listing read: a `browse` Profile gets an in-panel directory sheet, a `native`
+  Profile gets the Host's own dialog, and if neither is served the panel says so
+  and keeps the path field.
 - For DSH's own sidebar flow: the built-in Web Profile selected the
   automatic/native directory picker because DSH is loopback-bound. On Windows
   that is the folder dialog, on macOS the open panel, on Linux a desktop portal

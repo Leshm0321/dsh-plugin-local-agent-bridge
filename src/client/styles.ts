@@ -137,6 +137,8 @@ export const PANEL_STYLES = `
   border: var(--lab-hairline) solid var(--lab-line);
   border-radius: var(--lab-r-window);
   overflow: hidden;
+  /* Positioning context for the nested directory sheet. */
+  position: relative;
   /* Layered, soft, slightly cool — an Apple sheet shadow rather than a drop. */
   box-shadow:
     0 0 0 .5px rgba(0, 0, 0, .04),
@@ -490,6 +492,120 @@ export const PANEL_STYLES = `
 .lab-choice input { margin: 2px 0 0; accent-color: var(--lab-accent); }
 .lab-choice-label { font-size: 13px; }
 .lab-choice-desc { display: block; font-size: 12px; color: var(--lab-text-3); }
+
+/* ------------------------------------------------------ directory browser */
+
+/* A sheet rather than a sidebar panel. A 288px column cannot hold a breadcrumb,
+   a scrollable listing and two actions without pushing the session list out of
+   the viewport, and a modal file chooser is the platform-native shape for this
+   anyway. Nested inside the window so it dims the panel it belongs to, not the
+   whole Harness. */
+.lab-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--lab-bg) 45%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: lab-scrim-in var(--lab-fast) var(--lab-ease);
+}
+.lab-sheet {
+  width: min(520px, 100%);
+  max-height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--lab-surface);
+  border: var(--lab-hairline) solid var(--lab-line);
+  border-radius: var(--lab-r-window);
+  overflow: hidden;
+  box-shadow:
+    0 0 0 .5px rgba(0, 0, 0, .05),
+    0 16px 40px -12px rgba(0, 0, 0, .3);
+  animation: lab-window-in var(--lab-slow) var(--lab-ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lab-sheet-scrim, .lab-sheet { animation: none }
+}
+.lab-sheet-head {
+  padding: 13px 16px;
+  border-bottom: var(--lab-hairline) solid var(--lab-line);
+}
+.lab-sheet-title { margin: 0; font-size: 14px; font-weight: 600; }
+.lab-sheet-body { min-height: 0; padding: 14px 16px 16px; display: grid; grid-template-columns: minmax(0, 1fr); }
+
+.lab-browse { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; min-height: 0; }
+.lab-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--lab-text-3);
+}
+.lab-crumb {
+  appearance: none;
+  font: inherit;
+  font-size: 11px;
+  color: var(--lab-text-2);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 2px 5px;
+  cursor: pointer;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-crumb:hover { background: var(--lab-hover); }
+.lab-crumb:last-child { color: var(--lab-text); font-weight: 500; }
+.lab-crumb-sep { opacity: .45; }
+
+.lab-browse-list {
+  /* Room for about a dozen rows, and a fixed height so the sheet does not
+     resize between a deep directory and an empty one. */
+  height: min(340px, 46vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: var(--lab-hairline) solid var(--lab-line-strong);
+  border-radius: var(--lab-r-control);
+  background: var(--lab-bg);
+  padding: 4px;
+}
+.lab-browse-row {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  color: var(--lab-text);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-browse-row:hover { background: var(--lab-hover); }
+.lab-browse-row:disabled { opacity: .5; cursor: default; }
+.lab-browse-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lab-browse-row--hidden .lab-browse-name { opacity: .6; }
+.lab-browse-note { padding: 10px 8px; font-size: 12px; color: var(--lab-text-3); }
+.lab-browse-toggle { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--lab-text-2); cursor: pointer; }
+.lab-browse-toggle input { accent-color: var(--lab-accent); }
+.lab-browse-path {
+  font-family: var(--lab-mono);
+  font-size: 11px;
+  color: var(--lab-text-3);
+  word-break: break-all;
+}
 
 /* -------------------------------------------------------------- composer */
 

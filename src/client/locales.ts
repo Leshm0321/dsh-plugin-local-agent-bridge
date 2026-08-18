@@ -45,6 +45,18 @@ export const zh = {
   'workspace.empty': '尚未注册任何工作区。添加一个即可创建会话。',
   'workspace.missingDir': '目录已不存在',
 
+  // Inline directory browser, driven by the Host's browse capability.
+  'browse.title': '选择目录',
+  'browse.home': '主目录',
+  'browse.up': '上一级',
+  'browse.loading': '正在读取…',
+  'browse.empty': '这个目录下没有子目录。',
+  'browse.truncated': '子目录过多，仅显示开头部分。',
+  'browse.showHidden': '显示隐藏目录',
+  'browse.useThis': '使用此目录',
+  'browse.cancel': '取消',
+  'browse.unavailable': '当前 Profile 没有提供目录浏览能力，请直接输入绝对路径。',
+
   // Session list and toolbar.
   'sessions.heading': '会话',
   'sessions.empty': '选择或新建一个会话',
@@ -157,6 +169,17 @@ export const en = {
   'workspace.browse': 'Browse…',
   'workspace.empty': 'No workspace registered yet. Add one to create a session.',
   'workspace.missingDir': 'Directory is gone',
+
+  'browse.title': 'Choose a directory',
+  'browse.home': 'Home',
+  'browse.up': 'Up',
+  'browse.loading': 'Reading…',
+  'browse.empty': 'This directory has no subdirectories.',
+  'browse.truncated': 'Too many subdirectories to list; only the beginning is shown.',
+  'browse.showHidden': 'Show hidden directories',
+  'browse.useThis': 'Use this directory',
+  'browse.cancel': 'Cancel',
+  'browse.unavailable': 'This Profile provides no directory browsing; type an absolute path instead.',
 
   'sessions.heading': 'Sessions',
   'sessions.empty': 'Select or create a session',

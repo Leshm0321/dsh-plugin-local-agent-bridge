@@ -83,11 +83,18 @@ The built-in `web` Profile is required because it supplies the DSH Web App, API 
 every Profile and from any browser, local or remote, so no picker configuration
 is required to get started.
 
-A `Browse…` button appears next to it only when the composed Profile provides a
-directory chooser. DSH's default `directory-picker-auto` resolves to the Host's
-own native dialog on a loopback desktop — the Windows folder dialog, the macOS
-open panel, or a Linux desktop portal — which opens on the Host and cannot be
-operated by a browser somewhere else.
+`Browse…` next to it opens a directory chooser inside the panel. DSH exposes
+directory choosing as a capability with two kinds, and they are not
+interchangeable, so the panel probes rather than assumes:
+
+- A Profile serving `browse` returns listings, and the panel renders them itself
+  as a breadcrumb and a directory list — this works from any browser, anywhere.
+- A Profile serving `native` (DSH's default `directory-picker-auto` on a loopback
+  desktop) opens the Host's own dialog: the Windows folder dialog, the macOS open
+  panel, or a Linux desktop portal. Useful at the Host, useless remotely.
+
+The probe is a listing read, which opens nothing. If the Host refuses both, the
+panel says so and the path field remains — it never depends on a picker.
 
 For remote use, merge [remote-web.patch.yml](examples/profile/remote-web.patch.yml)
 into the built-in `web` Profile's `cordis.patch.yml` to swap that auto picker

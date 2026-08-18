@@ -5,14 +5,38 @@ import { join } from 'node:path'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
-  IconArchiveOutline20: () => null,
-  IconCloseOutline16: () => null,
-  IconCodeOutline16: () => null,
-  IconRefreshOutline16: () => null,
-  IconSendOutline16: () => null,
-  IconStopFill16: () => null,
-}))
+/**
+ * Stub every icon the panel imports, present and future.
+ *
+ * This was a hand-written list of the six icons in use, which meant adding a
+ * seventh made it `undefined` at the import site. React then threw on the
+ * invalid element type and unmounted the whole panel, so the failure surfaced
+ * as "cannot find the directory row" — nowhere near the actual cause. A proxy
+ * answers any icon name with a render-nothing component, so the mock cannot
+ * fall behind the imports again.
+ */
+/**
+ * Icon stubs. The real package cannot be imported here — it pulls in katex's
+ * stylesheet, which the node loader rejects — so the list is written out.
+ *
+ * A hoisted array rather than an inline object literal, so a test below can
+ * check it against the panel's actual imports. When it fell behind, the missing
+ * name arrived at the import site as `undefined`, React threw on the invalid
+ * element type and unmounted the entire panel, and the failure read as "cannot
+ * find the directory row" — several layers away from the cause.
+ */
+const ICON_STUBS = vi.hoisted(() => [
+  'IconArchiveOutline20',
+  'IconCloseOutline16',
+  'IconCodeOutline16',
+  'IconFolderClose16',
+  'IconRefreshOutline16',
+  'IconSendOutline16',
+  'IconStopFill16',
+])
+
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', () =>
+  Object.fromEntries(ICON_STUBS.map(name => [name, () => null])))
 
 import { en, zh } from '../../src/client/locales.ts'
 import {
@@ -173,6 +197,24 @@ interface RenderOptions {
   readonly locale?: 'zh' | 'en'
   readonly createWorkspace?: (path: string) => Promise<void>
   readonly pickDirectory?: () => Promise<string | null>
+  readonly listDirectory?: (path?: string) => Promise<unknown>
+}
+
+/** A directory level shaped the way the Host's browse capability reports one. */
+function level(path: string, children: readonly string[], extra: { home?: string; truncated?: boolean } = {}) {
+  const home = extra.home ?? '/host'
+  const segments = path.split('/').filter(Boolean)
+  return {
+    path,
+    home,
+    crumbs: segments.map((name, index) => ({
+      name,
+      path: `/${segments.slice(0, index + 1).join('/')}`,
+      hidden: false,
+    })),
+    entries: children.map(name => ({ name, path: `${path}/${name}`, hidden: name.startsWith('.') })),
+    truncated: extra.truncated ?? false,
+  }
 }
 
 function renderPanel(remote: LocalAgentRemote, options: RenderOptions = {}): void {
@@ -184,7 +226,10 @@ function renderPanel(remote: LocalAgentRemote, options: RenderOptions = {}): voi
     t,
     workspaces: {
       create: options.createWorkspace ?? (async () => {}),
-      ...options.pickDirectory === undefined ? {} : { pick: options.pickDirectory },
+      // Both routes always exist on the real service; a Profile that does not
+      // serve one makes it reject, which is what these defaults reproduce.
+      list: options.listDirectory ?? (async () => { throw new Error('host.listDirectory needs the browse capability') }),
+      pick: options.pickDirectory ?? (async () => { throw new Error('host.pickDirectory needs the native capability') }),
     },
   } as unknown as Parameters<typeof LocalAgentPanel>[0]
   render(<LocalAgentPanel {...props} />)
@@ -199,6 +244,20 @@ afterEach(() => {
 })
 
 describe('LocalAgentPanel', () => {
+  it('stubs every primitive the panel imports', () => {
+    const block = readFileSync(join(process.cwd(), 'src/client/index.tsx'), 'utf8')
+      .match(/import \{([^}]*)\} from '@deepseek-ai\/dsh-client-ui-primitives'/)
+    const imported = (block?.[1] ?? '').split(',').map(part => part.trim()).filter(part => part.length > 0)
+
+    expect(imported.length).toBeGreaterThan(0)
+    // A name imported but not stubbed is `undefined` at render time, which
+    // unmounts the panel with an error pointing somewhere else entirely.
+    expect(imported.filter(name => !ICON_STUBS.includes(name))).toEqual([])
+    // And the reverse, so the list does not accumulate stubs for icons the
+    // panel stopped using.
+    expect(ICON_STUBS.filter(name => !imported.includes(name))).toEqual([])
+  })
+
   it('mounts its Remote namespace before dynamically injecting the panel', () => {
     expect(inject).toEqual(expect.arrayContaining(['slots', 'remote']))
     expect(inject).not.toContain('remote.localAgentBridge')
@@ -437,33 +496,89 @@ describe('LocalAgentPanel', () => {
     })
   })
 
-  it('offers the directory chooser only when the Profile composed one', async () => {
-    const withoutPicker = new RemoteFixture()
-    renderPanel(withoutPicker.remote())
-    expect(await screen.findByText(en['workspace.add'])).toBeTruthy()
-    expect(screen.queryByRole('button', { name: en['workspace.browse'] })).toBeNull()
-    cleanup()
-
-    const withPicker = new RemoteFixture()
+  it('browses the Host directory tree when the Profile serves the browse capability', async () => {
+    const fixture = new RemoteFixture()
+    const visited: (string | undefined)[] = []
     const created: string[] = []
-    renderPanel(withPicker.remote(), {
-      pickDirectory: async () => '/host/picked',
+    renderPanel(fixture.remote(), {
       createWorkspace: async (path) => { created.push(path) },
+      listDirectory: async (path) => {
+        visited.push(path)
+        if (path === undefined || path === '/host') return level('/host', ['projects', '.cache'])
+        return level('/host/projects', ['alpha'])
+      },
     })
+
     fireEvent.click(await screen.findByRole('button', { name: en['workspace.browse'] }))
-    await waitFor(() => { expect(created).toEqual(['/host/picked']) })
+
+    // The first read has no path: the Host answers with its own home directory,
+    // so the panel never has to guess where to start.
+    await waitFor(() => { expect(visited).toEqual([undefined]) })
+    expect(await screen.findByRole('button', { name: /projects/ })).toBeTruthy()
+    // Hidden directories are withheld until asked for.
+    expect(screen.queryByRole('button', { name: /\.cache/ })).toBeNull()
+    fireEvent.click(screen.getByLabelText(en['browse.showHidden']))
+    expect(await screen.findByRole('button', { name: /\.cache/ })).toBeTruthy()
+
+    // Descending reads the next level and the crumbs follow.
+    fireEvent.click(screen.getByRole('button', { name: /projects/ }))
+    await waitFor(() => { expect(visited).toEqual([undefined, '/host/projects']) })
+    expect(await screen.findByRole('button', { name: 'alpha' })).toBeTruthy()
+
+    // Choosing registers the directory the browser is currently showing.
+    fireEvent.click(screen.getByRole('button', { name: en['browse.useThis'] }))
+    await waitFor(() => { expect(created).toEqual(['/host/projects']) })
   })
 
-  it('leaves the registry untouched when the chooser is cancelled', async () => {
+  it('falls back to the Host chooser when browsing is not the composed capability', async () => {
+    const fixture = new RemoteFixture()
+    const created: string[] = []
+    let pickCalls = 0
+    renderPanel(fixture.remote(), {
+      createWorkspace: async (path) => { created.push(path) },
+      // A browse Profile is the one that rejects pickDirectory; a native
+      // Profile is the one that rejects listDirectory. This is the latter.
+      listDirectory: async () => { throw new Error('host.listDirectory needs the browse capability') },
+      pickDirectory: async () => { pickCalls += 1; return '/host/picked' },
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: en['workspace.browse'] }))
+    await waitFor(() => { expect(created).toEqual(['/host/picked']) })
+    expect(pickCalls).toBe(1)
+    // The probe failing must not surface as an error to the operator.
+    expect(screen.queryByText(/needs the browse capability/)).toBeNull()
+  })
+
+  it('keeps the path field and explains itself when the Profile serves no picker', async () => {
+    const fixture = new RemoteFixture()
+    renderPanel(fixture.remote())
+
+    fireEvent.click(await screen.findByRole('button', { name: en['workspace.browse'] }))
+
+    // Both routes refused: say so once, hide the button, and leave the field.
+    expect(await screen.findByText(en['browse.unavailable'])).toBeTruthy()
+    await waitFor(() => { expect(screen.queryByRole('button', { name: en['workspace.browse'] })).toBeNull() })
+    expect(screen.getByPlaceholderText(en['workspace.path.placeholder'])).toBeTruthy()
+    // The raw capability error is a composition fact, not something to alarm
+    // the operator with.
+    expect(screen.queryByText(/needs the native capability/)).toBeNull()
+  })
+
+  it('leaves the registry untouched when the browser is dismissed', async () => {
     const fixture = new RemoteFixture()
     const created: string[] = []
     renderPanel(fixture.remote(), {
-      pickDirectory: async () => null,
       createWorkspace: async (path) => { created.push(path) },
+      listDirectory: async () => level('/host', ['projects']),
     })
+
     fireEvent.click(await screen.findByRole('button', { name: en['workspace.browse'] }))
-    await waitFor(() => { expect(fixture.catalog.mock.calls.length).toBeGreaterThan(0) })
+    fireEvent.click(await screen.findByRole('button', { name: en['browse.cancel'] }))
+
+    await waitFor(() => { expect(screen.queryByRole('button', { name: en['browse.useThis'] })).toBeNull() })
     expect(created).toEqual([])
+    // Dismissing returns to the offer rather than hiding it.
+    expect(screen.getByRole('button', { name: en['workspace.browse'] })).toBeTruthy()
   })
 
   it('has no vendor login surface, vendor request, storage residue, or credential canary', async () => {

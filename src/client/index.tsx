@@ -10,6 +10,7 @@ import {
   IconArchiveOutline20,
   IconCloseOutline16,
   IconCodeOutline16,
+  IconFolderClose16,
   IconRefreshOutline16,
   IconSendOutline16,
   IconStopFill16,
@@ -96,12 +97,29 @@ interface WorkspaceRegistrar {
   /** Register an existing Host path; resolves once the registry has it. */
   create(path: string): Promise<void>
   /**
-   * Open whichever directory chooser the active Profile composed, or return
-   * null when the operator cancelled. Absent when the Profile composed no
-   * picker at all, in which case the panel offers only the path field.
+   * List one directory level on the Host. Backed by the `browse` capability;
+   * rejects when the composed picker serves a different one.
+   * @param path - absolute directory, or absent for the Host home directory.
    */
-  pick?: () => Promise<string | null>
+  list(path?: string): Promise<DirectoryListing>
+  /**
+   * Open the Host's own directory chooser. Backed by the `native` capability;
+   * rejects when the composed picker serves a different one. Resolves to null
+   * when the operator cancelled.
+   */
+  pick(): Promise<string | null>
 }
+
+/**
+ * One directory level as the Host reports it, derived from the workspaces
+ * service rather than imported. `@deepseek-ai/dsh-api-remotes` would be a new
+ * peer dependency for one data shape, and deriving it means the panel cannot
+ * drift from what the Host actually returns.
+ */
+type DirectoryListing = Awaited<ReturnType<ClientContext['workspaces']['listDirectory']>>
+
+/** Which directory-choosing route this Profile actually supports. */
+type BrowseSupport = 'unknown' | 'browse' | 'native' | 'none'
 
 interface LocalAgentPanelFace {
   readonly remote: LocalAgentRemote
@@ -344,6 +362,101 @@ function QuestionInput({
   )
 }
 
+/**
+ * Inline directory browser, one Host level at a time.
+ *
+ * The Host exposes directory choosing as a discriminated capability, and the two
+ * kinds are not interchangeable: `native` opens a chooser on the Host's own
+ * desktop (fine at a loopback desktop, useless from a browser anywhere else),
+ * while `browse` returns listings the client renders itself. `host.pickDirectory`
+ * rejects outright under a browse Profile — which is exactly what the panel's
+ * first Browse button did — so the panel probes with a listing read, which has
+ * no side effect and no dialog, and renders accordingly.
+ */
+function DirectoryBrowser({
+  listing,
+  loading,
+  showHidden,
+  t,
+  onNavigate,
+  onToggleHidden,
+  onChoose,
+  onCancel,
+}: {
+  listing: DirectoryListing | undefined
+  loading: boolean
+  showHidden: boolean
+  t: PanelTranslate
+  onNavigate: (path: string) => void
+  onToggleHidden: (next: boolean) => void
+  onChoose: (path: string) => void
+  onCancel: () => void
+}) {
+  const entries = (listing?.entries ?? []).filter(entry => showHidden || !entry.hidden)
+  return (
+    <div className="lab-browse">
+      <nav className="lab-crumbs" aria-label={t('browse.title')}>
+        {(listing?.crumbs ?? []).map((crumb, index) => (
+          <span key={crumb.path}>
+            {index > 0 && <span className="lab-crumb-sep">/</span>}
+            <button
+              type="button"
+              className="lab-crumb"
+              title={crumb.path}
+              onClick={() => { onNavigate(crumb.path) }}
+            >
+              {/* The Host marks its own home directory, so the first crumb can
+                  read as Home instead of an absolute path. */}
+              {crumb.path === listing?.home ? t('browse.home') : crumb.name}
+            </button>
+          </span>
+        ))}
+      </nav>
+
+      <div className="lab-browse-list">
+        {loading && <p className="lab-browse-note">{t('browse.loading')}</p>}
+        {!loading && entries.length === 0 && <p className="lab-browse-note">{t('browse.empty')}</p>}
+        {!loading && entries.map(entry => (
+          <button
+            key={entry.path}
+            type="button"
+            className={entry.hidden ? 'lab-browse-row lab-browse-row--hidden' : 'lab-browse-row'}
+            title={entry.path}
+            onClick={() => { onNavigate(entry.path) }}
+          >
+            <IconFolderClose16 />
+            <span className="lab-browse-name">{entry.name}</span>
+          </button>
+        ))}
+        {listing?.truncated === true && <p className="lab-browse-note">{t('browse.truncated')}</p>}
+      </div>
+
+      <label className="lab-browse-toggle">
+        <input
+          type="checkbox"
+          checked={showHidden}
+          onChange={event => { onToggleHidden(event.target.checked) }}
+        />
+        {t('browse.showHidden')}
+      </label>
+
+      {listing !== undefined && <p className="lab-browse-path">{listing.path}</p>}
+
+      <div className="lab-row">
+        <ActionButton
+          primary
+          className="lab-grow"
+          disabled={listing === undefined}
+          onClick={() => { if (listing !== undefined) onChoose(listing.path) }}
+        >
+          {t('browse.useThis')}
+        </ActionButton>
+        <ActionButton onClick={onCancel}>{t('browse.cancel')}</ActionButton>
+      </div>
+    </div>
+  )
+}
+
 function InteractionCard({
   interaction,
   remote,
@@ -426,6 +539,10 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
   const [error, setError] = useState<string>()
   const [workspacePath, setWorkspacePath] = useState('')
   const [addingWorkspace, setAddingWorkspace] = useState(false)
+  const [browseSupport, setBrowseSupport] = useState<BrowseSupport>('unknown')
+  const [listing, setListing] = useState<DirectoryListing>()
+  const [listingBusy, setListingBusy] = useState(false)
+  const [showHidden, setShowHidden] = useState(false)
   const sequence = useRef(0)
 
   const refresh = async (): Promise<void> => {
@@ -522,16 +639,51 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
     }
   }
 
-  /** Open the Profile's directory chooser, then register whatever it returned. */
-  const browseWorkspace = async (): Promise<void> => {
-    if (workspaces.pick === undefined) return
+  /**
+   * Read one directory level, remembering that browsing works at all.
+   * @param path - absolute directory, or absent for the Host home directory.
+   * @returns true when the Host served the listing.
+   */
+  const readDirectory = async (path?: string): Promise<boolean> => {
+    setListingBusy(true)
+    try {
+      const next = await workspaces.list(path)
+      setListing(next)
+      setBrowseSupport('browse')
+      return true
+    } catch {
+      // A rejection here is the Profile serving a different capability, not a
+      // broken Host, so it is not surfaced as an error banner.
+      return false
+    } finally {
+      setListingBusy(false)
+    }
+  }
+
+  /**
+   * Start choosing a directory by whichever route this Profile serves.
+   *
+   * The listing read is the probe: it has no side effect and opens nothing, so
+   * it is safe to attempt first. Only if the Host refuses it does the panel try
+   * the native chooser, which is the route that pops a dialog on the Host
+   * desktop. If neither works the path field remains, and says so.
+   */
+  const startBrowsing = async (): Promise<void> => {
     setError(undefined)
+    if (await readDirectory(listing?.path)) return
     try {
       const picked = await workspaces.pick()
+      setBrowseSupport('native')
       if (picked !== null) await addWorkspace(picked)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+    } catch {
+      setBrowseSupport('none')
     }
+  }
+
+  /** Register the browsed directory and close the browser. */
+  const chooseBrowsed = async (path: string): Promise<void> => {
+    setListing(undefined)
+    await addWorkspace(path)
   }
 
   const createSession = async (): Promise<void> => {
@@ -681,13 +833,18 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                       >
                         {addingWorkspace ? t('workspace.add.busy') : t('workspace.add.submit')}
                       </ActionButton>
-                      {workspaces.pick !== undefined && (
-                        <ActionButton disabled={addingWorkspace} onClick={() => { void browseWorkspace() }}>
+                      {/* Hidden only once the Host has refused both routes; until
+                          then it is offered, because which capability the Profile
+                          serves is not knowable without asking. */}
+                      {browseSupport !== 'none' && listing === undefined && (
+                        <ActionButton disabled={addingWorkspace} onClick={() => { void startBrowsing() }}>
                           {t('workspace.browse')}
                         </ActionButton>
                       )}
                     </div>
                   </form>
+
+                  {browseSupport === 'none' && <p className="lab-card-hint" style={{ margin: '9px 0 0' }}>{t('browse.unavailable')}</p>}
                 </div>
 
                 {blockedProviders.length > 0 && (
@@ -795,6 +952,28 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                 </form>
               </main>
             </div>
+
+            {listing !== undefined && (
+              <div className="lab-sheet-scrim" role="dialog" aria-modal="true" aria-label={t('browse.title')}>
+                <section className="lab-sheet">
+                  <header className="lab-sheet-head">
+                    <h3 className="lab-sheet-title">{t('browse.title')}</h3>
+                  </header>
+                  <div className="lab-sheet-body">
+                    <DirectoryBrowser
+                      listing={listing}
+                      loading={listingBusy}
+                      showHidden={showHidden}
+                      t={t}
+                      onNavigate={path => { void readDirectory(path) }}
+                      onToggleHidden={setShowHidden}
+                      onChoose={path => { void chooseBrowsed(path) }}
+                      onCancel={() => { setListing(undefined) }}
+                    />
+                  </div>
+                </section>
+              </div>
+            )}
           </section>
         </div>
       )}
@@ -826,13 +1005,13 @@ export function apply(ctx: ClientContext): void {
         t: scope.locale.bind(NS),
         workspaces: {
           create: async (path) => { await scope.workspaces.create({ path }) },
-          // Only offered when the composed Profile actually has a chooser: the
-          // auto backend resolves to a Host-native dialog nobody can operate
-          // from a remote browser, and a Profile may compose none at all. The
-          // path field alone always works, so the button is the extra.
-          ...typeof scope.workspaces.pickDirectory === 'function'
-            ? { pick: () => scope.workspaces.pickDirectory() }
-            : {},
+          // Both routes are wired unconditionally. Which one the composed
+          // Profile actually serves cannot be read from the client — the
+          // capability kind is not in host.describe, and both methods exist on
+          // the service regardless — so the panel probes with a listing read,
+          // which has no side effect, and falls back to the native chooser.
+          list: path => scope.workspaces.listDirectory(path),
+          pick: () => scope.workspaces.pickDirectory(),
         },
       }),
     }, LocalAgentPanel))
