@@ -29,10 +29,14 @@ const ICON_STUBS = vi.hoisted(() => [
   'IconArchiveOutline20',
   'IconCloseOutline16',
   'IconCodeOutline16',
+  'IconDataOutline16',
   'IconFolderClose16',
+  'IconFolderOpenOutline16',
   'IconPanelLeftOutline16',
+  'IconPlusOutline16',
   'IconRefreshOutline16',
   'IconSendOutline16',
+  'IconSparkle16',
   'IconStopFill16',
 ])
 
@@ -72,6 +76,9 @@ const session: BridgeSessionView = {
   persistenceVersion: 1,
   contextUsage: null,
   permissionMode: 'auto',
+  model: null,
+  effort: null,
+  rateLimits: [],
 }
 
 const catalog: BridgeCatalogResult = {
@@ -82,6 +89,7 @@ const catalog: BridgeCatalogResult = {
     version: '0.147.0',
     supportedRange: '0.147.x',
     permissionModes: [],
+    selectableModels: true,
     compatibility: 'supported',
     health: 'ready',
     message: null,
@@ -172,7 +180,26 @@ class RemoteFixture {
   }))
   readonly sessionFiles = vi.fn(async (_request: { bridgeSessionId: string; query: string }) => ({
     ok: true as const,
-    value: { matches: [] as { path: string; name: string }[], partial: false },
+    value: { matches: [] as { path: string; name: string; directory: boolean }[], partial: false },
+  }))
+  readonly sessionModels = vi.fn(async (_request: { bridgeSessionId: string }) => ({
+    ok: true as const,
+    value: {
+      models: [
+        {
+          id: 'fixture-fast',
+          displayName: 'Fixture Fast',
+          description: 'Fixture model with effort levels',
+          efforts: ['low', 'high'] as readonly string[],
+          defaultEffort: 'low',
+        },
+      ],
+      unavailable: false,
+    },
+  }))
+  readonly sessionModel = vi.fn(async (request: { bridgeSessionId: string; model: string | null; effort: string | null }) => ({
+    ok: true as const,
+    value: { ...session, model: request.model, effort: request.effort },
   }))
   readonly sessionPermissionMode = vi.fn(async (request: { bridgeSessionId: string; mode: string }) => ({
     ok: true as const,
@@ -294,6 +321,7 @@ function renderPanel(remote: LocalAgentRemote, options: RenderOptions = {}): voi
     wide: true,
     remote,
     t,
+    speechLocale: () => locale === 'zh' ? 'zh-CN' : 'en-US',
     workspaces: {
       // `create` is no longer used by the panel — a directory goes to the
       // bridge's own store — but the seam stays so a test can prove nothing
@@ -498,6 +526,7 @@ describe('LocalAgentPanel', () => {
             version: '0.144.6',
             supportedRange: '0.147.x',
             permissionModes: [],
+            selectableModels: true,
             compatibility: 'unsupported',
             health: 'unsupported',
             message: null,
@@ -509,6 +538,7 @@ describe('LocalAgentPanel', () => {
             version: null,
             supportedRange: '>=2.1.220 <2.2.0',
             permissionModes: [],
+            selectableModels: true,
             compatibility: 'unknown',
             health: 'not-installed',
             message: null,
@@ -742,8 +772,8 @@ describe('LocalAgentPanel', () => {
       ok: true,
       value: {
         matches: [
-          { path: 'src/main.ts', name: 'main.ts' },
-          { path: 'src/domain/mainframe.ts', name: 'mainframe.ts' },
+          { path: 'src/main.ts', name: 'main.ts', directory: false },
+          { path: 'src/domain/mainframe.ts', name: 'mainframe.ts', directory: false },
         ],
         partial: false,
       },
@@ -787,7 +817,7 @@ describe('LocalAgentPanel', () => {
     fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
     fixture.sessionFiles.mockResolvedValue({
       ok: true,
-      value: { matches: [{ path: 'a.ts', name: 'a.ts' }], partial: true },
+      value: { matches: [{ path: 'a.ts', name: 'a.ts', directory: false }], partial: true },
     })
     fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
     renderPanel(fixture.remote())
@@ -1445,5 +1475,186 @@ describe('LocalAgentPanel', () => {
       ].filter(Boolean).join(' '))
       .filter(value => /log\s*in|sign\s*in|oauth|device\s*code|api[_ -]?key|access[_ -]?token/i.test(value))
     expect(authControls).toEqual([])
+  })
+
+  it('sends the chosen model and its effort to the Host, and shows them together', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const trigger = await screen.findByTitle(en['model.label'])
+    // Nothing chosen yet reads as the product's own setting, not as "no model".
+    expect(trigger.textContent).toContain(en['model.default'])
+
+    fireEvent.click(trigger)
+    fireEvent.click(await screen.findByText('Fixture Fast'))
+    // The product's own default effort rides along, rather than being dropped and
+    // silently replaced by whatever the product falls back to.
+    await waitFor(() => {
+      expect(fixture.sessionModel).toHaveBeenCalledWith({
+        bridgeSessionId: 'session-1',
+        model: 'fixture-fast',
+        effort: 'low',
+      })
+    })
+    await waitFor(() => {
+      expect(screen.getByTitle(en['model.label']).textContent)
+        .toContain(`Fixture Fast · ${en['effort.low']}`)
+    })
+
+    fireEvent.click(screen.getByTitle(en['model.label']))
+    fireEvent.click(await screen.findByRole('button', { name: en['effort.high'] }))
+    await waitFor(() => {
+      expect(fixture.sessionModel).toHaveBeenLastCalledWith({
+        bridgeSessionId: 'session-1',
+        model: 'fixture-fast',
+        effort: 'high',
+      })
+    })
+  })
+
+  it('says the model list is not readable yet, rather than showing an empty corner', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    // Claude Code before its first turn: the product does support choosing a
+    // model, it just cannot be asked yet.
+    fixture.sessionModels.mockResolvedValue({ ok: true, value: { models: [], unavailable: true } })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const placeholder = await screen.findByTitle(en['model.unavailable'])
+    expect((placeholder as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('offers no model control for a product that has none', async () => {
+    const fixture = new RemoteFixture()
+    fixture.catalog.mockResolvedValue({
+      ok: true,
+      value: {
+        ...catalog,
+        providers: [{ ...catalog.providers[0]!, selectableModels: false }],
+      },
+    })
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.sessionModels.mockResolvedValue({ ok: true, value: { models: [], unavailable: true } })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    // Neither a picker nor the "ask again later" placeholder: this product will
+    // never have one, and saying otherwise would promise a control that is coming.
+    expect(screen.queryByTitle(en['model.label'])).toBeNull()
+    expect(screen.queryByTitle(en['model.unavailable'])).toBeNull()
+  })
+
+  it('references a file or a folder from the plus button, without the @ syntax', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.sessionFiles.mockResolvedValue({
+      ok: true,
+      value: {
+        matches: [
+          { path: 'src', name: 'src', directory: true },
+          { path: 'src/main.ts', name: 'main.ts', directory: false },
+        ],
+        partial: false,
+      },
+    })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    fireEvent.click(screen.getByLabelText(en['attach.open']))
+    // The button opens with everything, so the operator can browse rather than
+    // having to know what to search for.
+    await waitFor(() => {
+      expect(fixture.sessionFiles).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', query: '' })
+    })
+
+    // A folder keeps its trailing slash, which is how both products tell one
+    // from a file.
+    fireEvent.click(await screen.findByText('src/'))
+    await waitFor(() => { expect(composer.value).toBe('@src/ ') })
+
+    fireEvent.click(screen.getByLabelText(en['attach.open']))
+    fireEvent.click(await screen.findByText('main.ts'))
+    // Accumulates rather than replacing: several references in one prompt is the
+    // normal case.
+    await waitFor(() => { expect(composer.value).toBe('@src/ @src/main.ts ') })
+  })
+
+  it('shows the tightest usage allowance, and nothing at all when none was reported', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    // An account the product said nothing about must not be rendered as 0%.
+    expect(screen.queryByTitle(new RegExp(en['quota.title']))).toBeNull()
+
+    cleanup()
+
+    const withQuota: BridgeSessionView = {
+      ...session,
+      rateLimits: [
+        { window: 'five_hour', utilization: 0.12, status: 'allowed', resetsAt: null },
+        { window: 'seven_day', utilization: 0.87, status: 'warning', resetsAt: null },
+      ],
+    }
+    const reported = new RemoteFixture()
+    reported.sessionsList.mockResolvedValue({ ok: true, value: [withQuota] })
+    reported.pushRead(snapshot({ session: withQuota, events: [], latestSequence: 0 }))
+    renderPanel(reported.remote())
+    // The weekly window is the one that will stop them, so that is the figure
+    // shown; the other is in the tooltip.
+    expect(await screen.findByText(en['quota.used'].replace('{percent}', '87'))).toBeTruthy()
+  })
+
+  it('offers dictation only where the browser has the API', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    // jsdom has no Web Speech API, which is exactly the browser this must not
+    // show a permanently dead button in.
+    expect(screen.queryByLabelText(en['dictate.start'])).toBeNull()
+
+    cleanup()
+
+    class FakeRecognition {
+      lang = ''
+      interimResults = false
+      continuous = false
+      onresult: ((event: unknown) => void) | null = null
+      onerror: (() => void) | null = null
+      onend: (() => void) | null = null
+      static last: FakeRecognition | undefined
+      constructor() { FakeRecognition.last = this }
+      start(): void {}
+      stop(): void { this.onend?.() }
+      abort(): void {}
+    }
+    vi.stubGlobal('webkitSpeechRecognition', FakeRecognition)
+
+    const speaking = new RemoteFixture()
+    speaking.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    speaking.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(speaking.remote())
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    fireEvent.change(composer, { target: { value: 'read this' } })
+
+    fireEvent.click(screen.getByLabelText(en['dictate.start']))
+    // The panel's own language, so recognition expects what is being spoken.
+    expect(FakeRecognition.last?.lang).toBe('en-US')
+
+    FakeRecognition.last?.onresult?.({
+      resultIndex: 0,
+      results: { length: 1, 0: { length: 1, 0: { transcript: 'and then stop' } } },
+    })
+    // Appended to what was typed rather than replacing it, so dictation extends
+    // a sentence instead of discarding it.
+    await waitFor(() => { expect(composer.value).toBe('read this and then stop') })
   })
 })

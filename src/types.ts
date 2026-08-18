@@ -40,6 +40,17 @@ export interface NativeProviderView {
    * for a product that exposes no such control.
    */
   readonly permissionModes: readonly BridgePermissionModeView[]
+  /**
+   * Whether this product lets a session choose its model at all.
+   *
+   * Separate from whether a list is currently readable, because the two answers
+   * differ: Claude Code can only enumerate its models off a live query, so a
+   * session that has not run a turn gets an empty list from a product that does
+   * support selection. Without this the panel could not tell that state apart from
+   * a product with no model control, and would either hide a real capability or
+   * promise one that will never arrive.
+   */
+  readonly selectableModels: boolean
 }
 
 export interface BridgeWorkspaceView {
@@ -84,14 +95,6 @@ export type BridgeSessionStatus =
   | 'orphaned'
 
 /**
- * Why a session changed status, as a code the Client phrases in its own locale.
- *
- * An error-driven transition carries no note: the `bridge/error` event appended
- * immediately before it already names the cause with its own code, and repeating
- * it here produced two rows saying the same thing — one of them in whatever
- * language the Host happened to compose.
- */
-/**
  * A tool call's arguments and result, as far as they are safe and useful to show.
  *
  * Deliberately strings rather than structured data: the products describe tool
@@ -107,6 +110,14 @@ export interface BridgeToolDetail {
   readonly truncated: boolean
 }
 
+/**
+ * Why a session changed status, as a code the Client phrases in its own locale.
+ *
+ * An error-driven transition carries no note: the `bridge/error` event appended
+ * immediately before it already names the cause with its own code, and repeating
+ * it here produced two rows saying the same thing — one of them in whatever
+ * language the Host happened to compose.
+ */
 export type BridgeStatusNote =
   | 'cancelling-turn'
   | 'host-restarted-resumable'
@@ -136,16 +147,6 @@ export type BridgeErrorCode =
   | 'INVALID_REQUEST'
 
 /**
- * How much of the model's context the session has consumed.
- *
- * Both products report this, in different shapes and through different
- * mechanisms — Claude Code answers a control request on a live query, Codex
- * pushes a notification — so the bridge reduces both to the two numbers a reader
- * acts on. The per-category breakdown each product offers is deliberately not
- * carried: Claude Code's includes memory-file paths, which are Host filesystem
- * detail with no business in a browser.
- */
-/**
  * How much the agent may do without asking, named after the modes the Claude
  * desktop app presents so the vocabulary matches what operators already know.
  *
@@ -170,12 +171,88 @@ export interface BridgePermissionModeView {
   readonly skipsApproval: boolean
 }
 
+/**
+ * How much of the model's context the session has consumed.
+ *
+ * Both products report this, in different shapes and through different
+ * mechanisms — Claude Code answers a control request on a live query, Codex
+ * pushes a notification — so the bridge reduces both to the two numbers a reader
+ * acts on. The per-category breakdown each product offers is deliberately not
+ * carried: Claude Code's includes memory-file paths, which are Host filesystem
+ * detail with no business in a browser.
+ */
 export interface BridgeContextUsage {
   readonly usedTokens: number
   /** The model's context window, or null when the product did not report one. */
   readonly maxTokens: number | null
   /** Model name as the product reports it, or null. */
   readonly model: string | null
+}
+
+/**
+ * One model a session can be told to use, as the product describes it.
+ *
+ * Both products enumerate their own models and both accept one per turn, so the
+ * bridge relays rather than curates: the identifier goes back to the product
+ * untouched, and the display text is the product's own. There is no bridge-side
+ * list of "good" models to fall out of date.
+ */
+export interface BridgeModel {
+  /**
+   * The identifier to hand back to the product. Opaque here — an alias like
+   * `sonnet` and a full wire id are both legitimate, and which is which is the
+   * product's business.
+   */
+  readonly id: string
+  /** The product's own display name. Vendor text; never translated. */
+  readonly displayName: string
+  readonly description: string | null
+  /**
+   * Reasoning-effort levels this model accepts, in the product's order. Empty
+   * for a model that takes no effort setting, which is the honest answer for
+   * most of them.
+   */
+  readonly efforts: readonly string[]
+  /** The effort the product would use if none is chosen, when it says. */
+  readonly defaultEffort: string | null
+}
+
+export interface BridgeModelsResult {
+  readonly models: readonly BridgeModel[]
+  /**
+   * True when the product cannot be asked at all. Claude Code exposes its model
+   * list only through a live SDK query, so it is unknown until some session has
+   * run a turn; Codex answers from its App Server at any time. Distinct from a
+   * product that answered with an empty list.
+   */
+  readonly unavailable: boolean
+}
+
+/**
+ * How much of a usage allowance the account has spent, when the product says.
+ *
+ * Only Claude Code reports this, and only for subscription accounts: it arrives
+ * as a stream event during a turn. Codex has the reciprocal call but refuses it
+ * without a ChatGPT sign-in, so an operator on an API key sees no quota — which
+ * is reported as absence rather than as a zero.
+ *
+ * The fields are deliberately the ones a reader acts on. The vendor payload also
+ * carries overage provisioning and payment-method flags, which are account
+ * billing detail with no business in this panel.
+ */
+export interface BridgeRateLimit {
+  /**
+   * Which allowance this is, as the product names it (`five_hour`, `seven_day`,
+   * …). Vendor text, kept verbatim so two windows never collapse into one row.
+   * Null when the product did not say which.
+   */
+  readonly window: string | null
+  /** Fraction spent, 0–1, or null when the product reported only a status. */
+  readonly utilization: number | null
+  /** Whether the product is still serving requests against this allowance. */
+  readonly status: 'allowed' | 'warning' | 'rejected'
+  /** When the allowance refills, epoch milliseconds, when the product says. */
+  readonly resetsAt: number | null
 }
 
 export interface BridgeSessionView {
@@ -202,6 +279,20 @@ export interface BridgeSessionView {
    * products take it when a turn starts.
    */
   readonly permissionMode: BridgePermissionMode
+  /**
+   * The model this session asks for, or null to leave the choice to the product.
+   * Applies from the next turn, for the same reason as the permission mode.
+   */
+  readonly model: string | null
+  /** The reasoning effort asked for, or null for the product's own default. */
+  readonly effort: string | null
+  /**
+   * Usage allowances the product has reported for the account, one row per
+   * window, most recently reported value per window. Empty when the product
+   * reports none — which is the normal case for anything but a Claude
+   * subscription.
+   */
+  readonly rateLimits: readonly BridgeRateLimit[]
 }
 
 export interface BridgeTurnView {
@@ -413,11 +504,17 @@ export interface BridgeNativeSessionsResult {
   readonly unavailable: boolean
 }
 
-/** One file the composer can reference with `@`. */
+/** One file or directory the composer can reference with `@`. */
 export interface BridgeFileMatch {
   /** Path relative to the session's working directory, forward-slashed. */
   readonly path: string
   readonly name: string
+  /**
+   * True for a directory. Both products accept one as context, and the panel
+   * shows and inserts it differently — with a trailing slash — so the distinction
+   * is carried rather than folded into the path.
+   */
+  readonly directory: boolean
 }
 
 export interface BridgeFileSearchResult {
@@ -466,6 +563,17 @@ export interface BridgeSessionIdRequest {
 
 export interface BridgePermissionModeRequest extends BridgeSessionIdRequest {
   readonly mode: BridgePermissionMode
+}
+
+export interface BridgeModelRequest extends BridgeSessionIdRequest {
+  /** The model to use, or null to hand the choice back to the product. */
+  readonly model: string | null
+  /**
+   * The reasoning effort to use, or null for the product's default. Rejected
+   * when the chosen model does not list it, so the panel can never ask for a
+   * combination the product would silently ignore.
+   */
+  readonly effort: string | null
 }
 
 export interface BridgeSessionArchiveRequest extends BridgeSessionIdRequest {

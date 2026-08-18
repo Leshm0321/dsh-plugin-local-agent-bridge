@@ -23,6 +23,8 @@ import type {
   BridgeFileSearchResult,
   BridgeWorkspaceView,
   BridgeCompletionsResult,
+  BridgeModelRequest,
+  BridgeModelsResult,
   BridgeNativeSessionsRequest,
   BridgeNativeSessionsResult,
   BridgePermissionModeRequest,
@@ -162,6 +164,8 @@ export class LocalAgentBridgeService extends TypertRemoteService {
         version: '1.0.0',
         supportedRange: null,
         permissionModes: permissionModesFor('fake'),
+        // The fixture has no model to choose, so the composer offers none.
+        selectableModels: false,
         compatibility: 'supported',
         health: 'ready',
         // The Client labels the fixture from its id; no Host sentence needed.
@@ -344,6 +348,23 @@ export class LocalAgentBridgeService extends TypertRemoteService {
       throw new BridgeError('INVALID_REQUEST')
     }
     return await engine.setPermissionMode(request.bridgeSessionId, request.mode)
+  }
+
+  @Remote('sessionModels')
+  async sessionModels(request: BridgeSessionIdRequest): Promise<BridgeModelsResult> {
+    return await this.requireEngine().listModels(request.bridgeSessionId)
+  }
+
+  @Remote('sessionModel')
+  async sessionModel(request: BridgeModelRequest): Promise<BridgeSessionView> {
+    // Validation against the product's own list lives in the engine, which is
+    // where the list is read — unlike permission modes, whose set is static per
+    // product and can be checked here without asking anything.
+    return await this.requireEngine().setModel(
+      request.bridgeSessionId,
+      request.model,
+      request.effort,
+    )
   }
 
   @Remote('sessionFiles')

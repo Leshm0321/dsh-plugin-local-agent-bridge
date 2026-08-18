@@ -8,8 +8,9 @@ import {
 } from '@deepseek-ai/dsh-storage-domain'
 import type {
   BridgeContextUsage,
-  BridgePermissionMode,
   BridgeEvent,
+  BridgePermissionMode,
+  BridgeRateLimit,
   BridgeSessionStatus,
   PendingInteractionView,
   ProviderId,
@@ -38,6 +39,19 @@ export interface PersistedBridgeSession {
   contextUsage?: BridgeContextUsage | null
   /** Permission mode; absent on records written before it existed. */
   permissionMode?: BridgePermissionMode
+  /** Requested model, or absent/null for the product's own default. */
+  model?: string | null
+  /** Requested reasoning effort, or absent/null for the product's default. */
+  effort?: string | null
+  /**
+   * Usage allowances last reported, one per window.
+   *
+   * Persisted so the figure survives a Host restart the way context usage does:
+   * it only arrives during a turn, and losing it would blank the readout until
+   * the operator happened to run another one. Stale by nature — the panel shows
+   * it as the last thing the product said, not as live truth.
+   */
+  rateLimits?: BridgeRateLimit[]
   nextSequence: number
   events: BridgeEvent[]
   pendingInteraction: PendingInteractionView | null

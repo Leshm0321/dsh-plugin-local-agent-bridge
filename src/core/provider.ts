@@ -1,6 +1,8 @@
 import type {
   BridgeCompletionsResult,
   BridgeContextUsage,
+  BridgeModelsResult,
+  BridgeRateLimit,
   BridgePermissionMode,
   BridgeNativeSessionsResult,
   BridgeEvent,
@@ -39,6 +41,17 @@ export interface ProviderTurnHooks {
    * rather than mid-flight.
    */
   readonly permissionMode: BridgePermissionMode
+  /**
+   * The model to ask the product for, or null to leave it to the product.
+   *
+   * Per turn for the same reason as the permission mode, and by the same
+   * mechanism in both products: Claude Code takes `Options.model` when a query
+   * opens, Codex takes `model` on `turn/start`. Neither is settable mid-turn in
+   * the way this bridge drives them, so a change lands on the next one.
+   */
+  readonly model: string | null
+  /** The reasoning effort to ask for, or null for the product's default. */
+  readonly effort: string | null
   readonly signal: AbortSignal
   emit(event: BridgeEventDraft): Promise<void>
   setNativeSessionLocator(locator: string): Promise<void>
@@ -52,6 +65,16 @@ export interface ProviderTurnHooks {
    * @param usage - the product's latest figures.
    */
   reportContextUsage(usage: BridgeContextUsage): Promise<void>
+  /**
+   * Record a usage allowance the product volunteered.
+   *
+   * A hook because it is pushed, not asked for: Claude Code emits it as a stream
+   * event partway through a turn, whenever the account's figures move. Called
+   * once per window, so a product reporting both a five-hour and a weekly
+   * allowance produces two calls rather than one merged number.
+   * @param limit - one allowance, as the product reported it.
+   */
+  reportRateLimit(limit: BridgeRateLimit): Promise<void>
   requestInteraction(request: ProviderInteractionRequest): Promise<ProviderInteractionResolution>
 }
 
@@ -88,6 +111,16 @@ export interface NativeProviderAdapter {
    * @param cwd - the workspace directory to scope the listing to.
    */
   listNativeSessions?(cwd: string): Promise<BridgeNativeSessionsResult>
+  /**
+   * Models this product will accept for a turn, as it reports them.
+   *
+   * Optional for the same reason as the other two readers: a product that cannot
+   * be asked reports nothing rather than the bridge maintaining a list of model
+   * names that would rot with every release.
+   * @param bridgeSessionId - the session asking; a product whose list is
+   * account-wide may ignore it.
+   */
+  listModels?(bridgeSessionId: string): Promise<BridgeModelsResult>
   startTurn(request: ProviderTurnRequest): Promise<void>
   steer(bridgeSessionId: string, text: string): Promise<void>
   cancel(bridgeSessionId: string): Promise<void>

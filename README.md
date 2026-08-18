@@ -155,6 +155,27 @@ Host, confined to the working directory after symlinks are resolved, bounded by 
 visit budget, and skipping `.git` and dependency trees. When it stops early it says
 so rather than presenting a partial list as complete.
 
+The controls around the box follow each product's own composer:
+
+| Position | Shows |
+| --- | --- |
+| Above, left | The working directory the agent runs in |
+| Above, right | Context consumed, as the product reports it |
+| Below, left | Permission mode, a file button, and dictation |
+| Below, right | Usage allowance, model, and send |
+
+**The file button** is `@` without the syntax: the same Host search, listing files
+and folders, appending the reference to the draft. A folder keeps its trailing
+slash, which is how both products tell one from a file. It is scoped to the working
+directory rather than opening a Host file dialog — a path outside that directory is
+not something the agent could read anyway, and enumerating the machine from a
+browser is exactly what this bridge does not do.
+
+**Dictation** appears only where the browser has the Web Speech API, which in
+practice means Chromium. Transcripts are appended, so speech extends a typed
+sentence instead of replacing it. Note that a browser's recognition is not
+necessarily local — see [Security boundary](#security-boundary).
+
 ## Permission modes
 
 The modes are named after the Claude desktop app, because that vocabulary is what
@@ -179,6 +200,36 @@ anything** — the protection this bridge exists to provide. They are offered be
 both products offer them, and the panel marks and warns about them. A change
 applies from the next turn, because that is when both products read the setting.
 
+## Model, effort, and quota
+
+Both products enumerate their own models and both accept one per turn, so the
+picker offers exactly what the session's product reported — there is no list of
+model names here to fall out of date. Reasoning effort nests under the model,
+because that is how both products scope it: the levels one model accepts are not
+the levels another does, and a model that takes none shows none.
+
+`Product default` is a real choice, not a placeholder. Leaving it selected keeps
+whatever you configured in the CLI itself, which is the right answer if you have
+already set a model there. A change applies from the next turn, for the same reason
+as the permission mode.
+
+| Product | Models from | Applied through |
+| --- | --- | --- |
+| Claude Code | `supportedModels()` on a live SDK query | `Options.model` and `Options.effort` |
+| Codex | `model/list` on the App Server | `model` and `effort` on `turn/start` |
+
+As with commands, Claude Code can only be asked while a turn is running, so the
+list appears after a first message has been sent anywhere in the panel; until then
+the control says so rather than looking like a product with no models. Codex
+answers at any time.
+
+**Quota is shown only when the product volunteers it.** Claude Code emits it as a
+stream event for subscription accounts; Codex has the reciprocal call but refuses
+it without a ChatGPT sign-in. An account the product said nothing about shows
+nothing, because a zero or a dash would read as a figure. When several allowances
+are reported the tightest one is shown — that is the one that will stop you — and
+the rest are in the tooltip.
+
 ## Commands, skills, and MCP
 
 Typing `/` in the composer lists what the session's product reports it can do,
@@ -201,6 +252,28 @@ answers at any time.
 
 MCP servers from both products are listed with the state each reports, as
 inventory — they are not invocable from the composer.
+
+### Why `/resume`, `/model` and `/clear` are not there
+
+They are not commands. `/resume`, `/model`, `/help`, `/clear` and the rest belong to
+Claude Code's terminal interface, which draws its own screen and reads its own
+keystrokes; the Agent SDK this bridge drives has no such layer, so those commands
+do not exist in it. What `supportedCommands()` returns is skills — its own
+documentation says so — which is why typing `/resume` gets you the product's honest
+`/resume isn't available in this environment` rather than a bridge-invented error.
+
+The capabilities themselves are all here, as controls rather than as typed
+commands, because that is the shape the SDK exposes them in:
+
+| In a terminal | In this panel |
+| --- | --- |
+| `/resume` | `Browse existing sessions…` |
+| `/model` | The model picker at the composer's bottom-right |
+| `/status` | Context usage above the box, quota below it |
+| `/permissions` | The permission-mode picker |
+
+Anything a product genuinely reports as a command or skill does appear in the `/`
+list, and it is invoked with the product's own syntax.
 
 ## Continuing an existing session
 
@@ -258,6 +331,12 @@ stores, or vendor tokens. Listing commands, skills, MCP servers and sessions goe
 through each product's own API, and the absolute filesystem paths those replies
 contain are dropped where the reply is parsed. Authentication failures become a
 safe `HOST_AUTH_REQUIRED` message to be repaired in a terminal on the Host.
+
+**Dictation is the one exception, and it is the browser's, not the plugin's.**
+Everything else here stays on the Host, but Chromium's Web Speech API transcribes
+by sending the audio to a vendor service. The button says so on hover; if that is
+not acceptable, do not use it — the panel works identically without it, and a
+browser without the API never shows it.
 
 **Keep the Harness bound to `127.0.0.1`.** Remote access requires a separate
 private network or an authenticated reverse proxy providing TLS, user or device

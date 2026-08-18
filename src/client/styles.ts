@@ -433,6 +433,11 @@ export const PANEL_STYLES = `
   overflow: hidden;
 }
 .lab-usage-fill {
+  /* A span inside a non-flex parent stays inline, and an inline box ignores both
+     width and height — which left this bar permanently empty however full the
+     context was. The percentage arrives as an inline width, so the box has to be
+     a block for it to mean anything. */
+  display: block;
   height: 100%;
   border-radius: var(--lab-r-chip);
   background: var(--lab-text-3);
@@ -694,8 +699,86 @@ export const PANEL_STYLES = `
   border-top: var(--lab-hairline) solid var(--lab-line);
   background: var(--lab-surface);
 }
-.lab-composer-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+/* Above the box: working directory on the left, context on the right. Both
+   shrink to nothing before the row wraps, so a long directory title truncates
+   instead of pushing the usage meter off the edge. */
+.lab-composer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+  min-width: 0;
+}
+.lab-cwd {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--lab-text-2);
+}
+/* A block, not a bare inline span: an inline box refuses to shrink below its
+   text, which is what let a long title overrun its neighbour once before. */
+.lab-cwd-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--lab-mono);
+}
+
+/* Beneath the box: what the agent may do and what it is given on the left, what
+   it costs and what answers on the right — the arrangement both products' own
+   composers use. Wraps rather than overflows on a narrow panel. */
+.lab-composer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.lab-composer-tools { display: flex; align-items: center; gap: 6px; min-width: 0; }
+
+.lab-icon-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--lab-text-2);
+  background: var(--lab-fill);
+  border: 0;
+  border-radius: var(--lab-r-chip);
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease), color var(--lab-fast) var(--lab-ease);
+}
+.lab-icon-button:hover { background: var(--lab-fill-strong); }
+.lab-icon-button:disabled { opacity: .45; cursor: default; }
+.lab-icon-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--lab-accent) 16%, transparent);
+}
+/* Dictation running. Pulsed rather than merely coloured, because the operator
+   needs to notice a live microphone from across the room. */
+.lab-icon-button--live {
+  color: var(--lab-danger);
+  background: color-mix(in srgb, var(--lab-danger) 14%, transparent);
+  animation: lab-pulse 1.6s var(--lab-ease) infinite;
+}
+.lab-mic-glyph { display: block; }
+
+@keyframes lab-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .55; }
+}
+
 .lab-composer-hint { display: block; margin-top: 7px; font-size: 11px; color: var(--lab-text-3); }
+.lab-composer-hint--second { margin-top: 3px; }
 
 /* ------------------------------------------------------ directory list */
 
@@ -808,10 +891,12 @@ export const PANEL_STYLES = `
 /* A mode that stops the browser being asked is worth seeing at a glance. */
 .lab-mode-trigger--unguarded { color: var(--lab-warn); background: color-mix(in srgb, var(--lab-warn) 12%, transparent); }
 
+/* Opens upward: the trigger sits at the bottom of the composer, so a menu
+   dropping down would land outside the panel. */
 .lab-mode-menu {
   position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
+  bottom: calc(100% + 6px);
+  left: 0;
   z-index: 20;
   min-width: 260px;
   padding: 6px;
@@ -851,6 +936,164 @@ export const PANEL_STYLES = `
   border-radius: 7px;
 }
 .lab-mode-footnote { margin: 2px 9px 4px; font-size: 11px; color: var(--lab-text-3); }
+
+/* ------------------------------------------------------- model and quota */
+
+.lab-model { position: relative; flex: none; min-width: 0; }
+.lab-model-trigger {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 190px;
+  padding: 5px 9px;
+  color: var(--lab-text-2);
+  background: var(--lab-fill);
+  border: 0;
+  border-radius: var(--lab-r-chip);
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-model-trigger:hover { background: var(--lab-fill-strong); }
+.lab-model-trigger:disabled { opacity: .5; cursor: default; }
+.lab-model-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--lab-accent) 16%, transparent);
+}
+/* Truncates rather than widening the composer: a model name is vendor text and
+   some of them are long. */
+.lab-model-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Right-aligned and upward, matching where its trigger sits. */
+.lab-model-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: min(320px, 76vw);
+  max-height: min(420px, 52vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  background: var(--lab-surface);
+  border: var(--lab-hairline) solid var(--lab-line-strong);
+  border-radius: var(--lab-r-card);
+  box-shadow: 0 8px 28px -10px rgba(0, 0, 0, .28);
+  animation: lab-palette-in var(--lab-fast) var(--lab-ease);
+}
+.lab-model-group { display: grid; grid-template-columns: minmax(0, 1fr); }
+.lab-model-option {
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px 10px;
+  padding: 7px 9px;
+  color: var(--lab-text);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-model-option:hover { background: var(--lab-hover); }
+.lab-model-option-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lab-model-option-hint { grid-column: 1; font-size: 11px; line-height: 1.45; color: var(--lab-text-3); }
+.lab-model-check { color: var(--lab-accent); font-size: 12px; }
+
+/* Effort sits under its own model, indented, because it only applies there. */
+.lab-effort-row { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 9px 7px 18px; }
+.lab-effort {
+  appearance: none;
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  color: var(--lab-text-2);
+  background: var(--lab-fill);
+  border: 0;
+  border-radius: var(--lab-r-chip);
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease), color var(--lab-fast) var(--lab-ease);
+}
+.lab-effort:hover { background: var(--lab-fill-strong); }
+.lab-effort--on { color: var(--lab-on-accent); background: var(--lab-accent); }
+
+.lab-quota {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  font-size: 11px;
+  font-family: var(--lab-mono);
+  color: var(--lab-text-3);
+  white-space: nowrap;
+}
+.lab-quota--warn { color: var(--lab-warn); }
+.lab-quota--out { color: var(--lab-danger); }
+
+/* ------------------------------------------------- file and folder picker */
+
+.lab-attach { position: relative; flex: none; }
+/* Upward and left-aligned, under the plus button that opens it. */
+.lab-attach-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: min(360px, 80vw);
+  padding: 6px;
+  background: var(--lab-surface);
+  border: var(--lab-hairline) solid var(--lab-line-strong);
+  border-radius: var(--lab-r-card);
+  box-shadow: 0 8px 28px -10px rgba(0, 0, 0, .28);
+  animation: lab-palette-in var(--lab-fast) var(--lab-ease);
+}
+.lab-attach-search { margin-bottom: 4px; }
+.lab-attach-list {
+  max-height: min(280px, 40vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.lab-attach-row {
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 8px;
+  padding: 6px 8px;
+  color: var(--lab-text);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-attach-row:hover { background: var(--lab-hover); }
+.lab-attach-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The full relative path under the name, so two files with one base name are
+   distinguishable without hovering. */
+.lab-attach-path {
+  grid-column: 2;
+  font-size: 11px;
+  font-family: var(--lab-mono);
+  color: var(--lab-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ---------------------------------------------------------- session picker */
 
@@ -1006,8 +1249,9 @@ export const PANEL_STYLES = `
 
 @media (max-width: 480px) {
   .lab-toolbar { flex-wrap: wrap; align-items: flex-start; }
-  .lab-composer-row { grid-template-columns: minmax(0, 1fr); }
-  .lab-composer-row > .lab-btn { width: 100%; }
+  /* Each half of the composer's foot takes its own line, so the send button
+     stays reachable instead of being squeezed by the pickers beside it. */
+  .lab-composer-tools { flex: 1 1 100%; justify-content: space-between; }
   .lab-row-card--user { max-width: 100%; }
 }
 `

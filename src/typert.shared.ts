@@ -3,8 +3,10 @@ import type {
   BridgeCompletion,
   BridgeContextUsage,
   BridgeFileMatch,
-  BridgePermissionModeView,
+  BridgeModel,
   BridgeNativeSession,
+  BridgePermissionModeView,
+  BridgeRateLimit,
   BridgeSessionView,
   BridgeWorkspaceView,
   NativeProviderView,
@@ -41,6 +43,7 @@ const providerSchema = z.object({
   // `.readonly()` so the inferred type matches the view's readonly array and the
   // exact-shape assertion below stays a real check in both directions.
   permissionModes: z.array(permissionModeViewSchema).readonly(),
+  selectableModels: z.boolean(),
   compatibility: z.enum(['supported', 'unsupported', 'unknown']),
   health: z.enum(['not-installed', 'installed', 'unsupported', 'ready', 'auth-required', 'error']),
   message: z.string().nullable(),
@@ -72,6 +75,30 @@ const contextUsageSchema = z.object({
 
 const _contextUsageShapeIsExact: Exact<z.infer<typeof contextUsageSchema>, BridgeContextUsage> = true
 
+const modelSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  description: z.string().nullable(),
+  efforts: z.array(z.string()).readonly(),
+  defaultEffort: z.string().nullable(),
+}).strict()
+
+const _modelShapeIsExact: Exact<z.infer<typeof modelSchema>, BridgeModel> = true
+
+const modelsResultSchema = z.object({
+  models: z.array(modelSchema).readonly(),
+  unavailable: z.boolean(),
+}).strict()
+
+const rateLimitSchema = z.object({
+  window: z.string().nullable(),
+  utilization: z.number().nullable(),
+  status: z.enum(['allowed', 'warning', 'rejected']),
+  resetsAt: z.number().nullable(),
+}).strict()
+
+const _rateLimitShapeIsExact: Exact<z.infer<typeof rateLimitSchema>, BridgeRateLimit> = true
+
 const sessionStatusSchema = z.enum([
   'creating', 'idle', 'running', 'awaiting-approval', 'awaiting-answer',
   'cancelling', 'disconnected', 'auth-required', 'failed', 'orphaned',
@@ -92,6 +119,9 @@ const sessionSchema = z.object({
   persistenceVersion: z.number(),
   contextUsage: contextUsageSchema.nullable(),
   permissionMode: permissionModeSchema,
+  model: z.string().nullable(),
+  effort: z.string().nullable(),
+  rateLimits: z.array(rateLimitSchema).readonly(),
 }).strict()
 
 const _sessionShapeIsExact: Exact<z.infer<typeof sessionSchema>, BridgeSessionView> = true
@@ -169,9 +199,16 @@ const permissionModeRequestSchema = z.object({
   mode: permissionModeSchema,
 }).strict()
 
+const modelRequestSchema = z.object({
+  bridgeSessionId: z.string(),
+  model: z.string().nullable(),
+  effort: z.string().nullable(),
+}).strict()
+
 const fileMatchSchema = z.object({
   path: z.string(),
   name: z.string(),
+  directory: z.boolean(),
 }).strict()
 
 const _fileMatchShapeIsExact: Exact<z.infer<typeof fileMatchSchema>, BridgeFileMatch> = true
@@ -285,4 +322,6 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('directoryPublish', [parameter('request', directoryPublishRequestSchema)], workspaceSchema),
   invocation('sessionPermissionMode', [parameter('request', permissionModeRequestSchema)], sessionSchema),
   invocation('sessionFiles', [parameter('request', fileSearchRequestSchema)], fileSearchResultSchema),
+  invocation('sessionModels', [parameter('request', sessionIdRequestSchema)], modelsResultSchema),
+  invocation('sessionModel', [parameter('request', modelRequestSchema)], sessionSchema),
 ] as const

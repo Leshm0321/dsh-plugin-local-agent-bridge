@@ -1,5 +1,11 @@
 import { PassThrough } from 'node:stream'
 import type {
+  BridgeEventDraft,
+  ProviderInteractionRequest,
+  ProviderInteractionResolution,
+  ProviderTurnHooks,
+} from '../../src/core/provider.ts'
+import type {
   ElicitationRequest,
   Options,
   Query,
@@ -11,14 +17,8 @@ import type {
   SubprocessRuntime,
   SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
+import type { BridgeContextUsage, BridgeRateLimit } from '../../src/types.ts'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type {
-  BridgeEventDraft,
-  ProviderInteractionRequest,
-  ProviderInteractionResolution,
-  ProviderTurnHooks,
-} from '../../src/core/provider.ts'
-import type { BridgeContextUsage } from '../../src/types.ts'
 
 const sdk = vi.hoisted(() => ({ query: vi.fn() }))
 
@@ -73,11 +73,14 @@ class FakeClaudeRuntime {
 function createHooks(options: {
   readonly nativeSessionLocator?: string | null
   readonly resolveInteraction?: (request: ProviderInteractionRequest) => ProviderInteractionResolution
+  readonly model?: string
+  readonly effort?: string
 } = {}) {
   const events: BridgeEventDraft[] = []
   const interactions: ProviderInteractionRequest[] = []
   const locators: string[] = []
   const usages: BridgeContextUsage[] = []
+  const limits: BridgeRateLimit[] = []
   const controller = new AbortController()
   const hooks: ProviderTurnHooks = {
     bridgeSessionId: 'bridge-session-claude',
@@ -85,10 +88,13 @@ function createHooks(options: {
     cwd: process.cwd(),
     nativeSessionLocator: options.nativeSessionLocator ?? null,
     permissionMode: 'auto',
+    model: options.model ?? null,
+    effort: options.effort ?? null,
     signal: controller.signal,
     emit: async event => { events.push(event) },
     setNativeSessionLocator: async locator => { locators.push(locator) },
     reportContextUsage: async usage => { usages.push(usage) },
+    reportRateLimit: async limit => { limits.push(limit) },
     requestInteraction: async request => {
       interactions.push(request)
       return options.resolveInteraction?.(request)
@@ -97,7 +103,7 @@ function createHooks(options: {
           : { kind: 'question', answers: Object.fromEntries(request.questions.map(question => [question.id, ['Fast']])) })
     },
   }
-  return { controller, events, hooks, interactions, locators, usages }
+  return { controller, events, hooks, interactions, limits, locators, usages }
 }
 
 function message(value: unknown): SDKMessage {

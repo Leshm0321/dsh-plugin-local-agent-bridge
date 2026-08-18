@@ -9,8 +9,10 @@ import type {
   BridgeSessionReadResult,
   BridgeCompletionsResult,
   BridgeFileSearchResult,
+  BridgeModelsResult,
   BridgeNativeSessionsResult,
   BridgePermissionMode,
+  BridgeRateLimit,
   BridgeSessionStatus,
   BridgeSessionView,
   BridgeStatusNote,
@@ -83,6 +85,9 @@ function sessionView(record: PersistedBridgeSession): BridgeSessionView {
     // `auto` is the default both products ship with, and the mode a record
     // written before this field existed was effectively running under.
     permissionMode: record.permissionMode ?? 'auto',
+    model: record.model ?? null,
+    effort: record.effort ?? null,
+    rateLimits: record.rateLimits ?? [],
   }
 }
 
@@ -105,6 +110,30 @@ function normalizeInput(text: string): string {
     throw new BridgeError('INVALID_REQUEST')
   }
   return redactText(normalized, MAX_INPUT_LENGTH)
+}
+
+/**
+ * Fold a freshly reported allowance into the ones already held.
+ *
+ * Keyed by window so a product reporting several allowances shows several rows
+ * rather than one that flickers between them — a five-hour figure and a weekly
+ * figure are different facts, and overwriting one with the other would make the
+ * readout lie about whichever arrived first.
+ * @param held - allowances currently recorded.
+ * @param limit - what the product just reported.
+ * @returns the merged list, newest value per window.
+ */
+function mergeRateLimit(held: readonly BridgeRateLimit[], limit: BridgeRateLimit): BridgeRateLimit[] {
+  const clean: BridgeRateLimit = {
+    window: limit.window === null ? null : redactText(limit.window, 64),
+    utilization: limit.utilization === null ? null : Math.min(1, Math.max(0, limit.utilization)),
+    status: limit.status,
+    resetsAt: limit.resetsAt === null || !Number.isFinite(limit.resetsAt)
+      ? null
+      : Math.trunc(limit.resetsAt),
+  }
+  const kept = held.filter(entry => entry.window !== clean.window)
+  return [...kept, clean].sort((left, right) => (left.window ?? '').localeCompare(right.window ?? ''))
 }
 
 function isRecoverableNativeSession(record: PersistedBridgeSession): boolean {
@@ -176,6 +205,12 @@ export class BridgeSessionEngine {
       // expired locator ends up `orphaned`, the same as one that stopped
       // resolving across a Host restart.
       permissionMode: request.permissionMode ?? 'auto',
+      // Null, not a bridge-chosen default: whichever model the operator has
+      // configured the product to use is the right one until they say otherwise,
+      // and this bridge has no business overriding a CLI's own setting.
+      model: null,
+      effort: null,
+      rateLimits: [],
       nativeSessionLocator: request.resumeLocator === undefined
         ? null
         : redactText(request.resumeLocator, 512),
@@ -374,6 +409,60 @@ export class BridgeSessionEngine {
   }
 
   /**
+   * Models the session's product will accept, as the product reports them.
+   * @param bridgeSessionId - the session asking.
+   * @returns the product's models, or `unavailable` when it cannot be asked.
+   */
+  async listModels(bridgeSessionId: string): Promise<BridgeModelsResult> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    const provider = this.providers.get(runtime.record.providerId)
+    if (provider?.listModels === undefined) return { models: [], unavailable: true }
+    try {
+      return await provider.listModels(bridgeSessionId)
+    } catch {
+      return { models: [], unavailable: true }
+    }
+  }
+
+  /**
+   * Set the model and reasoning effort the session asks for, from its next turn.
+   *
+   * Validated against the product's own list when that list can be read, so a
+   * combination the product would silently ignore is refused here instead of
+   * appearing to take effect. When the product cannot be asked — Claude Code
+   * before any turn has run — the request is accepted as given: the panel only
+   * offers what the product reported, so this path is reachable only by calling
+   * the method directly, and second-guessing the caller with a stale list would
+   * be worse than letting the product answer for itself.
+   * @param bridgeSessionId - the session to change.
+   * @param model - the model id, or null for the product's default.
+   * @param effort - the reasoning effort, or null for the product's default.
+   * @returns the updated session view.
+   */
+  async setModel(
+    bridgeSessionId: string,
+    model: string | null,
+    effort: string | null,
+  ): Promise<BridgeSessionView> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    const available = await this.listModels(bridgeSessionId)
+    if (!available.unavailable && model !== null) {
+      const chosen = available.models.find(entry => entry.id === model)
+      if (chosen === undefined) throw new BridgeError('INVALID_REQUEST')
+      if (effort !== null && !chosen.efforts.includes(effort)) throw new BridgeError('INVALID_REQUEST')
+    }
+    // An effort without a model has nothing to be validated against and nothing
+    // to apply to, since effort levels are per model in both products.
+    if (model === null && effort !== null) throw new BridgeError('INVALID_REQUEST')
+    runtime.record.model = model === null ? null : redactText(model, 128)
+    runtime.record.effort = effort === null ? null : redactText(effort, 64)
+    await this.touch(runtime)
+    return sessionView(runtime.record)
+  }
+
+  /**
    * Files under the session's working directory matching a query.
    *
    * The root comes from the Host's own workspace resolution, never from the
@@ -501,6 +590,8 @@ export class BridgeSessionEngine {
           cwd: (await this.requireWorkspace(runtime.record.workspaceId)).cwd,
           nativeSessionLocator: runtime.record.nativeSessionLocator,
           permissionMode: runtime.record.permissionMode ?? 'auto',
+          model: runtime.record.model ?? null,
+          effort: runtime.record.effort ?? null,
           signal: controller.signal,
           emit: event => this.append(runtime, turn.bridgeTurnId, event),
           reportContextUsage: async (usage) => {
@@ -509,6 +600,10 @@ export class BridgeSessionEngine {
               maxTokens: usage.maxTokens === null ? null : Math.max(0, Math.trunc(usage.maxTokens)),
               model: usage.model === null ? null : redactText(usage.model, 128),
             }
+            await this.touch(runtime)
+          },
+          reportRateLimit: async (limit) => {
+            runtime.record.rateLimits = mergeRateLimit(runtime.record.rateLimits ?? [], limit)
             await this.touch(runtime)
           },
           setNativeSessionLocator: async (locator) => {

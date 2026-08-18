@@ -66,6 +66,7 @@ export async function discoverProvider(
       version: null,
       supportedRange: VERSION_RANGES[id],
       permissionModes: permissionModesFor(id),
+      selectableModels: SELECTABLE_MODELS[id],
       compatibility: 'unknown',
       health: 'not-installed',
       // Phrased by the Client: the browser knows which language to say
@@ -99,6 +100,7 @@ export async function discoverProvider(
       version: null,
       supportedRange: VERSION_RANGES[id],
       permissionModes: permissionModesFor(id),
+      selectableModels: SELECTABLE_MODELS[id],
       compatibility: 'unknown',
       health: 'error',
       // The product's own stderr is the only useful explanation here and the
@@ -116,6 +118,7 @@ export async function discoverProvider(
     version,
     supportedRange: VERSION_RANGES[id],
     permissionModes: permissionModesFor(id),
+    selectableModels: SELECTABLE_MODELS[id],
     compatibility,
     health: 'installed',
     // A rejected or unverifiable version is fully described by `compatibility`,
@@ -157,6 +160,20 @@ const PERMISSION_MODES: Record<ProviderId, readonly BridgePermissionModeView[]> 
 }
 
 /**
+ * Whether a product accepts a model choice per turn.
+ *
+ * Both real products do, through different calls; the verification fixture has no
+ * model to choose. Stated statically because it is a property of the product
+ * rather than of a session — which is what lets the panel tell "cannot be asked
+ * yet" apart from "has no such control".
+ */
+const SELECTABLE_MODELS: Record<ProviderId, boolean> = {
+  claude: true,
+  codex: true,
+  fake: false,
+}
+
+/**
  * Modes a product supports, for the browser's picker.
  * @param id - the product.
  * @returns the modes in display order.
@@ -189,6 +206,7 @@ export function publicProvider(
     version: provider.version,
     supportedRange: provider.supportedRange,
     permissionModes: permissionModesFor(provider.id),
+    selectableModels: SELECTABLE_MODELS[provider.id],
     compatibility: provider.compatibility,
     health: ready
       ? 'ready'

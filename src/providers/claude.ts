@@ -4,6 +4,8 @@ import {
   type CanUseTool,
   type ElicitationRequest,
   type ElicitationResult,
+  type EffortLevel,
+  type ModelInfo,
   type Options,
   type PermissionMode,
   type PermissionResult,
@@ -29,8 +31,10 @@ import { redactText, redactValue } from '../core/redaction.ts'
 import type {
   BridgeCompletion,
   BridgeCompletionsResult,
-  BridgePermissionMode,
+  BridgeModel,
+  BridgeModelsResult,
   BridgeNativeSessionsResult,
+  BridgePermissionMode,
   BridgeQuestion,
 } from '../types.ts'
 import { toolDetail } from '../core/tool-detail.ts'
@@ -366,6 +370,21 @@ async function projectMessage(
     }
     return
   }
+  if (message.type === 'rate_limit_event') {
+    const info = message.rate_limit_info
+    await hooks.reportRateLimit({
+      window: info.rateLimitType ?? null,
+      // The SDK reports a fraction already; a build that omits it has told us
+      // only a status, which is still worth showing.
+      utilization: typeof info.utilization === 'number' ? info.utilization : null,
+      status: info.status === 'allowed'
+        ? 'allowed'
+        : info.status === 'allowed_warning' ? 'warning' : 'rejected',
+      // Seconds in the vendor payload; milliseconds everywhere in this bridge.
+      resetsAt: typeof info.resetsAt === 'number' ? info.resetsAt * 1_000 : null,
+    })
+    return
+  }
   if (message.type === 'auth_status' && message.error !== undefined) {
     throw new BridgeError('HOST_AUTH_REQUIRED')
   }
@@ -432,6 +451,30 @@ async function readOrNull<T>(read: () => Promise<T[]>): Promise<T[] | null> {
   }
 }
 
+/**
+ * Reduce the SDK's model description to what the browser needs.
+ *
+ * `supportsEffort` gates the effort list rather than the list's own presence: a
+ * build that ships `supportedEffortLevels` for a model that does not take one
+ * would otherwise have the panel offer a setting the product ignores. The
+ * capability flags for fast, auto and adaptive-thinking modes are dropped — they
+ * are TUI affordances with no equivalent in a per-turn bridge, and carrying them
+ * would imply the panel can honour them.
+ * @param model - one entry from `supportedModels()`.
+ * @returns the browser-facing model.
+ */
+function projectModel(model: ModelInfo): BridgeModel {
+  return {
+    id: redactText(model.value, 128),
+    displayName: redactText(model.displayName, 128),
+    description: model.description.length === 0 ? null : redactText(model.description, 512),
+    efforts: model.supportsEffort === true ? model.supportedEffortLevels ?? [] : [],
+    // The SDK states no per-model default; the CLI's own configuration decides,
+    // and claiming one here would be an invention.
+    defaultEffort: null,
+  }
+}
+
 export class ClaudeProviderAdapter implements NativeProviderAdapter {
   readonly id = 'claude' as const
   readonly supportsSteer = false
@@ -447,6 +490,20 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
    * between turns.
    */
   private readonly completions = new Map<string, BridgeCompletionsResult>()
+  /**
+   * Models the product reported, held per adapter rather than per session.
+   *
+   * `supportedModels()` answers what the signed-in account may use, which does
+   * not vary by working directory — so once any session's turn has read it, every
+   * session can be offered the list. Per-session caching would have left a
+   * freshly created session unable to choose a model until it had run a turn,
+   * for no gain in accuracy.
+   *
+   * Null until some turn has managed to read it, which is the state
+   * `unavailable` reports: Claude Code exposes this only on a live query, so
+   * before the first turn there is genuinely nothing to say.
+   */
+  private models: readonly BridgeModel[] | null = null
 
   constructor(
     private readonly subprocess: SubprocessRuntime,
@@ -468,6 +525,10 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
       env: scrubbedParentEnv(),
       includePartialMessages: true,
       permissionMode: CLAUDE_PERMISSION_MODES[hooks.permissionMode],
+      // Omitted rather than passed as undefined when the operator has chosen
+      // nothing, so the CLI's own configured default stays in force.
+      ...hooks.model === null ? {} : { model: hooks.model },
+      ...hooks.effort === null ? {} : { effort: hooks.effort as EffortLevel },
       canUseTool: permissionCallback(hooks),
       onElicitation: request => onElicitation(hooks, request),
       ...hooks.nativeSessionLocator === null ? {} : { resume: hooks.nativeSessionLocator },
@@ -541,6 +602,12 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
     return this.completions.get(bridgeSessionId) ?? { completions: [], pending: true }
   }
 
+  async listModels(): Promise<BridgeModelsResult> {
+    return this.models === null
+      ? { models: [], unavailable: true }
+      : { models: this.models, unavailable: false }
+  }
+
   /**
    * Read the session's commands and MCP servers off a live query.
    *
@@ -555,10 +622,12 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
     // Each read is wrapped rather than chained with .catch(), because an SDK
     // build that predates one of these control requests has no such method: the
     // call then throws synchronously, before there is a promise to catch on.
-    const [commands, servers] = await Promise.all([
+    const [commands, servers, models] = await Promise.all([
       readOrNull(() => query.supportedCommands()),
       readOrNull(() => query.mcpServerStatus()),
+      readOrNull(() => query.supportedModels()),
     ])
+    if (models !== null) this.models = models.map(projectModel)
     // Neither request landed, so nothing was learned. Leaving the session pending
     // is the honest answer: recording an empty list would tell the operator this
     // product has no commands, when in fact it was never able to say.

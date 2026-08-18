@@ -27,11 +27,13 @@ import { redactText, redactValue } from '../core/redaction.ts'
 import type {
   BridgeCompletion,
   BridgeCompletionsResult,
-  BridgePermissionMode,
+  BridgeModel,
+  BridgeModelsResult,
   BridgeNativeSession,
   BridgeNativeSessionsResult,
-  BridgeToolDetail,
+  BridgePermissionMode,
   BridgeQuestion,
+  BridgeToolDetail,
 } from '../types.ts'
 
 type JsonObject = Record<string, unknown>
@@ -161,6 +163,12 @@ const CODEX_EXECUTABLE_ENV = 'DSH_LOCAL_AGENT_CODEX_EXECUTABLE'
 
 /** How many native threads to offer for resumption; see the Claude adapter's note. */
 const NATIVE_SESSION_LIMIT = 30
+
+/**
+ * Models requested at most. The product ships a handful; a ceiling keeps a
+ * misbehaving reply from filling a picker.
+ */
+const MODEL_LIMIT = 32
 
 /**
  * Bridge permission mode to Codex's approval policy.
@@ -404,6 +412,53 @@ function codexThreads(reply: unknown): BridgeNativeSession[] {
 }
 
 /**
+ * Read a `model/list` reply into selectable models.
+ *
+ * Codex reports far more per model than a picker needs — upgrade prompts, input
+ * modalities, personality support, a marketing blurb under `availabilityNux`.
+ * Only the identity, the one-line description and the reasoning efforts cross
+ * over; the rest is either product-tour copy or a capability this bridge has no
+ * way to honour, and offering it would imply otherwise.
+ *
+ * Hidden models are dropped. The App Server flags them as not for presentation,
+ * and the operator can still reach one by configuring Codex directly.
+ *
+ * Parsing is permissive for the same reason as the skills reader: this is a
+ * convenience, so an unfamiliar reply shape yields fewer models rather than an
+ * error.
+ * @param reply - the raw JSON-RPC result, or null when the call failed.
+ * @returns models in the order the product listed them.
+ */
+function codexModels(reply: unknown): BridgeModel[] {
+  const models: BridgeModel[] = []
+  for (const entry of readArray(readProperty(reply, 'data'))) {
+    const id = readString(readProperty(entry, 'model')) ?? readString(readProperty(entry, 'id'))
+    if (id === null) continue
+    if (readProperty(entry, 'hidden') === true) continue
+    const displayName = readString(readProperty(entry, 'displayName'))
+    const description = readString(readProperty(entry, 'description'))
+    const efforts: string[] = []
+    for (const effort of readArray(readProperty(entry, 'supportedReasoningEfforts'))) {
+      const level = readString(readProperty(effort, 'reasoningEffort'))
+      if (level !== null) efforts.push(redactText(level, 32))
+    }
+    models.push({
+      id: redactText(id, 128),
+      displayName: redactText(displayName ?? id, 128),
+      description: description === null ? null : redactText(description, 512),
+      efforts,
+      defaultEffort: (() => {
+        const fallback = readString(readProperty(entry, 'defaultReasoningEffort'))
+        // Only reported when it is one the product also says it accepts, so the
+        // panel cannot preselect an effort that would then be refused.
+        return fallback !== null && efforts.includes(fallback) ? fallback : null
+      })(),
+    })
+  }
+  return models
+}
+
+/**
  * Read a `skills/list` reply into completions.
  *
  * Codex groups skills by working directory and reports each one with an
@@ -527,6 +582,11 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
         // whatever the operator configured on the Host rather than being handed
         // an approximation.
         ...approvalPolicy === undefined ? {} : { approvalPolicy },
+        // Both are per-turn overrides that also stick for subsequent turns, and
+        // both are omitted when the operator has chosen nothing, so the model and
+        // effort configured in Codex itself stay in force.
+        ...hooks.model === null ? {} : { model: hooks.model },
+        ...hooks.effort === null ? {} : { effort: hooks.effort },
       }, hooks.signal), 'turn/start response')
       const turn = object(response.turn, 'turn/start turn') as unknown as CodexTurn
       const turnId = string(turn.id, 'turn/start turn id')
@@ -588,6 +648,29 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
       completions: [...codexSkills(skills), ...codexMcpServers(servers)],
       pending: false,
     }
+  }
+
+  /**
+   * Models the App Server offers, readable at any time.
+   *
+   * Unlike Claude Code, this needs no live turn: the App Server answers
+   * `model/list` from the account's configuration, so a session created a moment
+   * ago can already choose. The session id is unused for that reason.
+   * @returns the product's models, or `unavailable` when it could not be asked.
+   */
+  async listModels(): Promise<BridgeModelsResult> {
+    if (this.disposed) return { models: [], unavailable: true }
+    let connection: CodexConnection
+    try {
+      connection = await this.ensureConnection()
+    } catch {
+      return { models: [], unavailable: true }
+    }
+    const reply = await connection.transport
+      .request('model/list', { limit: MODEL_LIMIT, includeHidden: false })
+      .catch(() => null)
+    if (reply === null) return { models: [], unavailable: true }
+    return { models: codexModels(reply), unavailable: false }
   }
 
   async steer(bridgeSessionId: string, text: string): Promise<void> {

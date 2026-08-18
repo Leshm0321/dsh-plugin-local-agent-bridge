@@ -77,11 +77,26 @@ describe('file search', () => {
     expect(matches.map(match => match.path)).not.toContain('elsewhere/secrets.env')
   })
 
-  it('lists the shallowest files for an empty query', async () => {
+  it('lists the shallowest entries for an empty query', async () => {
     const { matches } = await searchFiles(root, '')
     expect(matches.length).toBeGreaterThan(0)
-    // Shortest paths first, so an empty `@` offers the top of the tree.
-    expect(matches[0]?.path).toBe('README.md')
+    // Shortest paths first, so an empty query offers the top of the tree — which
+    // now includes its directories, since a folder is a thing the composer can
+    // reference and the file button can choose.
+    expect(matches.map(match => match.path).slice(0, 3)).toContain('README.md')
+    expect(matches.map(match => match.path)).toContain('src')
+  })
+
+  it('marks a directory as one, and still keeps skipped trees out', async () => {
+    const { matches } = await searchFiles(root, '')
+    const paths = new Map(matches.map(match => [match.path, match.directory]))
+    expect(paths.get('src')).toBe(true)
+    expect(paths.get('README.md')).toBe(false)
+    // Walked into for its files, but never offered as a reference itself.
+    expect(paths.has('node_modules')).toBe(false)
+    expect(paths.has('.git')).toBe(false)
+    // Nested directories are reachable, so `@src/domain` is expressible.
+    expect(paths.get('src/domain')).toBe(true)
   })
 
   it('returns nothing for a directory it cannot read, rather than failing', async () => {

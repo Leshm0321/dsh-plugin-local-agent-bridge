@@ -1,18 +1,18 @@
 import { PassThrough } from 'node:stream'
 import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol'
 import type {
-  SubprocessHandle,
-  SubprocessRuntime,
-  SubprocessSpawnSpec,
-} from '@deepseek-ai/dsh-subprocess'
-import { describe, expect, it } from 'vitest'
-import type {
   BridgeEventDraft,
   ProviderInteractionRequest,
   ProviderInteractionResolution,
   ProviderTurnHooks,
 } from '../../src/core/provider.ts'
-import type { BridgeContextUsage } from '../../src/types.ts'
+import type {
+  SubprocessHandle,
+  SubprocessRuntime,
+  SubprocessSpawnSpec,
+} from '@deepseek-ai/dsh-subprocess'
+import type { BridgeContextUsage, BridgeRateLimit } from '../../src/types.ts'
+import { describe, expect, it } from 'vitest'
 import { CodexProviderAdapter } from '../../src/providers/codex.ts'
 
 type JsonObject = Record<string, unknown>
@@ -226,10 +226,13 @@ function turn(id: string, status: 'completed' | 'interrupted' | 'failed' | 'inPr
 function createHooks(options: {
   readonly nativeSessionLocator?: string | null
   readonly resolveInteraction?: (request: ProviderInteractionRequest) => ProviderInteractionResolution
+  readonly model?: string
+  readonly effort?: string
 } = {}) {
   const events: BridgeEventDraft[] = []
   const locators: string[] = []
   const usages: BridgeContextUsage[] = []
+  const limits: BridgeRateLimit[] = []
   const interactions: ProviderInteractionRequest[] = []
   const controller = new AbortController()
   const hooks: ProviderTurnHooks = {
@@ -238,10 +241,13 @@ function createHooks(options: {
     cwd: process.cwd(),
     nativeSessionLocator: options.nativeSessionLocator ?? null,
     permissionMode: 'auto',
+    model: options.model ?? null,
+    effort: options.effort ?? null,
     signal: controller.signal,
     emit: async event => { events.push(event) },
     setNativeSessionLocator: async locator => { locators.push(locator) },
     reportContextUsage: async usage => { usages.push(usage) },
+    reportRateLimit: async limit => { limits.push(limit) },
     requestInteraction: async request => {
       interactions.push(request)
       return options.resolveInteraction?.(request)
@@ -250,7 +256,7 @@ function createHooks(options: {
           : { kind: 'question', answers: { mode: ['Fast'] } })
     },
   }
-  return { controller, events, hooks, interactions, locators, usages }
+  return { controller, events, hooks, interactions, limits, locators, usages }
 }
 
 async function nextTask(): Promise<void> {

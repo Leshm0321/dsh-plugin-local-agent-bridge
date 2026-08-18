@@ -35,6 +35,16 @@ export interface FileMatch {
   readonly path: string
   /** Base name, for ranking and display. */
   readonly name: string
+  /**
+   * True for a directory.
+   *
+   * Directories are listed because both products accept one as context — `@src/`
+   * is a normal thing to write — and because the composer's file button offers
+   * "file or folder". The panel appends the trailing slash rather than the Host
+   * baking it into the path, so the same match can be displayed and inserted
+   * differently.
+   */
+  readonly directory: boolean
 }
 
 export interface FileSearchResult {
@@ -86,7 +96,7 @@ function score(match: FileMatch, needle: string): number | null {
 }
 
 /**
- * Find files under a working directory whose name or path matches a query.
+ * Find files and directories under a working directory matching a query.
  *
  * @param root - the session's working directory, already resolved on the Host.
  * @param query - what the operator typed after `@`; empty lists the shallowest files.
@@ -128,26 +138,30 @@ export async function searchFiles(root: string, query: string): Promise<FileSear
       }
       // Dotfiles other than the skipped directories stay visible — `.github` and
       // `.env.example` are things people reference.
-      if (entry.isDirectory()) {
+      const directory = entry.isDirectory()
+      if (directory) {
         if (SKIPPED_DIRECTORIES.has(entry.name)) continue
-        if (current.depth + 1 > MAX_DEPTH) continue
-        queue.push({ dir: join(current.dir, entry.name), depth: current.depth + 1 })
+        if (current.depth + 1 <= MAX_DEPTH) {
+          queue.push({ dir: join(current.dir, entry.name), depth: current.depth + 1 })
+        }
+        // Falls through rather than continuing: a directory is both somewhere to
+        // walk into and something the operator can reference.
+      } else if (!entry.isFile() && !entry.isSymbolicLink()) {
         continue
       }
-      if (!entry.isFile() && !entry.isSymbolicLink()) continue
       const absolute = join(current.dir, entry.name)
       const relativePath = relative(realRoot, absolute)
       // Confinement: a `..` prefix means the entry escaped the root, which a
       // symlink inside the tree can legitimately do.
       if (relativePath.length === 0 || relativePath.startsWith('..')) continue
-      const match: FileMatch = { path: relativePath.split(sep).join('/'), name: entry.name }
+      const match: FileMatch = { path: relativePath.split(sep).join('/'), name: entry.name, directory }
       const rank = score(match, needle)
       if (rank === null) continue
       found.push({ match, rank })
     }
   }
 
-  // A symlinked file can still point outside the root even when its path inside
+  // A symlinked entry can still point outside the root even when its path inside
   // the tree looks fine, so the survivors are resolved before being returned.
   const ranked = found.sort((left, right) => left.rank - right.rank).slice(0, MATCH_LIMIT * 2)
   const confined: FileMatch[] = []

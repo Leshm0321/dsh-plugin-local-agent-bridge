@@ -10,10 +10,14 @@ import {
   IconArchiveOutline20,
   IconCloseOutline16,
   IconCodeOutline16,
+  IconDataOutline16,
   IconFolderClose16,
+  IconFolderOpenOutline16,
   IconPanelLeftOutline16,
+  IconPlusOutline16,
   IconRefreshOutline16,
   IconSendOutline16,
+  IconSparkle16,
   IconStopFill16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
@@ -33,11 +37,14 @@ import type {
   BridgeContextUsage,
   BridgeErrorCode,
   BridgeEvent,
+  BridgeFileMatch,
   BridgeFileSearchResult,
+  BridgeModelsResult,
   BridgeNativeSessionsResult,
   BridgePermissionMode,
   BridgePermissionModeView,
   BridgeQuestion,
+  BridgeRateLimit,
   BridgeSessionStatus,
   BridgeSessionView,
   BridgeStatusNote,
@@ -134,6 +141,14 @@ interface LocalAgentPanelFace {
   readonly remote: LocalAgentRemote
   readonly t: PanelTranslate
   readonly workspaces: WorkspaceRegistrar
+  /**
+   * The panel's active language as a BCP 47 tag, for speech recognition.
+   *
+   * A function rather than a value so the answer is read when dictation starts:
+   * the operator can change language while the panel is mounted, and a captured
+   * string would keep transcribing in the language it was built with.
+   */
+  readonly speechLocale: () => string
 }
 
 type LocalAgentPanelProps = PropsRuntime<'sidebar.footer.action'> & InjectFace<LocalAgentPanelFace>
@@ -642,6 +657,401 @@ function formatTokens(tokens: number): string {
 }
 
 /**
+ * A microphone, drawn here because the primitive set has none.
+ *
+ * A dictation button is unrecognisable without one, and the nearest icons in the
+ * library mean other things — offering "play" or "enhance" for speech would be
+ * worse than a shape drawn to match their weight.
+ */
+function MicIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      className="lab-mic-glyph"
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <rect x="6" y="1.75" width="4" height="7.5" rx="2" />
+      <path d="M3.75 7.25v.75a4.25 4.25 0 0 0 8.5 0v-.75" />
+      <path d="M8 12.25v2" />
+    </svg>
+  )
+}
+
+/**
+ * The Web Speech API, as much of it as dictation needs.
+ *
+ * Declared here rather than pulled from the DOM lib: the constructor is still
+ * vendor-prefixed in the browsers that have it, and the ambient typings vary by
+ * TypeScript release. A local shape that names only what is called keeps this
+ * compiling wherever it is built, and documents exactly how much of the API this
+ * panel depends on.
+ */
+interface SpeechRecognitionAlternativeLike {
+  readonly transcript: string
+}
+
+interface SpeechRecognitionResultLike {
+  readonly length: number
+  [index: number]: SpeechRecognitionAlternativeLike | undefined
+}
+
+interface SpeechRecognitionEventLike {
+  readonly resultIndex: number
+  readonly results: {
+    readonly length: number
+    [index: number]: SpeechRecognitionResultLike | undefined
+  }
+}
+
+interface SpeechRecognitionLike {
+  lang: string
+  interimResults: boolean
+  continuous: boolean
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null
+  onerror: (() => void) | null
+  onend: (() => void) | null
+  start: () => void
+  stop: () => void
+  abort: () => void
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike
+
+/**
+ * Dictation, when the browser can do it.
+ *
+ * Feature-detected rather than sniffed, and absent rather than disabled when
+ * missing: a permanently dead button teaches nothing.
+ *
+ * Worth being plain about, because this bridge otherwise keeps everything on the
+ * Host: a browser's speech recognition is not necessarily local — Chromium sends
+ * the audio to a vendor service to transcribe it. That is the browser's doing
+ * rather than this plugin's, and it is the one thing in the panel that leaves the
+ * machine, so the button says so on hover instead of presenting itself as free.
+ * @param resolveLocale - reads the BCP 47 tag matching the panel's language, so
+ * recognition expects what is actually being spoken. Called at start rather than
+ * captured, so changing language mid-session takes effect.
+ * @param onText - receives each final transcript.
+ * @returns whether the browser offers dictation, whether it is running, and a toggle.
+ */
+function useDictation(resolveLocale: () => string, onText: (text: string) => void): {
+  readonly supported: boolean
+  readonly listening: boolean
+  toggle: () => void
+} {
+  const [listening, setListening] = useState(false)
+  const active = useRef<SpeechRecognitionLike | null>(null)
+  // Read once: the constructor's presence cannot change during a page's life.
+  const [factory] = useState<SpeechRecognitionConstructor | undefined>(() => {
+    if (typeof window === 'undefined') return undefined
+    const scope = window as unknown as {
+      SpeechRecognition?: SpeechRecognitionConstructor
+      webkitSpeechRecognition?: SpeechRecognitionConstructor
+    }
+    return scope.SpeechRecognition ?? scope.webkitSpeechRecognition
+  })
+  // Transcripts arrive long after the handler was installed, so the sink is held
+  // in a ref rather than captured — otherwise the text would be appended to
+  // whatever the draft happened to be when dictation started.
+  const sink = useRef(onText)
+  sink.current = onText
+
+  useEffect(() => () => {
+    active.current?.abort()
+    active.current = null
+  }, [])
+
+  const toggle = (): void => {
+    if (factory === undefined) return
+    if (active.current !== null) {
+      active.current.stop()
+      return
+    }
+    const recognition = new factory()
+    recognition.lang = resolveLocale()
+    // Interim results are deliberately off: a composer is editable text, and
+    // rewriting it on every partial guess fights the operator's own typing.
+    recognition.interimResults = false
+    recognition.continuous = false
+    recognition.onresult = (event) => {
+      let text = ''
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const alternative = event.results[index]?.[0]
+        if (alternative !== undefined) text += alternative.transcript
+      }
+      if (text.trim().length > 0) sink.current(text.trim())
+    }
+    const finish = (): void => {
+      active.current = null
+      setListening(false)
+    }
+    recognition.onerror = finish
+    recognition.onend = finish
+    active.current = recognition
+    setListening(true)
+    try {
+      recognition.start()
+    } catch {
+      // Already running, or the microphone was refused. Either way no session
+      // opened, so the button must not stay lit.
+      finish()
+    }
+  }
+
+  return { supported: factory !== undefined, listening, toggle }
+}
+
+/**
+ * The model picker, and the reasoning effort that belongs to it.
+ *
+ * Offers exactly what the session's product reported and nothing else, so there
+ * is no bridge-side list of model names to fall out of date. Effort nests under
+ * the model because that is how both products scope it — a level one model
+ * accepts is not necessarily one another does.
+ *
+ * "Default" is a real choice rather than a placeholder: leaving it selected keeps
+ * whatever the operator configured in the CLI itself.
+ *
+ * A product that supports selection but cannot yet be asked gets an inert chip
+ * saying so, rather than nothing. Claude Code enumerates its models only off a
+ * live query, and an empty corner of the composer would read as "this product has
+ * no models to choose" — which is a different and wrong statement.
+ */
+function ModelPicker({
+  result,
+  supported,
+  model,
+  effort,
+  disabled,
+  t,
+  onSelect,
+}: {
+  result: BridgeModelsResult
+  supported: boolean
+  model: string | null
+  effort: string | null
+  disabled: boolean
+  t: PanelTranslate
+  onSelect: (model: string | null, effort: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  if (!supported) return null
+  if (result.unavailable || result.models.length === 0) {
+    return (
+      <span className="lab-model">
+        <button type="button" className="lab-model-trigger" disabled title={t('model.unavailable')}>
+          <IconSparkle16 size={14} />
+          <span className="lab-model-name">{t('model.default')}</span>
+        </button>
+      </span>
+    )
+  }
+  const active = result.models.find(entry => entry.id === model)
+  const label = active === undefined
+    ? t('model.default')
+    : effort === null ? active.displayName : `${active.displayName} · ${effortLabel(t, effort)}`
+  return (
+    <span className="lab-model">
+      <button
+        type="button"
+        className="lab-model-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        title={t('model.label')}
+        onClick={() => { setOpen(current => !current) }}
+      >
+        <IconSparkle16 size={14} />
+        <span className="lab-model-name">{label}</span>
+      </button>
+      {open && (
+        <div className="lab-model-menu" role="menu" aria-label={t('model.label')}>
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={model === null}
+            className="lab-model-option"
+            onClick={() => { setOpen(false); onSelect(null, null) }}
+          >
+            <span className="lab-model-option-name">{t('model.default')}</span>
+            {model === null && <span className="lab-model-check">✓</span>}
+            <span className="lab-model-option-hint">{t('model.defaultHint')}</span>
+          </button>
+          {result.models.map(entry => (
+            <div key={entry.id} className="lab-model-group">
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={entry.id === model}
+                className="lab-model-option"
+                onClick={() => {
+                  setOpen(false)
+                  // Seeded with the product's own default effort rather than
+                  // null: Codex reports one per model, and dropping it would run
+                  // at whatever the product silently falls back to.
+                  onSelect(entry.id, entry.defaultEffort)
+                }}
+              >
+                <span className="lab-model-option-name">{entry.displayName}</span>
+                {entry.id === model && <span className="lab-model-check">✓</span>}
+                {entry.description !== null && (
+                  <span className="lab-model-option-hint">{entry.description}</span>
+                )}
+              </button>
+              {entry.id === model && entry.efforts.length > 0 && (
+                <div className="lab-effort-row" role="group" aria-label={t('effort.label')}>
+                  {entry.efforts.map(level => (
+                    <button
+                      key={level}
+                      type="button"
+                      aria-pressed={level === effort}
+                      className={level === effort ? 'lab-effort lab-effort--on' : 'lab-effort'}
+                      onClick={() => { onSelect(entry.id, level) }}
+                    >
+                      {effortLabel(t, level)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          <p className="lab-mode-footnote">{t('mode.nextTurn')}</p>
+        </div>
+      )}
+    </span>
+  )
+}
+
+/**
+ * Name a reasoning effort, falling back to the product's own word.
+ *
+ * The five levels both products share are translated; anything else — Codex ships
+ * an `ultra` the Claude SDK does not — is shown verbatim rather than dropped or
+ * mislabelled, because the product accepting it is what makes it real.
+ * @param t - the panel's translator.
+ * @param level - the effort as the product named it.
+ * @returns a display label.
+ */
+function effortLabel(t: PanelTranslate, level: string): string {
+  return KNOWN_EFFORTS.includes(level) ? t(`effort.${level}` as LocalAgentBridgeKey) : level
+}
+
+/** Effort levels the panel has words for; others are shown as the product spells them. */
+const KNOWN_EFFORTS: readonly string[] = ['low', 'medium', 'high', 'xhigh', 'max']
+
+/**
+ * The account's usage allowances, when the product volunteers them.
+ *
+ * Absent for most operators, and deliberately so: only a Claude subscription
+ * reports this, and Codex refuses the equivalent call without a ChatGPT sign-in.
+ * Showing nothing is the honest rendering of "the product did not say" — a zero
+ * or a dash would read as a figure.
+ *
+ * Only the allowance closest to exhaustion is shown, because that is the one that
+ * will stop the operator; the rest are in the tooltip.
+ */
+function RateLimits({ limits, t }: { limits: readonly BridgeRateLimit[]; t: PanelTranslate }) {
+  const measured = limits.filter(limit => limit.utilization !== null)
+  const tightest = measured.length === 0
+    ? limits.find(limit => limit.status !== 'allowed')
+    : measured.reduce((worst, limit) => (limit.utilization ?? 0) > (worst.utilization ?? 0) ? limit : worst)
+  if (tightest === undefined) return null
+  const percent = tightest.utilization === null ? null : Math.round(tightest.utilization * 100)
+  const detail = limits
+    .map(limit => [
+      limit.window ?? t('quota.title'),
+      limit.utilization === null ? t(`quota.${limit.status}`) : `${Math.round(limit.utilization * 100)}%`,
+      limit.resetsAt === null ? null : t('quota.resets', { when: formatWhen(limit.resetsAt) }),
+    ].filter(part => part !== null).join(' '))
+    .join('\n')
+  return (
+    <span
+      className={`lab-quota${tightest.status === 'rejected' ? ' lab-quota--out' : tightest.status === 'warning' ? ' lab-quota--warn' : ''}`}
+      title={`${t('quota.title')}\n${detail}`}
+    >
+      <IconDataOutline16 size={14} />
+      {percent === null ? t(`quota.${tightest.status}`) : t('quota.used', { percent })}
+    </span>
+  )
+}
+
+/**
+ * Choose a file or folder from the session's working directory.
+ *
+ * The same Host search that backs `@`, reached without knowing the syntax — which
+ * is what the composer's plus button is for. Insertion produces the same `@path`
+ * either way, so there is one thing for the operator to learn and one thing for
+ * the products to read.
+ *
+ * Scoped to the working directory, not the Host filesystem. The plus button in a
+ * desktop app opens a file dialog anywhere; here that would hand the browser a
+ * way to enumerate the machine, and a path outside the directory is not something
+ * the agent could read anyway.
+ */
+function AttachPicker({
+  result,
+  query,
+  busy,
+  t,
+  onQuery,
+  onPick,
+  onClose,
+}: {
+  result: BridgeFileSearchResult
+  query: string
+  busy: boolean
+  t: PanelTranslate
+  onQuery: (next: string) => void
+  onPick: (match: BridgeFileMatch) => void
+  onClose: () => void
+}) {
+  const input = useRef<HTMLInputElement>(null)
+  useEffect(() => { input.current?.focus() }, [])
+  return (
+    <div className="lab-attach-menu" role="dialog" aria-label={t('attach.title')}>
+      <input
+        ref={input}
+        type="search"
+        className="lab-input lab-attach-search"
+        value={query}
+        placeholder={t('attach.search')}
+        onChange={event => { onQuery(event.target.value) }}
+        onKeyDown={event => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            onClose()
+          }
+        }}
+      />
+      <div className="lab-attach-list">
+        {busy && result.matches.length === 0 && <p className="lab-browse-note">{t('browse.loading')}</p>}
+        {!busy && result.matches.length === 0 && <p className="lab-browse-note">{t('attach.empty')}</p>}
+        {result.matches.map(match => (
+          <button
+            key={match.path}
+            type="button"
+            className="lab-attach-row"
+            title={match.path}
+            onClick={() => { onPick(match) }}
+          >
+            {match.directory ? <IconFolderClose16 /> : <IconCodeOutline16 />}
+            <span className="lab-attach-name">{match.name}{match.directory ? '/' : ''}</span>
+            <span className="lab-attach-path">{match.path}</span>
+          </button>
+        ))}
+        {result.partial && <p className="lab-browse-note">{t('files.partial')}</p>}
+      </div>
+    </div>
+  )
+}
+
+/**
  * Picker for a product-native session to continue.
  *
  * Everything here comes from the product's own enumeration API, so the list is
@@ -948,7 +1358,7 @@ function InteractionCard({
   )
 }
 
-export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanelProps) {
+export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: LocalAgentPanelProps) {
   const [open, setOpen] = useState(false)
   const [catalog, setCatalog] = useState<BridgeCatalogResult>()
   const [sessions, setSessions] = useState<BridgeSessionView[]>([])
@@ -966,6 +1376,11 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [files, setFiles] = useState<BridgeFileSearchResult>({ matches: [], partial: false })
+  const [models, setModels] = useState<BridgeModelsResult>({ models: [], unavailable: true })
+  const [attachOpen, setAttachOpen] = useState(false)
+  const [attachQuery, setAttachQuery] = useState('')
+  const [attachBusy, setAttachBusy] = useState(false)
+  const [attachFiles, setAttachFiles] = useState<BridgeFileSearchResult>({ matches: [], partial: false })
   const timelineRef = useRef<HTMLDivElement>(null)
   const [nativeSessions, setNativeSessions] = useState<BridgeNativeSessionsResult>()
   const [nativeSessionsOpen, setNativeSessionsOpen] = useState(false)
@@ -1050,6 +1465,57 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
       .catch(() => { if (!cancelled) setCompletions({ completions: [], pending: true }) })
     return () => { cancelled = true }
   }, [open, remote, selectedId, sessionStatus])
+
+  /**
+   * Read the session's models.
+   *
+   * Retried when the status settles rather than once per session: Claude Code can
+   * only answer off a live query, so the list is unavailable until some turn has
+   * run — and the operator should not have to reselect the session to see it
+   * appear. Codex answers immediately and simply returns the same list again.
+   */
+  useEffect(() => {
+    if (!open || selectedId === undefined) {
+      setModels({ models: [], unavailable: true })
+      return
+    }
+    let cancelled = false
+    void remote.sessionModels({ bridgeSessionId: selectedId })
+      .then(unwrap)
+      .then(next => { if (!cancelled) setModels(next) })
+      .catch(() => { if (!cancelled) setModels({ models: [], unavailable: true }) })
+    return () => { cancelled = true }
+  }, [open, remote, selectedId, sessionStatus])
+
+  /**
+   * Search for the plus button, kept separate from the `@` trigger.
+   *
+   * Two states rather than one, because the two gestures are independent: the
+   * button opens with an empty query while the draft may already contain an `@`
+   * halfway through a different word, and sharing one result set would make each
+   * overwrite the other's list.
+   */
+  useEffect(() => {
+    if (!attachOpen || selectedId === undefined) return
+    let cancelled = false
+    setAttachBusy(true)
+    const timer = setTimeout(() => {
+      void remote.sessionFiles({ bridgeSessionId: selectedId, query: attachQuery })
+        .then(unwrap)
+        .then(next => { if (!cancelled) setAttachFiles(next) })
+        .catch(() => { if (!cancelled) setAttachFiles({ matches: [], partial: false }) })
+        .finally(() => { if (!cancelled) setAttachBusy(false) })
+    }, 120)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [attachOpen, attachQuery, remote, selectedId])
+
+  // The picker belongs to the session it searched, so switching sessions closes
+  // it rather than leaving another directory's files on screen.
+  useEffect(() => {
+    setAttachOpen(false)
+    setAttachQuery('')
+    setAttachFiles({ matches: [], partial: false })
+  }, [selectedId])
 
   const draftTrigger = completionTrigger(draft)
 
@@ -1137,9 +1603,10 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
   // left the operator watching a product vanish with no explanation.
   const blockedProviders = allProviders.filter(provider => provider.health !== 'ready')
   const allWorkspaces = catalog?.workspaces ?? []
-  const sessionModes = snapshot === undefined
-    ? []
-    : allProviders.find(provider => provider.id === snapshot.session.providerId)?.permissionModes ?? []
+  const sessionProvider = snapshot === undefined
+    ? undefined
+    : allProviders.find(provider => provider.id === snapshot.session.providerId)
+  const sessionModes = sessionProvider?.permissionModes ?? []
   const readyWorkspaces = allWorkspaces.filter(workspace => workspace.status === 'ok')
 
   /**
@@ -1432,6 +1899,55 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
    * what the Host confirms rather than an optimistic guess.
    * @param mode - the requested mode.
    */
+  /**
+   * Choose the model and effort for the session's next turn.
+   * @param model - the model id, or null to hand the choice back to the product.
+   * @param effort - the reasoning effort, or null for the product's own default.
+   */
+  const changeModel = async (model: string | null, effort: string | null): Promise<void> => {
+    if (selectedId === undefined) return
+    setError(undefined)
+    try {
+      const updated = unwrap(await remote.sessionModel({ bridgeSessionId: selectedId, model, effort }))
+      setSessions(current => current.map(item =>
+        item.bridgeSessionId === updated.bridgeSessionId ? updated : item))
+      setSnapshot(current => current === undefined ? current : { ...current, session: updated })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  /**
+   * Put a chosen file or folder into the draft as an `@` reference.
+   *
+   * Appended rather than inserted at the caret: the plus button is a deliberate
+   * gesture away from the text, and there is no reliable caret to return to once
+   * focus has moved to a popover. A folder keeps its trailing slash, which is how
+   * both products tell one from a file.
+   * @param match - the entry the operator picked.
+   */
+  const insertReference = (match: BridgeFileMatch): void => {
+    const reference = `@${match.path}${match.directory ? '/' : ''}`
+    setDraft(current => current.length === 0 || current.endsWith(' ')
+      ? `${current}${reference} `
+      : `${current} ${reference} `)
+    setAttachOpen(false)
+    setAttachQuery('')
+  }
+
+  /**
+   * Add a transcript to the draft.
+   *
+   * Appended with a space rather than replacing, so dictation can extend a typed
+   * sentence and several utterances accumulate the way they would in a notes app.
+   * @param text - what the browser heard.
+   */
+  const appendDictation = (text: string): void => {
+    setDraft(current => current.trim().length === 0 ? text : `${current.trimEnd()} ${text}`)
+  }
+
+  const dictation = useDictation(speechLocale, appendDictation)
+
   const changePermissionMode = async (mode: BridgePermissionMode): Promise<void> => {
     if (selectedId === undefined) return
     setError(undefined)
@@ -1710,16 +2226,6 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                   </div>
                   {snapshot !== undefined && (
                     <div className="lab-toolbar-actions">
-                      {snapshot.session.contextUsage !== null && (
-                        <ContextUsage usage={snapshot.session.contextUsage} t={t} />
-                      )}
-                      <PermissionModePicker
-                        modes={sessionModes}
-                        current={snapshot.session.permissionMode}
-                        disabled={BUSY_STATUSES.includes(snapshot.session.status)}
-                        t={t}
-                        onSelect={mode => { void changePermissionMode(mode) }}
-                      />
                       <ActionButton
                         danger
                         disabled={!BUSY_STATUSES.includes(snapshot.session.status)}
@@ -1762,24 +2268,106 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                       onPick={pickCompletion}
                     />
                   )}
-                  <div className="lab-composer-row">
-                    <textarea
-                      className="lab-textarea"
-                      value={draft}
-                      placeholder={t('composer.placeholder')}
-                      disabled={selectedId === undefined}
-                      onChange={event => { setDraft(event.target.value); setPaletteIndex(0); setHistoryIndex(-1) }}
-                      onKeyDown={onComposerKeyDown}
-                    />
-                    <ActionButton primary type="submit" disabled={selectedId === undefined || draft.trim().length === 0}>
-                      <IconSendOutline16 /> {t('composer.send')}
-                    </ActionButton>
+                  {/* Above the box: where the agent is working, and how much of
+                      its context is gone — the two facts that frame everything
+                      typed below them. */}
+                  <div className="lab-composer-head">
+                    {snapshot !== undefined && (
+                      <span className="lab-cwd" title={t('cwd.label')}>
+                        <IconFolderOpenOutline16 size={14} />
+                        <span className="lab-cwd-name">{snapshot.session.workspaceTitle}</span>
+                      </span>
+                    )}
+                    {snapshot?.session.contextUsage !== null && snapshot !== undefined && (
+                      <ContextUsage usage={snapshot.session.contextUsage} t={t} />
+                    )}
+                  </div>
+                  <textarea
+                    className="lab-textarea"
+                    value={draft}
+                    placeholder={t('composer.placeholder')}
+                    disabled={selectedId === undefined}
+                    onChange={event => { setDraft(event.target.value); setPaletteIndex(0); setHistoryIndex(-1) }}
+                    onKeyDown={onComposerKeyDown}
+                  />
+                  {/* Below the box, split the way the products' own composers do:
+                      what the agent is allowed to do and what it is being given on
+                      the left, what it costs and what answers on the right. */}
+                  <div className="lab-composer-foot">
+                    <div className="lab-composer-tools">
+                      {snapshot !== undefined && (
+                        <PermissionModePicker
+                          modes={sessionModes}
+                          current={snapshot.session.permissionMode}
+                          disabled={BUSY_STATUSES.includes(snapshot.session.status)}
+                          t={t}
+                          onSelect={mode => { void changePermissionMode(mode) }}
+                        />
+                      )}
+                      <span className="lab-attach">
+                        <button
+                          type="button"
+                          className="lab-icon-button"
+                          aria-haspopup="dialog"
+                          aria-expanded={attachOpen}
+                          aria-label={t('attach.open')}
+                          title={t('attach.open')}
+                          disabled={selectedId === undefined}
+                          onClick={() => { setAttachOpen(current => !current) }}
+                        >
+                          <IconPlusOutline16 size={14} />
+                        </button>
+                        {attachOpen && (
+                          <AttachPicker
+                            result={attachFiles}
+                            query={attachQuery}
+                            busy={attachBusy}
+                            t={t}
+                            onQuery={setAttachQuery}
+                            onPick={insertReference}
+                            onClose={() => { setAttachOpen(false) }}
+                          />
+                        )}
+                      </span>
+                      {/* Only where the browser has the API. A dead button would
+                          teach nothing, and the note says where the audio goes. */}
+                      {dictation.supported && (
+                        <button
+                          type="button"
+                          className={dictation.listening ? 'lab-icon-button lab-icon-button--live' : 'lab-icon-button'}
+                          aria-pressed={dictation.listening}
+                          aria-label={dictation.listening ? t('dictate.stop') : t('dictate.start')}
+                          title={`${dictation.listening ? t('dictate.stop') : t('dictate.start')} — ${t('dictate.note')}`}
+                          disabled={selectedId === undefined}
+                          onClick={dictation.toggle}
+                        >
+                          <MicIcon />
+                        </button>
+                      )}
+                    </div>
+                    <div className="lab-composer-tools">
+                      {snapshot !== undefined && <RateLimits limits={snapshot.session.rateLimits} t={t} />}
+                      {snapshot !== undefined && (
+                        <ModelPicker
+                          result={models}
+                          supported={sessionProvider?.selectableModels === true}
+                          model={snapshot.session.model}
+                          effort={snapshot.session.effort}
+                          disabled={BUSY_STATUSES.includes(snapshot.session.status)}
+                          t={t}
+                          onSelect={(model, effort) => { void changeModel(model, effort) }}
+                        />
+                      )}
+                      <ActionButton primary type="submit" disabled={selectedId === undefined || draft.trim().length === 0}>
+                        <IconSendOutline16 /> {t('composer.send')}
+                      </ActionButton>
+                    </div>
                   </div>
                   <small className="lab-composer-hint">
                     {t('composer.keys')}
                     {completions.completions.length > 0 && ` · ${t('palette.hint')}`}
                   </small>
-                  <small className="lab-composer-hint" style={{ marginTop: 3 }}>{t('composer.hint')}</small>
+                  <small className="lab-composer-hint lab-composer-hint--second">{t('composer.hint')}</small>
                 </form>
               </main>
             </div>
@@ -1856,6 +2444,10 @@ export function apply(ctx: ClientContext): void {
       inject: (): LocalAgentPanelFace => ({
         remote: scope.remote.localAgentBridge,
         t: scope.locale.bind(NS),
+        // Mapped to a region the speech engines actually accept: a bare `zh`
+        // is not a recognition language, and `zh-CN` is what the panel's
+        // Simplified Chinese copy corresponds to.
+        speechLocale: () => scope.locale.getLocale().active === 'zh' ? 'zh-CN' : 'en-US',
         workspaces: {
           create: async (path) => { await scope.workspaces.create({ path }) },
           // Both routes are wired unconditionally. Which one the composed

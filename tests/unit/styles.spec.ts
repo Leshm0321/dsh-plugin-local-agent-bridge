@@ -133,4 +133,35 @@ describe('panel stylesheet', () => {
       .map(match => match[0])
     expect(hexOutsideFallback).toEqual([])
   })
+
+  it('gives every inline-sized element a display, so the size is not ignored', () => {
+    // A `<span>` whose parent is not a flex or grid container stays an inline box,
+    // and an inline box ignores width and height entirely. The context meter was
+    // built exactly that way: the fill received its percentage as an inline style
+    // and rendered at zero width in every theme and every session, which nothing
+    // else here could catch — the class existed, the rule existed, the colour was
+    // a token, and jsdom computes no layout.
+    // Read backwards from each inline size to the className that precedes it,
+    // because the className may be a template literal rather than a plain string —
+    // which is exactly the form the meter uses.
+    const sized = [...clientSource.matchAll(/style=\{\{\s*(?:width|height):/g)]
+      .flatMap((match) => {
+        const before = clientSource.slice(Math.max(0, match.index - 400), match.index)
+        const attribute = before.lastIndexOf('className=')
+        if (attribute < 0) return []
+        // Base classes only: a `--modifier` exists to shift one property, and the
+        // display belongs on the class that defines the box.
+        return [...before.slice(attribute).matchAll(/\blab-[a-z0-9-]+/g)]
+          .map(token => token[0])
+          .filter(name => !name.includes('--'))
+      })
+    // A guard that asserts nothing would pass forever; if the meter is ever
+    // rewritten without an inline size this needs deleting, not silently skipping.
+    expect(sized).toContain('lab-usage-fill')
+    for (const name of new Set(sized)) {
+      const rule = PANEL_STYLES.match(new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`))
+      expect(rule, `${name} is sized inline but has no rule`).not.toBeNull()
+      expect(rule![1], `${name} is sized inline, so it must declare a display`).toContain('display:')
+    }
+  })
 })
