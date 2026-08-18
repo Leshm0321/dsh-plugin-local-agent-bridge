@@ -55,7 +55,7 @@ describe('version compatibility', () => {
     expect(parseProductVersion('Claude Code v2.1.220')).toBe('2.1.220')
     expect(parseProductVersion('unknown')).toBeNull()
     expect(supportedVersionRange('codex')).toBe('0.147.x')
-    expect(supportedVersionRange('claude')).toBe('2.1.220')
+    expect(supportedVersionRange('claude')).toBe('>=2.1.220 <2.2.0')
     expect(supportedVersionRange('fake')).toBeNull()
   })
 
@@ -64,6 +64,11 @@ describe('version compatibility', () => {
     expect(compatibilityFor('codex', '0.148.0', false)).toBe('unsupported')
     expect(compatibilityFor('codex', '0.148.0', true)).toBe('unknown')
     expect(compatibilityFor('claude', null, false)).toBe('unknown')
+    expect(compatibilityFor('claude', '2.1.220', false)).toBe('supported')
+    expect(compatibilityFor('claude', '2.1.234', false)).toBe('supported')
+    expect(compatibilityFor('claude', '2.1.219', false)).toBe('unsupported')
+    expect(compatibilityFor('claude', '2.2.0', false)).toBe('unsupported')
+    expect(compatibilityFor('claude', '2.2.0', true)).toBe('unknown')
   })
 })
 

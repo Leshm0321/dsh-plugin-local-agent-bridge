@@ -6,7 +6,7 @@ import { redactText } from './redaction.ts'
 
 const VERSION_RANGES: Record<'codex' | 'claude', string> = {
   codex: '0.147.x',
-  claude: '2.1.220',
+  claude: '>=2.1.220 <2.2.0',
 }
 
 export interface DiscoveryOptions {

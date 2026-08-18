@@ -14,7 +14,7 @@ The confirmed product scope and acceptance contract are recorded in [the develop
 | Node.js | `^22.19.0` or `>=24.0.0` |
 | pnpm | `11.7.0` |
 | Codex CLI | `0.147.x` |
-| Claude Code CLI | `2.1.220` |
+| Claude Code CLI | `>=2.1.220 <2.2.0` |
 | Claude Agent SDK | `0.3.220` |
 | Primary Host | Windows 10/11 x64 |
 

@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | DeepSeek Harness | `0.1.0-rc.7` | External Host + Client plugin APIs validated against commit `99f6f02fecdb7dff40c3fbc9470f5907c29f74ca`. |
 | Codex CLI/App Server | `0.147.x` | Supported. JSON Schema is pinned to generated `0.147.0` artifacts. |
-| Claude Code CLI | `2.1.220` | Supported with SDK `0.3.220`. |
+| Claude Code CLI | `>=2.1.220 <2.2.0` | Patch releases inside 2.1 are admitted; `2.2` requires revalidation. Validated with SDK `0.3.220`. |
 | Claude Agent SDK | `0.3.220` | Exact dependency pin. |
 | Node.js | `^22.19.0` or `>=24.0.0` | Matches the target DSH baseline. |
 | Windows | 10/11 x64 | Primary validated process model. |
