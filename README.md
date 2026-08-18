@@ -17,8 +17,13 @@ launching the `claude` executable resolved from the Host `PATH`.
 - **Both products, one panel.** A `Local Agents` entry in the Harness sidebar,
   with sessions per working directory.
 - **The keyboard you already use.** Enter sends, Shift+Enter is a newline, `↑`
-  walks your sent messages, Esc interrupts a running turn. Typing `/` lists the
-  product's own commands and skills.
+  walks your sent messages, Esc interrupts a running turn. `/` lists the product's
+  own commands and skills; `@` completes a file from the working directory.
+- **Permission modes.** Auto, Manual, Accept edits, Plan, Bypass — the same modes
+  the Claude desktop app offers, mapped to what each product can actually honour.
+- **Tool calls you can open.** Expand a row to see what the agent ran and what came
+  back, instead of a one-line summary.
+- **Context usage**, so a long session warns you before it compacts.
 - **Real tool approvals.** A native `Write` or `Bash` request that would prompt in
   a terminal prompts in the browser, once — no decision is written into Claude
   Code or Codex permission config.
@@ -129,6 +134,50 @@ published it**; the directory on disk is never touched.
 in-panel directory sheet that works from any browser, while one serving `native`
 opens the Host's own dialog — useful at the Host, useless remotely. If neither is
 served, the path field still works and the panel says so.
+
+## The composer
+
+| Key | Does |
+| --- | --- |
+| Enter | Send |
+| Shift+Enter | Newline |
+| `↑` / `↓` | Walk messages already sent (in an empty composer) |
+| Esc | Interrupt a running turn, else clear the draft |
+| `/` | Commands and skills the product reports |
+| `@` | Files under the working directory |
+
+Enter is ignored while an input method is composing, so accepting a candidate does
+not send a half-written message.
+
+`@` works anywhere a word can begin, because referencing a file happens
+mid-sentence, and selecting one replaces just that token. The search runs on the
+Host, confined to the working directory after symlinks are resolved, bounded by a
+visit budget, and skipping `.git` and dependency trees. When it stops early it says
+so rather than presenting a partial list as complete.
+
+## Permission modes
+
+The modes are named after the Claude desktop app, because that vocabulary is what
+operators already know:
+
+| Mode | Means |
+| --- | --- |
+| Auto | The agent handles permission decisions |
+| Manual | Always ask before making changes |
+| Accept edits | Automatically accept all file edits |
+| Plan | Create a plan before making changes |
+| Bypass permissions | Accepts all permissions |
+
+Each product reports only the modes it can actually honour, so a mode on screen is
+always the mode the agent obeys. Claude Code has a native equivalent for all five.
+Codex reports three: it has no accept-edits policy, and its plan mode is reachable
+only through a payload that would override the model and reasoning effort you
+configured on the Host.
+
+**Accept edits and Bypass permissions stop the browser being asked to approve
+anything** — the protection this bridge exists to provide. They are offered because
+both products offer them, and the panel marks and warns about them. A change
+applies from the next turn, because that is when both products read the setting.
 
 ## Commands, skills, and MCP
 

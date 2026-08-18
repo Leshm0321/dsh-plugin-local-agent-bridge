@@ -25,7 +25,10 @@ behavior, bilingual rendering against the shipped dictionaries, unavailable-prod
 diagnostics, in-panel working-directory
 ownership and its opt-in Harness publishing, directory-capability probing and its two
 fallbacks, the stylesheet's theme-token and scoping guarantees, the command palette across both
-products' invocation syntaxes, and resuming a product-native session.
+products' invocation syntaxes, resuming a product-native session, the
+composer's keyboard including input-method composition, permission-mode mapping
+per product, expandable tool detail, context usage, and file-search confinement
+against real symlinks.
 
 ## Real-product smoke checklist
 
