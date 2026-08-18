@@ -415,17 +415,25 @@ export class BridgeSessionEngine {
     } catch (error) {
       const normalized = bridgeError(error, 'PROVIDER_START_FAILED')
       const cancelled = controller.signal.aborted || normalized.code === 'USER_CANCELLED'
-      completed = terminalTurn(turn, cancelled ? 'cancelled' : 'failed', normalized.code)
+      // An aborted turn is a cancellation whatever the vendor product reported.
+      // bridgeError classifies by message pattern, and neither the Claude Agent
+      // SDK nor the Codex App Server emits a stable cancellation marker when its
+      // transport is torn down mid-turn, so the raw normalization lands on the
+      // fallback code. Reporting that verbatim told the browser the product
+      // could not be started, which is both wrong and alarming for what the
+      // operator just requested. The abort signal is the authoritative witness.
+      const reported = cancelled ? new BridgeError('USER_CANCELLED') : normalized
+      completed = terminalTurn(turn, cancelled ? 'cancelled' : 'failed', reported.code)
       await this.append(runtime, turn.bridgeTurnId, {
         type: 'bridge/error',
-        data: { code: normalized.code, message: normalized.message },
+        data: { code: reported.code, message: reported.message },
       })
-      terminalStatus = cancelled ? 'idle' : normalized.code === 'HOST_AUTH_REQUIRED'
+      terminalStatus = cancelled ? 'idle' : reported.code === 'HOST_AUTH_REQUIRED'
         ? 'auth-required'
-        : normalized.code === 'NATIVE_SESSION_ORPHANED'
+        : reported.code === 'NATIVE_SESSION_ORPHANED'
           ? 'orphaned'
           : 'failed'
-      terminalMessage = normalized.message
+      terminalMessage = reported.message
     } finally {
       const pending = runtime.pendingResolution
       if (pending !== null) {

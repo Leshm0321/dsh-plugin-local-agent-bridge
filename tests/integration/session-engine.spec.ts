@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BridgePersistence, PersistedBridgeSession } from '../../src/core/persistence.ts'
+import type { NativeProviderAdapter, ProviderTurnRequest } from '../../src/core/provider.ts'
 import { credentialLeakMarkers } from '../../src/core/redaction.ts'
 import { BridgeSessionEngine } from '../../src/core/session-engine.ts'
 import { FakeProviderAdapter } from '../../src/providers/fake.ts'
@@ -38,6 +39,62 @@ const workspace = {
 
 function asPersistence(memory: MemoryPersistence): BridgePersistence {
   return memory as unknown as BridgePersistence
+}
+
+/**
+ * A turn that reports its interruption the way the real vendor products do:
+ * the transport dies and the surfaced error carries no cancellation marker.
+ * The Claude Agent SDK and the Codex App Server both behave this way, so a
+ * classifier that reads the error text alone cannot tell this apart from a
+ * genuine startup failure. Only the abort signal can.
+ */
+class OpaqueCancellationAdapter implements NativeProviderAdapter {
+  readonly id = 'fake' as const
+  readonly supportsSteer = false
+  private readonly active = new Map<string, AbortController>()
+
+  async startTurn({ hooks }: ProviderTurnRequest): Promise<void> {
+    const controller = new AbortController()
+    this.active.set(hooks.bridgeSessionId, controller)
+    hooks.signal.addEventListener('abort', () => { controller.abort() }, { once: true })
+    await hooks.setNativeSessionLocator(`opaque-${hooks.bridgeSessionId}`)
+    await hooks.emit({ type: 'bridge/text-delta', data: { text: 'working', itemId: 'answer' } })
+    try {
+      await new Promise<void>((_resolve, reject) => {
+        controller.signal.addEventListener('abort', () => {
+          reject(new Error('Claude Code process exited with code 143'))
+        }, { once: true })
+      })
+    } finally {
+      this.active.delete(hooks.bridgeSessionId)
+    }
+  }
+
+  async steer(): Promise<void> {
+    throw new Error('not supported')
+  }
+
+  async cancel(bridgeSessionId: string): Promise<void> {
+    this.active.get(bridgeSessionId)?.abort()
+  }
+
+  async disposeSession(bridgeSessionId: string): Promise<void> {
+    await this.cancel(bridgeSessionId)
+  }
+
+  async dispose(): Promise<void> {}
+}
+
+async function createOpaqueEngine() {
+  const memory = new MemoryPersistence()
+  const providers = new Map<ProviderId, NativeProviderAdapter>([['fake', new OpaqueCancellationAdapter()]])
+  const engine = await BridgeSessionEngine.create({
+    persistence: asPersistence(memory),
+    providers,
+    resolveWorkspace: async id => id === workspace.id ? workspace : undefined,
+    longPollMaxMs: 100,
+  })
+  return { engine, memory }
 }
 
 async function createEngine(memory = new MemoryPersistence(), eventRetention?: number) {
@@ -217,6 +274,27 @@ describe('BridgeSessionEngine with FakeProviderAdapter', () => {
       interactionId,
       resolution: { kind: 'approval', action: 'allow' },
     })).rejects.toMatchObject({ code: 'INTERACTION_EXPIRED' })
+    await engine.dispose()
+  })
+
+  it('reports a cancelled turn as USER_CANCELLED even when the product hides the reason', async () => {
+    const { engine } = await createOpaqueEngine()
+    const session = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id })
+    await engine.send(session.bridgeSessionId, 'start a long turn')
+    await waitFor(engine, session.bridgeSessionId, result => result.session.status === 'running')
+
+    await engine.cancel(session.bridgeSessionId)
+    const result = await waitFor(engine, session.bridgeSessionId, value => value.session.status === 'idle')
+
+    const errors = eventsOf(result, 'bridge/error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.data.code).toBe('USER_CANCELLED')
+    expect(errors[0]?.data.message).not.toMatch(/could not be started/i)
+    expect(eventsOf(result, 'bridge/turn-completed').at(-1)?.data.turn).toMatchObject({
+      status: 'cancelled',
+      stopReason: 'USER_CANCELLED',
+    })
+    expect(result.session.status).toBe('idle')
     await engine.dispose()
   })
 
