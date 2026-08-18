@@ -13,6 +13,8 @@ import type {
   BridgeNativeSessionsResult,
   BridgePermissionMode,
   BridgeRateLimit,
+  BridgeUploadInput,
+  BridgeUploadResult,
   BridgeSessionStatus,
   BridgeSessionView,
   BridgeStatusNote,
@@ -23,6 +25,7 @@ import type {
 } from '../types.ts'
 import { BridgeError, bridgeError } from './errors.ts'
 import { searchFiles } from './file-search.ts'
+import { receiveUploads } from './uploads.ts'
 import type {
   BridgeEventDraft,
   NativeProviderAdapter,
@@ -476,6 +479,28 @@ export class BridgeSessionEngine {
     const runtime = this.requireSession(bridgeSessionId)
     const workspace = await this.requireWorkspace(runtime.record.workspaceId)
     return await searchFiles(workspace.cwd, query)
+  }
+
+  /**
+   * Take files the operator picked in their browser and write them where the
+   * agent can read them.
+   *
+   * The destination comes from the Host's own workspace resolution, exactly like
+   * `@`; the browser supplies only names and bytes. This is the only path in the
+   * bridge that writes Host files on the browser's behalf, which is why the rules
+   * live in one module with the reasoning attached.
+   * @param bridgeSessionId - the session whose working directory receives them.
+   * @param files - what the browser offered.
+   * @returns where each file landed, and how many were refused.
+   */
+  async receiveUploads(
+    bridgeSessionId: string,
+    files: readonly BridgeUploadInput[],
+  ): Promise<BridgeUploadResult> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    const workspace = await this.requireWorkspace(runtime.record.workspaceId)
+    return await receiveUploads(workspace.cwd, files)
   }
 
   async dispose(): Promise<void> {

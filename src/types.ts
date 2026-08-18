@@ -528,6 +528,35 @@ export interface BridgeFileSearchResult {
   readonly partial: boolean
 }
 
+/** One file the operator picked in their own browser, for the Host to receive. */
+export interface BridgeUploadInput {
+  /**
+   * The file name, or its folder-relative path for a directory upload, exactly as
+   * the browser reported it. Untrusted: the Host rebuilds it rather than using it.
+   */
+  readonly path: string
+  /** The bytes, base64. */
+  readonly contentBase64: string
+}
+
+export interface BridgeUploadRequest extends BridgeSessionIdRequest {
+  readonly files: readonly BridgeUploadInput[]
+}
+
+export interface BridgeUploadResult {
+  /**
+   * Where each file landed, relative to the working directory — the same form `@`
+   * uses, so the composer inserts one shape whichever route was taken.
+   */
+  readonly paths: readonly string[]
+  /**
+   * How many files the Host refused, for a name it could not make safe or a size
+   * over its ceiling. Reported so the panel can say some did not arrive rather
+   * than quietly delivering fewer than were chosen.
+   */
+  readonly rejected: number
+}
+
 export interface BridgeFileSearchRequest extends BridgeSessionIdRequest {
   /** What the operator typed after `@`; empty lists the shallowest files. */
   readonly query: string

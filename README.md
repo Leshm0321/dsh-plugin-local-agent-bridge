@@ -164,12 +164,26 @@ The controls around the box follow each product's own composer:
 | Below, left | Permission mode, a file button, and dictation |
 | Below, right | Usage allowance, model, and send |
 
-**The file button** is `@` without the syntax: the same Host search, listing files
-and folders, appending the reference to the draft. A folder keeps its trailing
-slash, which is how both products tell one from a file. It is scoped to the working
-directory rather than opening a Host file dialog — a path outside that directory is
-not something the agent could read anyway, and enumerating the machine from a
-browser is exactly what this bridge does not do.
+**The file button** offers both machines, because the browser is not always on the
+Host:
+
+- **Working directory** is `@` without the syntax — the same Host search, listing
+  files and folders, appending the reference to the draft. Nothing is copied. A
+  folder keeps its trailing slash, which is how both products tell one from a file.
+  It is not a Host file dialog: browsing the whole Host filesystem from a browser is
+  what this bridge does not do, and a path outside the working directory is not
+  something the agent could read anyway.
+- **This computer** sends files from the machine the browser is running on, which is
+  the only way those bytes can arrive when the Harness is somewhere else. They land
+  in `.dsh-bridge-uploads/` inside the working directory — add it to `.gitignore` —
+  and are referenced identically, so the products read one shape either way.
+
+Uploads are the only path in the bridge that writes Host files, so they are narrow
+by design: one destination the browser cannot name, file names rebuilt from an
+allow-list rather than trusted, containment re-verified after symlinks resolve,
+nothing ever overwritten, and ceilings of 8 MB per file, 32 MB per request, and 50
+files. A name that cannot be made safe, or a file over the ceiling, is refused and
+counted rather than silently dropped.
 
 **Dictation** appears only where the browser has the Web Speech API, which in
 practice means Chromium. Transcripts are appended, so speech extends a typed
@@ -325,6 +339,15 @@ The trusted Host owns vendor authentication, source access, native tools, MCP
 servers, and process execution. The browser receives redacted bridge events and
 sends prompts, one-time approvals, question answers, cancellations, and opaque
 bridge IDs.
+
+The one exception to that direction is the composer's upload, which exists so a
+browser on another machine can hand the agent a file at all. It writes only into
+`.dsh-bridge-uploads/` under the session's working directory, resolved on the Host;
+the browser supplies bytes and a name, never a destination. Names are rebuilt from
+an allow-list, segments that are only dots are refused, containment is re-verified
+after symlinks resolve, and existing files are never replaced. Per-file, per-request
+and file-count ceilings apply. If you would rather not have that path at all, use
+the working-directory tab and nothing is written.
 
 The plugin never reads or copies `.claude`, `.codex`, `auth.json`, OS credential
 stores, or vendor tokens. Listing commands, skills, MCP servers and sessions goes

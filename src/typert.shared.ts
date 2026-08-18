@@ -223,6 +223,19 @@ const fileSearchRequestSchema = z.object({
   query: z.string(),
 }).strict()
 
+const uploadRequestSchema = z.object({
+  bridgeSessionId: z.string(),
+  files: z.array(z.object({
+    path: z.string(),
+    contentBase64: z.string(),
+  }).strict()).readonly(),
+}).strict()
+
+const uploadResultSchema = z.object({
+  paths: z.array(z.string()).readonly(),
+  rejected: z.number(),
+}).strict()
+
 const nativeSessionsRequestSchema = z.object({
   providerId: z.enum(['codex', 'claude', 'fake']),
   workspaceId: z.string(),
@@ -324,4 +337,5 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('sessionFiles', [parameter('request', fileSearchRequestSchema)], fileSearchResultSchema),
   invocation('sessionModels', [parameter('request', sessionIdRequestSchema)], modelsResultSchema),
   invocation('sessionModel', [parameter('request', modelRequestSchema)], sessionSchema),
+  invocation('sessionUpload', [parameter('request', uploadRequestSchema)], uploadResultSchema),
 ] as const

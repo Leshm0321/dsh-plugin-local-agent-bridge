@@ -40,8 +40,35 @@ const ICON_STUBS = vi.hoisted(() => [
   'IconStopFill16',
 ])
 
-vi.mock('@deepseek-ai/dsh-client-ui-primitives', () =>
-  Object.fromEntries(ICON_STUBS.map(name => [name, () => null])))
+/**
+ * Non-icon primitives the panel uses, stubbed with real behaviour rather than a
+ * no-op: dismiss-on-outside-pointer is the thing a test needs to exercise, and a
+ * hook that does nothing would let the panel regress to popovers that never
+ * close while the suite stayed green.
+ */
+const HOOK_STUBS = vi.hoisted(() => ['useDismissOnOutsidePointer'])
+
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => {
+  const react = await import('react')
+  return {
+    ...Object.fromEntries(ICON_STUBS.map(name => [name, () => null])),
+    useDismissOnOutsidePointer: (
+      root: { current: HTMLElement | null },
+      open: boolean,
+      setOpen: (open: boolean) => void,
+    ) => {
+      react.useEffect(() => {
+        if (!open) return
+        const onPointerDown = (event: PointerEvent): void => {
+          const node = root.current
+          if (node !== null && !node.contains(event.target as Node)) setOpen(false)
+        }
+        document.addEventListener('pointerdown', onPointerDown)
+        return () => { document.removeEventListener('pointerdown', onPointerDown) }
+      }, [open, root, setOpen])
+    },
+  }
+})
 
 import { en, zh } from '../../src/client/locales.ts'
 import {
@@ -181,6 +208,13 @@ class RemoteFixture {
   readonly sessionFiles = vi.fn(async (_request: { bridgeSessionId: string; query: string }) => ({
     ok: true as const,
     value: { matches: [] as { path: string; name: string; directory: boolean }[], partial: false },
+  }))
+  readonly sessionUpload = vi.fn(async (_request: {
+    bridgeSessionId: string
+    files: readonly { path: string; contentBase64: string }[]
+  }) => ({
+    ok: true as const,
+    value: { paths: ['.dsh-bridge-uploads/notes.md'] as readonly string[], rejected: 0 },
   }))
   readonly sessionModels = vi.fn(async (_request: { bridgeSessionId: string }) => ({
     ok: true as const,
@@ -353,10 +387,11 @@ describe('LocalAgentPanel', () => {
     expect(imported.length).toBeGreaterThan(0)
     // A name imported but not stubbed is `undefined` at render time, which
     // unmounts the panel with an error pointing somewhere else entirely.
-    expect(imported.filter(name => !ICON_STUBS.includes(name))).toEqual([])
-    // And the reverse, so the list does not accumulate stubs for icons the
+    const stubbed = [...ICON_STUBS, ...HOOK_STUBS]
+    expect(imported.filter(name => !stubbed.includes(name))).toEqual([])
+    // And the reverse, so the list does not accumulate stubs for primitives the
     // panel stopped using.
-    expect(ICON_STUBS.filter(name => !imported.includes(name))).toEqual([])
+    expect(stubbed.filter(name => !imported.includes(name))).toEqual([])
   })
 
   it('mounts its Remote namespace before dynamically injecting the panel', () => {
@@ -1656,5 +1691,114 @@ describe('LocalAgentPanel', () => {
     // Appended to what was typed rather than replacing it, so dictation extends
     // a sentence instead of discarding it.
     await waitFor(() => { expect(composer.value).toBe('read this and then stop') })
+  })
+
+  it('closes every composer popover on an outside click and on Escape', async () => {
+    const fixture = new RemoteFixture()
+    // The default fixture product reports no permission modes, which correctly
+    // hides that picker; this case needs all three popovers present.
+    fixture.catalog.mockResolvedValue({
+      ok: true,
+      value: {
+        ...catalog,
+        providers: [{
+          ...catalog.providers[0]!,
+          permissionModes: [
+            { mode: 'auto', skipsApproval: false },
+            { mode: 'manual', skipsApproval: false },
+          ],
+        }],
+      },
+    })
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const timeline = await screen.findByPlaceholderText(en['composer.placeholder'])
+
+    // Each of the three is opened by a click, so each has to be closable the way
+    // every other menu in the application is — an operator who opened one to look
+    // at it should not have to reopen it to get rid of it.
+    const cases: readonly { readonly open: () => HTMLElement; readonly surface: string }[] = [
+      { open: () => screen.getByRole('button', { name: en['mode.auto'] }), surface: en['mode.label'] },
+      { open: () => screen.getByTitle(en['model.label']), surface: en['model.label'] },
+      { open: () => screen.getByLabelText(en['attach.open']), surface: en['attach.title'] },
+    ]
+
+    for (const { open, surface } of cases) {
+      fireEvent.click(open())
+      await waitFor(() => { expect(screen.getByLabelText(surface)).toBeTruthy() })
+      // Anywhere that is not the popover: the transcript above it will do.
+      fireEvent.pointerDown(timeline)
+      await waitFor(() => { expect(screen.queryByLabelText(surface)).toBeNull() })
+
+      fireEvent.click(open())
+      await waitFor(() => { expect(screen.getByLabelText(surface)).toBeTruthy() })
+      fireEvent.keyDown(screen.getByLabelText(surface), { key: 'Escape' })
+      await waitFor(() => { expect(screen.queryByLabelText(surface)).toBeNull() })
+    }
+  })
+
+  it('uploads files from the browser’s own machine and references what landed', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    fireEvent.click(screen.getByLabelText(en['attach.open']))
+    // The working directory is the default, because it copies nothing.
+    fireEvent.click(await screen.findByRole('tab', { name: en['attach.fromWorkspace'] }))
+    fireEvent.click(screen.getByRole('tab', { name: en['attach.fromBrowser'] }))
+
+    const picker = screen.getByLabelText(en['attach.title'])
+    const inputs = [...picker.querySelectorAll('input[type="file"]')] as HTMLInputElement[]
+    // One plain chooser and one folder chooser. The attribute is set on the DOM
+    // node because React's typings have no name for it, which is exactly the kind
+    // of wiring that can silently not happen — it did, and the folder button then
+    // opened a file chooser.
+    expect(inputs).toHaveLength(2)
+    expect(inputs.filter(node => node.hasAttribute('webkitdirectory'))).toHaveLength(1)
+
+    const input = inputs.find(node => !node.hasAttribute('webkitdirectory'))!
+    Object.defineProperty(input, 'files', {
+      value: [new File(['hello from the laptop'], 'notes.md', { type: 'text/markdown' })],
+    })
+    fireEvent.change(input)
+
+    // Only the base64 payload crosses; the data-URL prefix the reader produces is
+    // stripped on this side.
+    await waitFor(() => {
+      expect(fixture.sessionUpload).toHaveBeenCalledWith({
+        bridgeSessionId: 'session-1',
+        files: [{
+          path: 'notes.md',
+          contentBase64: Buffer.from('hello from the laptop', 'utf8').toString('base64'),
+        }],
+      })
+    })
+    // Referenced exactly like a workspace file, so the products read one shape.
+    await waitFor(() => { expect(composer.value).toBe('@.dsh-bridge-uploads/notes.md ') })
+  })
+
+  it('says how many uploads the Host refused instead of quietly delivering fewer', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.sessionUpload.mockResolvedValue({ ok: true, value: { paths: [], rejected: 2 } })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['attach.open']))
+    fireEvent.click(await screen.findByRole('tab', { name: en['attach.fromBrowser'] }))
+
+    const picker = screen.getByLabelText(en['attach.title'])
+    const input = picker.querySelector('input[type="file"]:not([webkitdirectory])') as HTMLInputElement
+    Object.defineProperty(input, 'files', {
+      value: [new File(['a'], 'one.bin'), new File(['b'], 'two.bin')],
+    })
+    fireEvent.change(input)
+
+    expect(await screen.findByText(en['attach.rejected'].replace('{count}', '2'))).toBeTruthy()
   })
 })

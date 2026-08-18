@@ -1058,7 +1058,51 @@ export const PANEL_STYLES = `
   box-shadow: 0 8px 28px -10px rgba(0, 0, 0, .28);
   animation: lab-palette-in var(--lab-fast) var(--lab-ease);
 }
+/* Two machines, two tabs. Named rather than iconic, because "this computer" and
+   "the working directory" are not a distinction an icon can carry. */
+.lab-attach-tabs { display: flex; gap: 4px; margin-bottom: 6px; }
+.lab-attach-tab {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  flex: 1 1 0;
+  padding: 5px 8px;
+  color: var(--lab-text-2);
+  background: var(--lab-fill);
+  border: 0;
+  border-radius: var(--lab-r-chip);
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease), color var(--lab-fast) var(--lab-ease);
+}
+.lab-attach-tab:hover { background: var(--lab-fill-strong); }
+.lab-attach-tab--on { color: var(--lab-on-accent); background: var(--lab-accent); }
+
 .lab-attach-search { margin-bottom: 4px; }
+.lab-attach-upload { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 2px 2px 4px; }
+.lab-attach-warning {
+  margin: 0;
+  padding: 7px 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--lab-warn);
+  background: color-mix(in srgb, var(--lab-warn) 10%, transparent);
+  border-radius: 7px;
+}
+
+/* A file input has to be a real, reachable input for the browser to open its
+   chooser at all, so it is moved out of the layout rather than hidden: an input
+   set to display none cannot be clicked programmatically in every browser. */
+.lab-offscreen {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 .lab-attach-list {
   max-height: min(280px, 40vh);
   overflow-y: auto;

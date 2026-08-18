@@ -75,3 +75,37 @@ text.
 
 A native session locator is opaque to the bridge. It is passed to the product's
 own resume path and is never parsed, joined onto a path, or used to open a file.
+
+## Files the browser sends to the Host
+
+Every other path in this bridge carries data outward. The composer's upload
+carries it in, and exists for one reason: when the Harness runs on another
+machine, a file on the operator's own laptop has no other way to reach the agent.
+Referencing a file already in the working directory remains the default and copies
+nothing.
+
+Because it inverts the direction, the rules are narrow and are all enforced on the
+Host, in `src/core/uploads.ts`:
+
+| Rule | Why |
+| --- | --- |
+| One destination: `.dsh-bridge-uploads/` under the session's working directory, resolved from the Host's own workspace registry | The browser never names a destination, so there is no path parameter for it to influence |
+| Every path segment rebuilt against an allow-list of letters, digits, `.`, `_`, `@`, space and `-` | A deny-list has to enumerate separators, traversal, control characters and Windows-reserved punctuation, and can forget one |
+| A segment that is only dots is refused; a leading dot is otherwise kept | `..` is traversal, `.env.example` is a file someone means to send |
+| Containment re-asserted after the path is assembled, against the directory's real location | Catches a mistake in the rebuilding, and resolves a working directory reached through a symlink the same way `@` does |
+| Written with `wx`, never replacing; a collision takes a numeric suffix | An upload can never destroy the operator's work, and the filesystem rather than a prior check decides what exists |
+| 8 MB per file, 32 MB per request, 50 files, depth 8, 96 characters per segment | A browser cannot fill the Host's disk one request at a time |
+| base64 decoded strictly, by round-tripping | Node's decoder ignores characters it does not recognise, so a malformed payload would otherwise be written as whatever it parsed to |
+
+A refused file is counted and reported, so the panel says some did not arrive
+rather than delivering fewer than were chosen.
+
+The uploaded bytes are the operator's own file, sent deliberately. They are not
+redacted: redaction exists to keep vendor credentials from reaching the browser,
+and rewriting the contents of a file someone asked the agent to read would corrupt
+it. Treat the upload directory as operator-supplied content, and note that the
+agent reading it is subject to the same permission mode as any other tool call.
+
+Uploads are exercised against a real directory in `tests/unit/uploads.spec.ts`,
+including traversal spellings for both path separators, absolute POSIX and Windows
+paths, a symlinked working directory, collision handling, and malformed base64.

@@ -34,6 +34,8 @@ import type {
   BridgeSessionArchiveRequest,
   BridgeSessionCreateRequest,
   BridgeSessionIdRequest,
+  BridgeUploadRequest,
+  BridgeUploadResult,
   BridgeSessionReadRequest,
   BridgeSessionReadResult,
   BridgeSessionSendRequest,
@@ -370,6 +372,11 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   @Remote('sessionFiles')
   async sessionFiles(request: BridgeFileSearchRequest): Promise<BridgeFileSearchResult> {
     return await this.requireEngine().searchFiles(request.bridgeSessionId, request.query)
+  }
+
+  @Remote('sessionUpload')
+  async sessionUpload(request: BridgeUploadRequest): Promise<BridgeUploadResult> {
+    return await this.requireEngine().receiveUploads(request.bridgeSessionId, request.files)
   }
 
   @Remote('interactionRespond')

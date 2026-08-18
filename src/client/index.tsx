@@ -19,6 +19,7 @@ import {
   IconSendOutline16,
   IconSparkle16,
   IconStopFill16,
+  useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   InjectFace,
@@ -77,6 +78,15 @@ const BUSY_STATUSES: readonly BridgeSessionStatus[] = [
   'awaiting-answer',
   'cancelling',
 ]
+/**
+ * Largest file offered to the Host, matching the ceiling it enforces.
+ *
+ * Checked here as well so an oversized file is skipped before it is read and
+ * encoded, rather than after a wasted trip through the wire. The Host remains the
+ * authority — this is a courtesy, not a control.
+ */
+const UPLOAD_FILE_LIMIT = 8 * 1024 * 1024
+
 
 /**
  * Modifier class per timeline row kind, written out rather than interpolated
@@ -570,10 +580,14 @@ function PermissionModePicker({
   onSelect: (mode: BridgePermissionMode) => void
 }) {
   const [open, setOpen] = useState(false)
+  const root = useRef<HTMLSpanElement>(null)
+  // The Harness's own primitive, so every popover in this panel dismisses the way
+  // the surrounding application's do.
+  useDismissOnOutsidePointer(root, open, setOpen)
   const active = modes.find(entry => entry.mode === current)
   if (modes.length === 0) return null
   return (
-    <span className="lab-mode">
+    <span className="lab-mode" ref={root} onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }}>
       <button
         type="button"
         className={`lab-mode-trigger${active?.skipsApproval === true ? ' lab-mode-trigger--unguarded' : ''}`}
@@ -841,10 +855,12 @@ function ModelPicker({
   onSelect: (model: string | null, effort: string | null) => void
 }) {
   const [open, setOpen] = useState(false)
+  const root = useRef<HTMLSpanElement>(null)
+  useDismissOnOutsidePointer(root, open, setOpen)
   if (!supported) return null
   if (result.unavailable || result.models.length === 0) {
     return (
-      <span className="lab-model">
+      <span className="lab-model" ref={root}>
         <button type="button" className="lab-model-trigger" disabled title={t('model.unavailable')}>
           <IconSparkle16 size={14} />
           <span className="lab-model-name">{t('model.default')}</span>
@@ -857,7 +873,7 @@ function ModelPicker({
     ? t('model.default')
     : effort === null ? active.displayName : `${active.displayName} · ${effortLabel(t, effort)}`
   return (
-    <span className="lab-model">
+    <span className="lab-model" ref={root} onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }}>
       <button
         type="button"
         className="lab-model-trigger"
@@ -981,72 +997,154 @@ function RateLimits({ limits, t }: { limits: readonly BridgeRateLimit[]; t: Pane
   )
 }
 
+/** Which machine the plus button is looking at. */
+type AttachSource = 'workspace' | 'local'
+
 /**
- * Choose a file or folder from the session's working directory.
+ * Give the agent a file, from either machine.
  *
- * The same Host search that backs `@`, reached without knowing the syntax — which
- * is what the composer's plus button is for. Insertion produces the same `@path`
- * either way, so there is one thing for the operator to learn and one thing for
- * the products to read.
+ * Two routes, because the browser is not always on the Host. Referencing a file
+ * already in the working directory copies nothing and is the common case; sending
+ * one from the machine the browser is running on is what a laptop driving a remote
+ * Harness needs, and there is no other way for those bytes to arrive.
  *
- * Scoped to the working directory, not the Host filesystem. The plus button in a
- * desktop app opens a file dialog anywhere; here that would hand the browser a
- * way to enumerate the machine, and a path outside the directory is not something
- * the agent could read anyway.
+ * Both produce the same `@path` in the draft, so there is one thing for the
+ * operator to learn and one thing for the products to read.
+ *
+ * The workspace route is deliberately not a Host file dialog. Browsing the Host's
+ * whole filesystem from a browser is what this bridge does not do, and a path
+ * outside the working directory is not something the agent could read anyway.
  */
 function AttachPicker({
   result,
   query,
   busy,
+  source,
+  uploading,
+  rejected,
   t,
+  onSource,
   onQuery,
   onPick,
-  onClose,
+  onUpload,
 }: {
   result: BridgeFileSearchResult
   query: string
   busy: boolean
+  source: AttachSource
+  uploading: boolean
+  rejected: number
   t: PanelTranslate
+  onSource: (next: AttachSource) => void
   onQuery: (next: string) => void
   onPick: (match: BridgeFileMatch) => void
-  onClose: () => void
+  onUpload: (files: FileList | null) => void
 }) {
   const input = useRef<HTMLInputElement>(null)
-  useEffect(() => { input.current?.focus() }, [])
+  const filePick = useRef<HTMLInputElement>(null)
+  const folderPick = useRef<HTMLInputElement>(null)
+  useEffect(() => { if (source === 'workspace') input.current?.focus() }, [source])
+  // `webkitdirectory` is how every browser that offers folder selection spells
+  // it, and React's typings do not carry it — so it goes on through the DOM node
+  // rather than being cast onto the JSX props.
+  //
+  // Keyed to the source, not to mount: the input only exists while the upload tab
+  // is showing, so a mount-time effect found no node and left the folder button
+  // opening a plain file chooser.
+  useEffect(() => { folderPick.current?.setAttribute('webkitdirectory', '') }, [source])
   return (
     <div className="lab-attach-menu" role="dialog" aria-label={t('attach.title')}>
-      <input
-        ref={input}
-        type="search"
-        className="lab-input lab-attach-search"
-        value={query}
-        placeholder={t('attach.search')}
-        onChange={event => { onQuery(event.target.value) }}
-        onKeyDown={event => {
-          if (event.key === 'Escape') {
-            event.preventDefault()
-            onClose()
-          }
-        }}
-      />
-      <div className="lab-attach-list">
-        {busy && result.matches.length === 0 && <p className="lab-browse-note">{t('browse.loading')}</p>}
-        {!busy && result.matches.length === 0 && <p className="lab-browse-note">{t('attach.empty')}</p>}
-        {result.matches.map(match => (
-          <button
-            key={match.path}
-            type="button"
-            className="lab-attach-row"
-            title={match.path}
-            onClick={() => { onPick(match) }}
-          >
-            {match.directory ? <IconFolderClose16 /> : <IconCodeOutline16 />}
-            <span className="lab-attach-name">{match.name}{match.directory ? '/' : ''}</span>
-            <span className="lab-attach-path">{match.path}</span>
-          </button>
-        ))}
-        {result.partial && <p className="lab-browse-note">{t('files.partial')}</p>}
+      <div className="lab-attach-tabs" role="tablist" aria-label={t('attach.source')}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={source === 'workspace'}
+          className={source === 'workspace' ? 'lab-attach-tab lab-attach-tab--on' : 'lab-attach-tab'}
+          onClick={() => { onSource('workspace') }}
+        >
+          {t('attach.fromWorkspace')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={source === 'local'}
+          className={source === 'local' ? 'lab-attach-tab lab-attach-tab--on' : 'lab-attach-tab'}
+          onClick={() => { onSource('local') }}
+        >
+          {t('attach.fromBrowser')}
+        </button>
       </div>
+
+      {source === 'workspace' && (
+        <>
+          <input
+            ref={input}
+            type="search"
+            className="lab-input lab-attach-search"
+            value={query}
+            placeholder={t('attach.search')}
+            onChange={event => { onQuery(event.target.value) }}
+          />
+          <div className="lab-attach-list">
+            {busy && result.matches.length === 0 && <p className="lab-browse-note">{t('browse.loading')}</p>}
+            {!busy && result.matches.length === 0 && <p className="lab-browse-note">{t('attach.empty')}</p>}
+            {result.matches.map(match => (
+              <button
+                key={match.path}
+                type="button"
+                className="lab-attach-row"
+                title={match.path}
+                onClick={() => { onPick(match) }}
+              >
+                {match.directory ? <IconFolderClose16 /> : <IconCodeOutline16 />}
+                <span className="lab-attach-name">{match.name}{match.directory ? '/' : ''}</span>
+                <span className="lab-attach-path">{match.path}</span>
+              </button>
+            ))}
+            {result.partial && <p className="lab-browse-note">{t('files.partial')}</p>}
+          </div>
+        </>
+      )}
+
+      {source === 'local' && (
+        <div className="lab-attach-upload">
+          <p className="lab-browse-note">{t('attach.uploadHint')}</p>
+          <div className="lab-row">
+            <ActionButton
+              className="lab-grow"
+              disabled={uploading}
+              onClick={() => { filePick.current?.click() }}
+            >
+              {t('attach.pickFiles')}
+            </ActionButton>
+            <ActionButton
+              className="lab-grow"
+              disabled={uploading}
+              onClick={() => { folderPick.current?.click() }}
+            >
+              {t('attach.pickFolder')}
+            </ActionButton>
+          </div>
+          {uploading && <p className="lab-browse-note">{t('attach.uploading')}</p>}
+          {rejected > 0 && <p className="lab-attach-warning">{t('attach.rejected', { count: rejected })}</p>}
+          {/* Kept out of the layout rather than out of the tree: a file input has
+              to be a real input for the browser to open its chooser at all. */}
+          <input
+            ref={filePick}
+            type="file"
+            multiple
+            className="lab-offscreen"
+            onChange={event => { onUpload(event.target.files); event.target.value = '' }}
+          />
+          <input
+            ref={folderPick}
+            type="file"
+            multiple
+            className="lab-offscreen"
+            onChange={event => { onUpload(event.target.files); event.target.value = '' }}
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -1381,6 +1479,10 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
   const [attachQuery, setAttachQuery] = useState('')
   const [attachBusy, setAttachBusy] = useState(false)
   const [attachFiles, setAttachFiles] = useState<BridgeFileSearchResult>({ matches: [], partial: false })
+  const attachRoot = useRef<HTMLSpanElement>(null)
+  const [attachSource, setAttachSource] = useState<AttachSource>('workspace')
+  const [uploading, setUploading] = useState(false)
+  const [uploadRejected, setUploadRejected] = useState(0)
   const timelineRef = useRef<HTMLDivElement>(null)
   const [nativeSessions, setNativeSessions] = useState<BridgeNativeSessionsResult>()
   const [nativeSessionsOpen, setNativeSessionsOpen] = useState(false)
@@ -1496,7 +1598,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
    * overwrite the other's list.
    */
   useEffect(() => {
-    if (!attachOpen || selectedId === undefined) return
+    if (!attachOpen || attachSource !== 'workspace' || selectedId === undefined) return
     let cancelled = false
     setAttachBusy(true)
     const timer = setTimeout(() => {
@@ -1507,7 +1609,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
         .finally(() => { if (!cancelled) setAttachBusy(false) })
     }, 120)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [attachOpen, attachQuery, remote, selectedId])
+  }, [attachOpen, attachQuery, attachSource, remote, selectedId])
 
   // The picker belongs to the session it searched, so switching sessions closes
   // it rather than leaving another directory's files on screen.
@@ -1515,6 +1617,8 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
     setAttachOpen(false)
     setAttachQuery('')
     setAttachFiles({ matches: [], partial: false })
+    setAttachSource('workspace')
+    setUploadRejected(0)
   }, [selectedId])
 
   const draftTrigger = completionTrigger(draft)
@@ -1936,6 +2040,67 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
   }
 
   /**
+   * Send files the operator picked in their browser to the Host, and reference
+   * them in the draft.
+   *
+   * Read as data URLs rather than assembled by hand: `btoa` over a large array
+   * overflows the argument stack, and the platform already has an encoder that
+   * does not. A file the browser cannot read is skipped rather than failing the
+   * batch, since one unreadable file among twenty should not lose the other
+   * nineteen.
+   * @param picked - what the browser's chooser returned.
+   */
+  const uploadFiles = async (picked: FileList | null): Promise<void> => {
+    if (picked === null || picked.length === 0 || selectedId === undefined) return
+    setError(undefined)
+    setUploadRejected(0)
+    setUploading(true)
+    try {
+      const files: { path: string; contentBase64: string }[] = []
+      for (const file of [...picked]) {
+        if (file.size > UPLOAD_FILE_LIMIT) continue
+        const encoded = await new Promise<string | null>((resolve) => {
+          const reader = new FileReader()
+          reader.onload = () => {
+            const value = typeof reader.result === 'string' ? reader.result : ''
+            // A data URL is `data:<type>;base64,<payload>`; only the payload
+            // crosses, and the type is the Host's business to infer if it cares.
+            const comma = value.indexOf(',')
+            resolve(comma < 0 ? null : value.slice(comma + 1))
+          }
+          reader.onerror = () => { resolve(null) }
+          reader.readAsDataURL(file)
+        })
+        if (encoded === null) continue
+        // A folder upload reports the path within the chosen folder; a plain file
+        // upload reports only a name. The Host rebuilds either one.
+        const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath
+        files.push({
+          path: relative !== undefined && relative.length > 0 ? relative : file.name,
+          contentBase64: encoded,
+        })
+      }
+      if (files.length === 0) {
+        setUploadRejected(picked.length)
+        return
+      }
+      const result = unwrap(await remote.sessionUpload({ bridgeSessionId: selectedId, files }))
+      setUploadRejected(result.rejected + (picked.length - files.length))
+      if (result.paths.length > 0) {
+        const references = result.paths.map(path => `@${path}`).join(' ')
+        setDraft(current => current.length === 0 || current.endsWith(' ')
+          ? `${current}${references} `
+          : `${current} ${references} `)
+        setAttachOpen(false)
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  /**
    * Add a transcript to the draft.
    *
    * Appended with a space rather than replacing, so dictation can extend a typed
@@ -1947,6 +2112,9 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
   }
 
   const dictation = useDictation(speechLocale, appendDictation)
+  // The file popover's open state lives here rather than inside the picker,
+  // because the plus button that opens it sits outside the picker's own markup.
+  useDismissOnOutsidePointer(attachRoot, attachOpen, setAttachOpen)
 
   const changePermissionMode = async (mode: BridgePermissionMode): Promise<void> => {
     if (selectedId === undefined) return
@@ -2304,7 +2472,11 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                           onSelect={mode => { void changePermissionMode(mode) }}
                         />
                       )}
-                      <span className="lab-attach">
+                      <span
+                        className="lab-attach"
+                        ref={attachRoot}
+                        onKeyDown={event => { if (event.key === 'Escape') setAttachOpen(false) }}
+                      >
                         <button
                           type="button"
                           className="lab-icon-button"
@@ -2322,10 +2494,14 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                             result={attachFiles}
                             query={attachQuery}
                             busy={attachBusy}
+                            source={attachSource}
+                            uploading={uploading}
+                            rejected={uploadRejected}
                             t={t}
+                            onSource={setAttachSource}
                             onQuery={setAttachQuery}
                             onPick={insertReference}
-                            onClose={() => { setAttachOpen(false) }}
+                            onUpload={files => { void uploadFiles(files) }}
                           />
                         )}
                       </span>
