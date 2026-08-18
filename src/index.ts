@@ -6,7 +6,7 @@ import type { NativeProviderAdapter } from './core/provider.ts'
 import { BridgePersistence } from './core/persistence.ts'
 import { BridgeSessionEngine } from './core/session-engine.ts'
 import { BridgeError } from './core/errors.ts'
-import { discoverProvider, publicProvider } from './core/version.ts'
+import { discoverProvider, isAdmissible, publicProvider } from './core/version.ts'
 import { ClaudeProviderAdapter } from './providers/claude.ts'
 import { CodexProviderAdapter } from './providers/codex.ts'
 import { FakeProviderAdapter } from './providers/fake.ts'
@@ -70,6 +70,17 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   private readonly config: ResolvedConfig
   private engine: BridgeSessionEngine | null = null
   private providerViews: NativeProviderView[] = []
+  /**
+   * Adapters handed to the engine, by the same Map reference the engine holds:
+   * adding to it here makes a newly usable product usable for the next session,
+   * and the engine's dispose still owns tearing every one of them down.
+   *
+   * Entries are only ever added. A product that stops being admissible — the
+   * operator downgraded it — keeps its adapter, because a session may be running
+   * on it right now; `sessionCreate` gates on the freshly computed health
+   * instead, so no *new* session starts on it.
+   */
+  private readonly adapters = new Map<ProviderId, NativeProviderAdapter>()
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'localAgentBridge')
@@ -82,7 +93,17 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     }
   }
 
-  protected async *[Service.init](): AsyncGenerator<() => Promise<void>, void, void> {
+  /**
+   * Probe both products and refresh what the browser is told about them.
+   *
+   * Called on load and again on every catalog read, because the operator's fix
+   * for an unusable product happens on the Host — installing it, logging in,
+   * upgrading it, or starting DSH from a shell whose PATH resolves it — and the
+   * documented recovery is to press Refresh in the browser, not to restart the
+   * Profile. Probing is two `--version` reads and does not touch a running
+   * session; a product that became admissible gains its adapter here.
+   */
+  private async discoverProviders(): Promise<void> {
     const discovered = await Promise.all([
       discoverProvider(this.ctx.subprocess, 'codex', {
         allowExperimentalVersions: this.config.allowExperimentalVersions,
@@ -91,18 +112,21 @@ export class LocalAgentBridgeService extends TypertRemoteService {
         allowExperimentalVersions: this.config.allowExperimentalVersions,
       }),
     ])
-    const adapters = new Map<ProviderId, NativeProviderAdapter>()
+    const admissible = new Set<ProviderId>()
     for (const provider of discovered) {
-      const compatible = provider.compatibility === 'supported'
-        || this.config.allowExperimentalVersions && provider.compatibility === 'unknown'
-      if (!provider.installed || provider.executablePath === null || !compatible) continue
-      adapters.set(provider.id, provider.id === 'codex'
+      if (!isAdmissible(provider, this.config.allowExperimentalVersions)) continue
+      admissible.add(provider.id)
+      if (this.adapters.has(provider.id)) continue
+      this.adapters.set(provider.id, provider.id === 'codex'
         ? new CodexProviderAdapter(this.ctx.subprocess, provider.executablePath, this.config.processGraceMs)
         : new ClaudeProviderAdapter(this.ctx.subprocess, provider.executablePath, this.config.processGraceMs))
     }
-    this.providerViews = discovered.map(provider => publicProvider(provider, adapters.has(provider.id)))
+    // Readiness follows this probe, not the presence of an adapter: an adapter
+    // retained for a running session must not advertise a product the operator
+    // has since downgraded.
+    this.providerViews = discovered.map(provider => publicProvider(provider, admissible.has(provider.id)))
     if (this.config.enableFakeProvider) {
-      adapters.set('fake', new FakeProviderAdapter())
+      if (!this.adapters.has('fake')) this.adapters.set('fake', new FakeProviderAdapter())
       this.providerViews.push({
         id: 'fake',
         displayName: 'Verification Fixture',
@@ -115,10 +139,14 @@ export class LocalAgentBridgeService extends TypertRemoteService {
         message: null,
       })
     }
+  }
+
+  protected async *[Service.init](): AsyncGenerator<() => Promise<void>, void, void> {
+    await this.discoverProviders()
     const persistence = await BridgePersistence.open(this.ctx.storageDomain)
     this.engine = await BridgeSessionEngine.create({
       persistence,
-      providers: adapters,
+      providers: this.adapters,
       eventRetention: this.config.eventRetention,
       longPollMaxMs: this.config.longPollMaxMs,
       resolveWorkspace: async (workspaceId) => {
@@ -141,6 +169,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   @Remote('catalog')
   async catalog(): Promise<BridgeCatalogResult> {
+    await this.discoverProviders()
     const workspaces = await Promise.all(this.ctx.workspaceRegistry.list().map(async workspace => ({
       id: String(workspace.id),
       title: workspace.title,

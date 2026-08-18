@@ -149,6 +149,32 @@ export function publicProvider(
   }
 }
 
+/**
+ * Whether a discovered product may back a new bridge session.
+ *
+ * The rule is deliberately separate from health projection: this decides
+ * whether an adapter may be constructed at all, while `publicProvider` decides
+ * what the operator is told. Keeping them apart is what lets an adapter be
+ * retained for a running session while the browser correctly stops offering the
+ * product for new ones.
+ * Written as a type predicate so callers keep the narrowing the inline check
+ * used to give them: past this guard the executable path is known to be present
+ * and can be handed straight to an adapter constructor.
+ * @param provider - discovery result including its resolved executable path.
+ * @param allowExperimentalVersions - the local operator's explicit override.
+ * @returns true when the product is installed, located, and version-admitted.
+ */
+export function isAdmissible<
+  T extends Pick<NativeProviderView, 'installed' | 'compatibility'> & { readonly executablePath: string | null },
+>(
+  provider: T,
+  allowExperimentalVersions: boolean,
+): provider is T & { readonly executablePath: string } {
+  if (!provider.installed || provider.executablePath === null) return false
+  if (provider.compatibility === 'supported') return true
+  return allowExperimentalVersions && provider.compatibility === 'unknown'
+}
+
 export function assertProviderSupported(provider: NativeProviderView): void {
   if (!provider.installed) throw new BridgeError('EXECUTABLE_NOT_FOUND')
   if (provider.compatibility !== 'supported') throw new BridgeError('UNSUPPORTED_VERSION')

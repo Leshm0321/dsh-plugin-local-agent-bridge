@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { credentialLeakMarkers, redactText, redactValue } from '../../src/core/redaction.ts'
 import {
   compatibilityFor,
+  isAdmissible,
   parseProductVersion,
   publicProvider,
   supportedVersionRange,
@@ -121,6 +122,42 @@ describe('provider health projection', () => {
     const view = publicProvider(discovered({ compatibility: 'supported', health: 'installed' }), true)
     expect(view).not.toHaveProperty('executablePath')
     expect(JSON.stringify(view)).not.toContain('/host/path')
+  })
+})
+
+describe('session admission', () => {
+  const candidate = (overrides: {
+    installed?: boolean
+    compatibility?: ProviderCompatibility
+    executablePath?: string | null
+  }) => ({
+    installed: true,
+    compatibility: 'supported' as ProviderCompatibility,
+    executablePath: '/host/path/codex',
+    ...overrides,
+  })
+
+  it('admits an installed, located, supported product', () => {
+    expect(isAdmissible(candidate({}), false)).toBe(true)
+  })
+
+  it('refuses a product that is absent or could not be located', () => {
+    expect(isAdmissible(candidate({ installed: false }), false)).toBe(false)
+    expect(isAdmissible(candidate({ executablePath: null }), false)).toBe(false)
+    // Even the experimental override cannot conjure an executable.
+    expect(isAdmissible(candidate({ executablePath: null }), true)).toBe(false)
+  })
+
+  it('refuses a rejected version regardless of the experimental override', () => {
+    expect(isAdmissible(candidate({ compatibility: 'unsupported' }), false)).toBe(false)
+    // A version that parsed and lost is a decision, not an uncertainty: the
+    // override covers unverifiable versions only.
+    expect(isAdmissible(candidate({ compatibility: 'unsupported' }), true)).toBe(false)
+  })
+
+  it('admits an unverifiable version only under the explicit override', () => {
+    expect(isAdmissible(candidate({ compatibility: 'unknown' }), false)).toBe(false)
+    expect(isAdmissible(candidate({ compatibility: 'unknown' }), true)).toBe(true)
   })
 })
 
