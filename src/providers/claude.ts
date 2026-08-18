@@ -338,6 +338,26 @@ async function projectMessage(
   }
 }
 
+/**
+ * Run an optional SDK control request, distinguishing failure from an empty answer.
+ *
+ * Null rather than an empty list, because the two mean different things to the
+ * operator: a product that answered "none" has been asked, while a product that
+ * could not be asked has not — and only the second should keep the panel saying
+ * so. Covers both shapes of failure: a rejected promise from a product that
+ * declined the request, and a synchronous throw from an SDK build where the
+ * method does not exist at all.
+ * @param read - the control request to attempt.
+ * @returns what the product reported, or null when it could not be asked.
+ */
+async function readOrNull<T>(read: () => Promise<T[]>): Promise<T[] | null> {
+  try {
+    return await read()
+  } catch {
+    return null
+  }
+}
+
 export class ClaudeProviderAdapter implements NativeProviderAdapter {
   readonly id = 'claude' as const
   readonly supportsSteer = false
@@ -391,8 +411,11 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
     try {
       active.query = claudeQuery({ prompt: text, options })
       // Fire and forget: the turn must not wait on a convenience read, and a
-      // product that refuses the control request still has to run its turn.
-      void this.captureCompletions(hooks.bridgeSessionId, active.query)
+      // product that refuses the control request still has to run its turn. The
+      // catch is the last line of defence — captureCompletions already swallows
+      // its own failures, and an unhandled rejection here would surface as a
+      // process-level error during an unrelated test or, worse, in production.
+      void this.captureCompletions(hooks.bridgeSessionId, active.query).catch(() => {})
       for await (const message of active.query) {
         await projectMessage(message, hooks, projection)
       }
@@ -419,12 +442,19 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
    * @param query - the live SDK query for the turn just started.
    */
   private async captureCompletions(bridgeSessionId: string, query: Query): Promise<void> {
+    // Each read is wrapped rather than chained with .catch(), because an SDK
+    // build that predates one of these control requests has no such method: the
+    // call then throws synchronously, before there is a promise to catch on.
     const [commands, servers] = await Promise.all([
-      query.supportedCommands().catch(() => []),
-      query.mcpServerStatus().catch(() => []),
+      readOrNull(() => query.supportedCommands()),
+      readOrNull(() => query.mcpServerStatus()),
     ])
+    // Neither request landed, so nothing was learned. Leaving the session pending
+    // is the honest answer: recording an empty list would tell the operator this
+    // product has no commands, when in fact it was never able to say.
+    if (commands === null && servers === null) return
     const completions: BridgeCompletion[] = [
-      ...commands.map(command => ({
+      ...(commands ?? []).map(command => ({
         kind: 'command' as const,
         name: redactText(command.name, 128),
         // Claude Code resolves these as slash commands, so that is the form the
@@ -434,7 +464,7 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
         argumentHint: command.argumentHint.length === 0 ? null : redactText(command.argumentHint, 128),
         status: null,
       })),
-      ...servers.map(server => ({
+      ...(servers ?? []).map(server => ({
         kind: 'mcp' as const,
         name: redactText(server.name, 128),
         insertText: null,

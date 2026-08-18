@@ -354,4 +354,52 @@ describe('ClaudeProviderAdapter', () => {
     expect(runtime.handles[0]?.terminateMock).toHaveBeenCalledTimes(1)
     await adapter.dispose()
   })
+  it('reports completions from the SDK, and survives an SDK that has neither control request', async () => {
+    const runtime = new FakeClaudeRuntime()
+    const lifecycle = { interrupt: vi.fn(async () => {}), close: vi.fn() }
+
+    // The default query double carries only interrupt/close — the shape of an
+    // SDK build predating these control requests, where the call throws
+    // synchronously rather than returning a promise to catch on. That used to
+    // escape as an unhandled rejection during an unrelated test.
+    sdk.query.mockImplementation((input: QueryInput) => queryFrom(input, successMessages(), lifecycle))
+
+    const bare = new ClaudeProviderAdapter(runtime.subprocess as never, '/host/bin/claude')
+    const sessionId = createHooks().hooks.bridgeSessionId
+    expect(await bare.listCompletions(sessionId)).toEqual({ completions: [], pending: true })
+    await bare.startTurn({ text: 'first turn', hooks: createHooks().hooks })
+    // Still pending, not an error, and not a fabricated empty answer.
+    expect(await bare.listCompletions(sessionId)).toEqual({ completions: [], pending: true })
+    await bare.dispose()
+
+    // A current SDK answers both, and the panel gets the product's own names.
+    sdk.query.mockImplementation((input: QueryInput) => ({
+      ...queryFrom(input, successMessages(), lifecycle),
+      supportedCommands: async () => [
+        { name: 'compact', description: 'Compact the context', argumentHint: '', aliases: [] },
+        { name: 'review', description: '', argumentHint: '<path>', aliases: [] },
+      ],
+      mcpServerStatus: async () => [
+        { name: 'playwright', status: 'connected', serverInfo: { name: 'playwright-mcp', version: '1.0.0' } },
+        { name: 'broken', status: 'failed' },
+      ],
+    }) as unknown as Query)
+
+    const current = new ClaudeProviderAdapter(runtime.subprocess as never, '/host/bin/claude')
+    await current.startTurn({ text: 'first turn', hooks: createHooks().hooks })
+    const reported = await current.listCompletions(sessionId)
+
+    expect(reported.pending).toBe(false)
+    expect(reported.completions).toEqual([
+      // Claude Code resolves commands with a slash, so that is the insertion text.
+      { kind: 'command', name: 'compact', insertText: '/compact', description: 'Compact the context', argumentHint: null, status: null },
+      // An empty description or hint from the product becomes null, not ''.
+      { kind: 'command', name: 'review', insertText: '/review', description: null, argumentHint: '<path>', status: null },
+      // A server cannot be typed into the composer, and its state is carried.
+      { kind: 'mcp', name: 'playwright', insertText: null, description: 'playwright-mcp', argumentHint: null, status: 'connected' },
+      // serverInfo only arrives once connected; its absence is not an error.
+      { kind: 'mcp', name: 'broken', insertText: null, description: null, argumentHint: null, status: 'failed' },
+    ])
+    await current.dispose()
+  })
 })
