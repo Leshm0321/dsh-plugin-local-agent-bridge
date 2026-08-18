@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ButtonHTMLAttributes, CSSProperties, FormEvent, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, FormEvent, ReactNode } from 'react'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 // Type-only: merges `locale` onto Context and declares the LocaleNamespaceMap
@@ -29,12 +29,14 @@ import type {
   BridgeErrorCode,
   BridgeEvent,
   BridgeQuestion,
+  BridgeSessionStatus,
   BridgeSessionView,
   BridgeStatusNote,
   NativeProviderView,
   PendingInteractionView,
 } from '../types.ts'
 import { en, type LocalAgentBridgeKey, zh } from './locales.ts'
+import { PANEL_STYLES } from './styles.ts'
 
 export type { LocalAgentBridgeKey } from './locales.ts'
 
@@ -47,6 +49,34 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Dictionary namespace owned by this plugin. */
 const NS = 'local-agent-bridge'
+
+/**
+ * Statuses in which the Host has work in flight for this session, so the turn
+ * can be cancelled and the session badge should read as active.
+ */
+const BUSY_STATUSES: readonly BridgeSessionStatus[] = [
+  'running',
+  'awaiting-approval',
+  'awaiting-answer',
+  'cancelling',
+]
+
+/**
+ * Modifier class per timeline row kind, written out rather than interpolated
+ * from the kind. A `lab-row-card--${kind}` template compiles fine but leaves no
+ * literal in the source, so neither a reader nor the stylesheet test can tell
+ * which modifiers exist — and a kind whose rule was never written would simply
+ * render unstyled. This table makes the set exhaustive at compile time.
+ */
+const ROW_MODIFIER: Record<TimelineRow['kind'], string> = {
+  // The plain card is the assistant's own answer; it needs no modifier.
+  assistant: '',
+  user: 'lab-row-card--user',
+  reasoning: 'lab-row-card--reasoning',
+  tool: 'lab-row-card--tool',
+  status: 'lab-row-card--status',
+  error: 'lab-row-card--error',
+}
 
 /**
  * This panel's translate function, typed to its own key union. Named in full
@@ -94,108 +124,6 @@ interface TimelineRow {
   readonly text: string
 }
 
-const palette = {
-  bg: '#0b0d12',
-  panel: '#11151d',
-  raised: '#171c26',
-  border: '#2a3140',
-  text: '#eef2f8',
-  muted: '#9aa6b7',
-  accent: '#67d5b5',
-  danger: '#ff7b86',
-  warning: '#f1c56b',
-} as const
-
-const styles: Record<string, CSSProperties> = {
-  trigger: {
-    appearance: 'none', border: 0, background: 'transparent', color: 'inherit', cursor: 'pointer',
-    display: 'flex', alignItems: 'center', gap: 8, minWidth: 36, minHeight: 36, padding: '6px 8px',
-    borderRadius: 8, font: 'inherit',
-  },
-  overlay: {
-    position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(3, 5, 9, .76)',
-    backdropFilter: 'blur(12px)', display: 'grid', placeItems: 'center', padding: 18,
-  },
-  shell: {
-    width: 'min(1440px, 100%)', height: 'min(900px, 100%)', border: `1px solid ${palette.border}`,
-    borderRadius: 8, overflow: 'hidden', background: palette.bg, color: palette.text,
-    boxShadow: '0 28px 90px rgba(0,0,0,.55)', display: 'grid', gridTemplateRows: '64px 1fr',
-    fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
-  },
-  header: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-    padding: '0 20px', borderBottom: `1px solid ${palette.border}`, background: palette.panel,
-  },
-  body: { minHeight: 0, display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)' },
-  sidebar: {
-    minHeight: 0, overflow: 'auto', padding: 14, borderRight: `1px solid ${palette.border}`,
-    background: palette.panel,
-  },
-  main: { minWidth: 0, minHeight: 0, display: 'grid', gridTemplateRows: 'auto 1fr auto', background: palette.bg },
-  toolbar: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-    padding: '12px 16px', borderBottom: `1px solid ${palette.border}`,
-  },
-  timeline: { minHeight: 0, overflow: 'auto', padding: '18px clamp(14px, 3vw, 36px)' },
-  composer: { padding: 14, borderTop: `1px solid ${palette.border}`, background: palette.panel },
-  card: { border: `1px solid ${palette.border}`, background: palette.raised, borderRadius: 8, padding: 12 },
-  button: {
-    appearance: 'none', border: `1px solid ${palette.border}`, background: palette.raised, color: palette.text,
-    borderRadius: 8, padding: '8px 12px', cursor: 'pointer', font: 'inherit', display: 'inline-flex',
-    alignItems: 'center', justifyContent: 'center', gap: 6,
-  },
-  primary: { background: palette.accent, color: '#06261d', borderColor: palette.accent, fontWeight: 700 },
-  danger: { color: palette.danger, borderColor: '#68343b' },
-  input: {
-    width: '100%', boxSizing: 'border-box', border: `1px solid ${palette.border}`, background: '#0d1118',
-    color: palette.text, borderRadius: 8, padding: '9px 10px', font: 'inherit', outline: 'none',
-  },
-  label: { display: 'grid', gap: 6, color: palette.muted, fontSize: 12 },
-  session: {
-    width: '100%', textAlign: 'left', border: `1px solid ${palette.border}`, background: '#10141c', color: palette.text,
-    borderRadius: 8, padding: 10, cursor: 'pointer', marginBottom: 8,
-  },
-  selected: { borderColor: palette.accent, boxShadow: '0 0 0 1px rgba(103,213,181,.3)' },
-  row: { maxWidth: 920, margin: '0 auto 12px', borderRadius: 8, padding: '11px 13px', whiteSpace: 'pre-wrap' },
-  muted: { color: palette.muted },
-  badge: { display: 'inline-flex', borderRadius: 999, padding: '3px 8px', fontSize: 11, background: '#222a38' },
-}
-
-const responsiveStyles = `
-@media (max-width: 720px) {
-  .local-agent-overlay { padding: 8px !important; }
-  .local-agent-shell {
-    height: 100% !important;
-    border-radius: 6px !important;
-    grid-template-rows: 56px minmax(0, 1fr) !important;
-  }
-  .local-agent-header { padding: 0 12px !important; }
-  .local-agent-body {
-    grid-template-columns: minmax(0, 1fr) !important;
-    grid-template-rows: minmax(210px, 42%) minmax(0, 1fr) !important;
-  }
-  .local-agent-sidebar {
-    border-right: 0 !important;
-    border-bottom: 1px solid ${palette.border} !important;
-    padding: 10px !important;
-  }
-  .local-agent-toolbar {
-    align-items: flex-start !important;
-    flex-wrap: wrap !important;
-    padding: 10px 12px !important;
-  }
-  .local-agent-timeline { padding: 12px !important; }
-  .local-agent-composer { padding: 10px !important; }
-}
-
-@media (max-width: 480px) {
-  .local-agent-body {
-    grid-template-rows: minmax(240px, 46%) minmax(0, 1fr) !important;
-  }
-  .local-agent-composer-row { grid-template-columns: minmax(0, 1fr) !important; }
-  .local-agent-composer-row > button { width: 100%; }
-}
-`
 
 function unwrap<T>(result: RemoteResult<T>): T {
   if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
@@ -341,15 +269,23 @@ function healthDetail(t: PanelTranslate, provider: NativeProviderView): string |
   })
 }
 
-function ActionButton({ children, primary, danger, ...props }: {
+function ActionButton({ children, primary, danger, icon, className, ...props }: {
   children: ReactNode
   primary?: boolean
   danger?: boolean
+  /** Square, label-less button (a titlebar action). */
+  icon?: boolean
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       type="button"
-      style={{ ...styles.button, ...(primary ? styles.primary : {}), ...(danger ? styles.danger : {}) }}
+      className={[
+        'lab-btn',
+        primary === true ? 'lab-btn--primary' : '',
+        danger === true ? 'lab-btn--danger' : '',
+        icon === true ? 'lab-btn--icon' : '',
+        className ?? '',
+      ].filter(part => part !== '').join(' ')}
       {...props}
     >
       {children}
@@ -376,12 +312,12 @@ function QuestionInput({
     onChange(value.includes(candidate) ? value.filter(item => item !== candidate) : [...value, candidate])
   }
   return (
-    <fieldset style={{ ...styles.card, margin: '0 0 10px' }}>
-      <legend style={{ padding: '0 6px', fontWeight: 700 }}>{question.header}</legend>
-      <p style={{ margin: '4px 0 10px', color: palette.muted }}>{question.prompt}</p>
-      <div style={{ display: 'grid', gap: 7 }}>
+    <fieldset className="lab-question">
+      <legend className="lab-question-legend">{question.header}</legend>
+      <p className="lab-question-prompt">{question.prompt}</p>
+      <div className="lab-choices">
         {question.options.map(option => (
-          <label key={option.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+          <label key={option.value} className="lab-choice">
             <input
               type={question.multiSelect ? 'checkbox' : 'radio'}
               name={question.id}
@@ -389,14 +325,14 @@ function QuestionInput({
               onChange={() => { toggle(option.value) }}
             />
             <span>
-              <span>{option.label}</span>
-              {option.description !== null && <small style={{ display: 'block', color: palette.muted }}>{option.description}</small>}
+              <span className="lab-choice-label">{option.label}</span>
+              {option.description !== null && <small className="lab-choice-desc">{option.description}</small>}
             </span>
           </label>
         ))}
         {question.allowFreeText && (
           <input
-            style={styles.input}
+            className="lab-input"
             type={question.secret ? 'password' : 'text'}
             placeholder={t('interaction.freeText')}
             value={question.options.some(option => value.includes(option.value)) ? '' : value[0] ?? ''}
@@ -442,14 +378,14 @@ function InteractionCard({
   }
 
   return (
-    <div style={{ ...styles.card, marginBottom: 12, borderColor: palette.warning }}>
-      <div style={{ color: palette.warning, fontWeight: 800, marginBottom: 6 }}>
+    <div className="lab-interaction">
+      <p className="lab-interaction-kind">
         {interaction.kind === 'approval' ? t('interaction.approval') : t('interaction.question')}
-      </div>
-      <div>{interaction.safeSummary}</div>
-      {interaction.target !== null && <small style={styles.muted}>{interaction.target}</small>}
+      </p>
+      <p className="lab-interaction-summary">{interaction.safeSummary}</p>
+      {interaction.target !== null && <small className="lab-interaction-target">{interaction.target}</small>}
       {interaction.kind === 'question' && (
-        <div style={{ marginTop: 12 }}>
+        <div>
           {interaction.questions.map(question => (
             <QuestionInput
               key={question.id}
@@ -461,8 +397,8 @@ function InteractionCard({
           ))}
         </div>
       )}
-      {error !== undefined && <div style={{ color: palette.danger, marginTop: 8 }}>{error}</div>}
-      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+      {error !== undefined && <p className="lab-interaction-error">{error}</p>}
+      <div className="lab-interaction-actions">
         {interaction.kind === 'approval' ? (
           <>
             <ActionButton primary disabled={busy} onClick={() => { void respond({ kind: 'approval', action: 'allow' }) }}>{t('interaction.allowOnce')}</ActionButton>
@@ -612,6 +548,21 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
     }
   }
 
+  /**
+   * Hide a bridge session from the panel. The vendor-native history is
+   * untouched; only this bridge's view of it is archived.
+   * @param bridgeSessionId - the session to archive.
+   */
+  const archiveSelected = async (bridgeSessionId: string): Promise<void> => {
+    try {
+      unwrap(await remote.sessionArchive({ bridgeSessionId, archived: true }))
+      setSessions(current => current.filter(item => item.bridgeSessionId !== bridgeSessionId))
+      setSelectedId(undefined)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
   const send = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
     if (selectedId === undefined || draft.trim().length === 0) return
@@ -627,30 +578,45 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
 
   return (
     <>
-      <style>{responsiveStyles}</style>
-      <button type="button" style={styles.trigger} title={t('panel.name')} onClick={() => { setOpen(true) }}>
+      <style>{PANEL_STYLES}</style>
+      <button
+        type="button"
+        className="lab-root lab-trigger"
+        title={t('panel.name')}
+        onClick={() => { setOpen(true) }}
+      >
         <IconCodeOutline16 />{wide && <span>{t('panel.name')}</span>}
       </button>
       {open && (
-        <div className="local-agent-overlay" style={styles.overlay} role="dialog" aria-modal="true" aria-label={t('panel.name')}>
-          <section className="local-agent-shell" style={styles.shell}>
-            <header className="local-agent-header" style={styles.header}>
+        <div className="lab-root lab-scrim" role="dialog" aria-modal="true" aria-label={t('panel.name')}>
+          <section className="lab-window">
+            <header className="lab-titlebar">
               <div>
-                <strong style={{ fontSize: 18 }}>{t('panel.name')}</strong>
-                <div style={{ ...styles.muted, fontSize: 12 }}>{t('panel.subtitle')}</div>
+                <h2 className="lab-title">{t('panel.name')}</h2>
+                <p className="lab-subtitle">{t('panel.subtitle')}</p>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <ActionButton aria-label={t('panel.refresh')} title={t('panel.refresh')} onClick={() => { void refresh() }}><IconRefreshOutline16 /></ActionButton>
-                <ActionButton aria-label={t('panel.close')} title={t('panel.close')} onClick={() => { setOpen(false) }}><IconCloseOutline16 /></ActionButton>
+              <div className="lab-titlebar-actions">
+                <ActionButton icon aria-label={t('panel.refresh')} title={t('panel.refresh')} onClick={() => { void refresh() }}>
+                  <IconRefreshOutline16 />
+                </ActionButton>
+                <ActionButton icon aria-label={t('panel.close')} title={t('panel.close')} onClick={() => { setOpen(false) }}>
+                  <IconCloseOutline16 />
+                </ActionButton>
               </div>
             </header>
-            <div className="local-agent-body" style={styles.body}>
-              <aside className="local-agent-sidebar" style={styles.sidebar}>
-                <div style={{ ...styles.card, marginBottom: 14 }}>
-                  <strong>{t('create.heading')}</strong>
-                  <div style={{ display: 'grid', gap: 9, marginTop: 10 }}>
-                    <label style={styles.label}>{t('create.provider')}
-                      <select style={styles.input} value={providerId ?? ''} onChange={event => { setProviderId(event.target.value) }}>
+
+            <div className="lab-body">
+              <aside className="lab-aside">
+                <div className="lab-card">
+                  <h3 className="lab-card-title">{t('create.heading')}</h3>
+                  <div className="lab-stack" style={{ marginTop: 10 }}>
+                    <label className="lab-field">
+                      <span className="lab-field-label">{t('create.provider')}</span>
+                      <select
+                        className="lab-select"
+                        value={providerId ?? ''}
+                        onChange={event => { setProviderId(event.target.value) }}
+                      >
                         <option value="" disabled>{t('create.provider.placeholder')}</option>
                         {/* Unusable products stay listed but unselectable: seeing
                             "Codex — unsupported version" explains the absence
@@ -664,8 +630,13 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                         ))}
                       </select>
                     </label>
-                    <label style={styles.label}>{t('create.workspace')}
-                      <select style={styles.input} value={workspaceId ?? ''} onChange={event => { setWorkspaceId(event.target.value) }}>
+                    <label className="lab-field">
+                      <span className="lab-field-label">{t('create.workspace')}</span>
+                      <select
+                        className="lab-select"
+                        value={workspaceId ?? ''}
+                        onChange={event => { setWorkspaceId(event.target.value) }}
+                      >
                         <option value="" disabled>{t('create.workspace.placeholder')}</option>
                         {allWorkspaces.map(workspace => (
                           <option key={workspace.id} value={workspace.id} disabled={workspace.status !== 'ok'}>
@@ -674,37 +645,42 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                         ))}
                       </select>
                     </label>
-                    <ActionButton primary disabled={busy || providerId === undefined || workspaceId === undefined} onClick={() => { void createSession() }}>
+                    <ActionButton
+                      primary
+                      disabled={busy || providerId === undefined || workspaceId === undefined}
+                      onClick={() => { void createSession() }}
+                    >
                       {busy ? t('create.busy') : t('create.submit')}
                     </ActionButton>
                   </div>
                 </div>
 
-                <div style={{ ...styles.card, marginBottom: 14 }}>
-                  <strong>{t('workspace.add')}</strong>
-                  <small style={{ ...styles.muted, display: 'block', margin: '5px 0 9px' }}>
+                <div className="lab-card">
+                  <h3 className="lab-card-title">{t('workspace.add')}</h3>
+                  <p className="lab-card-hint">
                     {readyWorkspaces.length === 0 ? t('workspace.empty') : t('workspace.add.hint')}
-                  </small>
+                  </p>
                   <form
-                    style={{ display: 'grid', gap: 8 }}
+                    className="lab-stack"
                     onSubmit={event => { event.preventDefault(); void addWorkspace(workspacePath) }}
                   >
                     <input
-                      style={styles.input}
+                      className="lab-input"
                       value={workspacePath}
                       placeholder={t('workspace.path.placeholder')}
                       aria-label={t('workspace.path.placeholder')}
                       disabled={addingWorkspace}
                       onChange={event => { setWorkspacePath(event.target.value) }}
                     />
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
+                    <div className="lab-row">
+                      <ActionButton
+                        primary
                         type="submit"
-                        style={{ ...styles.button, ...styles.primary, flex: 1 }}
+                        className="lab-grow"
                         disabled={addingWorkspace || workspacePath.trim().length === 0}
                       >
                         {addingWorkspace ? t('workspace.add.busy') : t('workspace.add.submit')}
-                      </button>
+                      </ActionButton>
                       {workspaces.pick !== undefined && (
                         <ActionButton disabled={addingWorkspace} onClick={() => { void browseWorkspace() }}>
                           {t('workspace.browse')}
@@ -715,93 +691,107 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                 </div>
 
                 {blockedProviders.length > 0 && (
-                  <div style={{ ...styles.card, marginBottom: 14, borderColor: palette.warning }}>
-                    <strong style={{ color: palette.warning }}>{t('diagnostics.heading')}</strong>
-                    <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                  <div className="lab-card lab-card--attention">
+                    <h3 className="lab-card-title">{t('diagnostics.heading')}</h3>
+                    <div style={{ marginTop: 8 }}>
                       {blockedProviders.map(provider => (
-                        <div key={provider.id}>
-                          <div style={{ fontSize: 12 }}>
-                            {provider.displayName} <span style={styles.badge}>{t(`health.${provider.health}`)}</span>
+                        <div className="lab-diagnostic" key={provider.id}>
+                          <div className="lab-diagnostic-head">
+                            {provider.displayName}
+                            <span className="lab-chip lab-chip--attention">{t(`health.${provider.health}`)}</span>
                           </div>
-                          <small style={{ ...styles.muted, display: 'block', marginTop: 3 }}>{healthDetail(t, provider)}</small>
+                          <div className="lab-diagnostic-body">{healthDetail(t, provider)}</div>
                           {provider.health === 'not-installed' && (
-                            <small style={{ ...styles.muted, display: 'block', marginTop: 3, opacity: .8 }}>
-                              {t('diagnostics.path.hint', { command: provider.id })}
-                            </small>
+                            <div className="lab-diagnostic-hint">{t('diagnostics.path.hint', { command: provider.id })}</div>
                           )}
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
-                <div style={{ fontSize: 12, color: palette.muted, margin: '0 2px 8px', textTransform: 'uppercase', letterSpacing: '.06em' }}>{t('sessions.heading')}</div>
-                {sessions.map(session => (
-                  <button
-                    key={session.bridgeSessionId}
-                    type="button"
-                    style={{ ...styles.session, ...(selectedId === session.bridgeSessionId ? styles.selected : {}) }}
-                    onClick={() => { setSelectedId(session.bridgeSessionId) }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                      <strong>{session.title}</strong><span style={styles.badge}>{t(`status.${session.status}`)}</span>
-                    </div>
-                    <small style={styles.muted}>{session.workspaceTitle} - {session.providerId}</small>
-                  </button>
-                ))}
-              </aside>
-              <main className="local-agent-main" style={styles.main}>
-                <div className="local-agent-toolbar" style={styles.toolbar}>
-                  <div>
-                    <strong>{snapshot?.session.title ?? t('sessions.empty')}</strong>
-                    {snapshot !== undefined && <div style={{ ...styles.muted, fontSize: 12 }}>{snapshot.session.workspaceTitle} · {t(`status.${snapshot.session.status}`)}</div>}
-                  </div>
-                  {snapshot !== undefined && (
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <ActionButton danger disabled={!['running', 'awaiting-approval', 'awaiting-answer', 'cancelling'].includes(snapshot.session.status)} onClick={() => {
-                        void remote.sessionCancel({ bridgeSessionId: snapshot.session.bridgeSessionId })
-                      }}><IconStopFill16 /> {t('session.cancel')}</ActionButton>
-                      <ActionButton onClick={() => {
-                        void remote.sessionArchive({ bridgeSessionId: snapshot.session.bridgeSessionId, archived: true })
-                          .then(unwrap).then(() => {
-                            setSessions(current => current.filter(item => item.bridgeSessionId !== snapshot.session.bridgeSessionId))
-                            setSelectedId(undefined)
-                          })
-                      }}><IconArchiveOutline20 size={16} /> {t('session.archive')}</ActionButton>
-                    </div>
-                  )}
-                </div>
-                <div className="local-agent-timeline" style={styles.timeline}>
-                  {error !== undefined && <div style={{ ...styles.card, color: palette.danger, marginBottom: 12 }}>{error}</div>}
-                  {snapshot?.pendingInteraction !== null && snapshot?.pendingInteraction !== undefined && (
-                    <InteractionCard interaction={snapshot.pendingInteraction} remote={remote} onResolved={() => { setError(undefined) }} t={t} />
-                  )}
-                  {rows.map(row => (
-                    <article
-                      key={row.key}
-                      style={{
-                        ...styles.row,
-                        background: row.kind === 'user' ? '#173028' : row.kind === 'error' ? '#35191e' : row.kind === 'reasoning' ? '#161a22' : palette.raised,
-                        border: `1px solid ${row.kind === 'error' ? '#6d3038' : palette.border}`,
-                        color: row.kind === 'reasoning' || row.kind === 'status' ? palette.muted : palette.text,
-                      }}
+
+                <p className="lab-section-label">{t('sessions.heading')}</p>
+                <div className="lab-sessions">
+                  {sessions.map(session => (
+                    <button
+                      key={session.bridgeSessionId}
+                      type="button"
+                      className="lab-session"
+                      aria-current={selectedId === session.bridgeSessionId}
+                      onClick={() => { setSelectedId(session.bridgeSessionId) }}
                     >
-                      <small style={{ display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.06em', opacity: .72 }}>{row.title}</small>
-                      {row.text}
-                    </article>
+                      <span className="lab-session-head">
+                        <span className="lab-session-name">{session.title}</span>
+                        <span className={BUSY_STATUSES.includes(session.status) ? 'lab-chip lab-chip--busy' : 'lab-chip'}>
+                          {t(`status.${session.status}`)}
+                        </span>
+                      </span>
+                      <span className="lab-session-meta">{session.workspaceTitle} · {session.providerId}</span>
+                    </button>
                   ))}
                 </div>
-                <form className="local-agent-composer" style={styles.composer} onSubmit={send}>
-                  <div className="local-agent-composer-row" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10 }}>
+              </aside>
+
+              <main className="lab-main">
+                <div className="lab-toolbar">
+                  <div>
+                    <h3 className="lab-toolbar-title">{snapshot?.session.title ?? t('sessions.empty')}</h3>
+                    {snapshot !== undefined && (
+                      <p className="lab-toolbar-meta">
+                        {snapshot.session.workspaceTitle} · {t(`status.${snapshot.session.status}`)}
+                      </p>
+                    )}
+                  </div>
+                  {snapshot !== undefined && (
+                    <div className="lab-toolbar-actions">
+                      <ActionButton
+                        danger
+                        disabled={!BUSY_STATUSES.includes(snapshot.session.status)}
+                        onClick={() => { void remote.sessionCancel({ bridgeSessionId: snapshot.session.bridgeSessionId }) }}
+                      >
+                        <IconStopFill16 /> {t('session.cancel')}
+                      </ActionButton>
+                      <ActionButton onClick={() => { void archiveSelected(snapshot.session.bridgeSessionId) }}>
+                        <IconArchiveOutline20 size={16} /> {t('session.archive')}
+                      </ActionButton>
+                    </div>
+                  )}
+                </div>
+
+                <div className="lab-timeline">
+                  {error !== undefined && <div className="lab-error-banner">{error}</div>}
+                  {snapshot?.pendingInteraction !== null && snapshot?.pendingInteraction !== undefined && (
+                    <InteractionCard
+                      interaction={snapshot.pendingInteraction}
+                      remote={remote}
+                      onResolved={() => { setError(undefined) }}
+                      t={t}
+                    />
+                  )}
+                  <div className="lab-stream">
+                    {rows.map(row => (
+                      <article key={row.key} className={`lab-row-card ${ROW_MODIFIER[row.kind]}`}>
+                        <small className="lab-row-label">{row.title}</small>
+                        {row.text}
+                      </article>
+                    ))}
+                  </div>
+                </div>
+
+                <form className="lab-composer" onSubmit={send}>
+                  <div className="lab-composer-row">
                     <textarea
-                      style={{ ...styles.input, minHeight: 58, resize: 'vertical' }}
+                      className="lab-textarea"
                       value={draft}
                       placeholder={t('composer.placeholder')}
                       disabled={selectedId === undefined}
                       onChange={event => { setDraft(event.target.value) }}
                     />
-                    <button type="submit" style={{ ...styles.button, ...styles.primary }} disabled={selectedId === undefined || draft.trim().length === 0}><IconSendOutline16 /> {t('composer.send')}</button>
+                    <ActionButton primary type="submit" disabled={selectedId === undefined || draft.trim().length === 0}>
+                      <IconSendOutline16 /> {t('composer.send')}
+                    </ActionButton>
                   </div>
-                  <small style={styles.muted}>{t('composer.hint')}</small>
+                  <small className="lab-composer-hint">{t('composer.hint')}</small>
                 </form>
               </main>
             </div>
