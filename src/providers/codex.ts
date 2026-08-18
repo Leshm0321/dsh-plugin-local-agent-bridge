@@ -1,6 +1,7 @@
 import Ajv, { type ValidateFunction } from 'ajv'
 import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol'
 import { type NativeCommand, nativeCommand } from '../core/platform.ts'
+import { toolDetail } from '../core/tool-detail.ts'
 import type {
   SubprocessHandle,
   SubprocessRuntime,
@@ -29,6 +30,7 @@ import type {
   BridgePermissionMode,
   BridgeNativeSession,
   BridgeNativeSessionsResult,
+  BridgeToolDetail,
   BridgeQuestion,
 } from '../types.ts'
 
@@ -274,6 +276,34 @@ function turnFailure(turn: CodexTurn): BridgeError | null {
   const message = error === null ? '' : JSON.stringify(redactValue(error))
   if (/auth|login|oauth|unauthori[sz]ed/i.test(message)) return new BridgeError('HOST_AUTH_REQUIRED')
   return new BridgeError('PROVIDER_START_FAILED')
+}
+
+/**
+ * The arguments and result to show for one Codex item.
+ *
+ * Field names are per item type and were read off the protocol schema rather than
+ * guessed: a shell call carries `command` and `aggregatedOutput`, an MCP call
+ * carries `arguments` with `result` or `error`, a file change carries `changes`.
+ * An item type not listed here contributes no detail rather than a JSON dump of
+ * whatever it happens to hold.
+ * @param item - the raw item from the notification.
+ * @returns the detail, or undefined when this item type has none.
+ */
+function itemDetail(item: JsonObject): BridgeToolDetail | undefined {
+  switch (item.type) {
+    case 'commandExecution':
+      return toolDetail(item.command, item.aggregatedOutput)
+    case 'fileChange':
+      return toolDetail(item.changes)
+    case 'mcpToolCall':
+      // `error` replaces `result` on failure; showing whichever is present keeps
+      // a failed call as informative as a successful one.
+      return toolDetail(item.arguments, item.error ?? item.result)
+    case 'dynamicToolCall':
+      return toolDetail(item.arguments ?? item.input, item.output ?? item.result)
+    default:
+      return undefined
+  }
 }
 
 function itemProjection(item: JsonObject): {
@@ -843,6 +873,7 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
       const projected = itemProjection(params.item)
       if (projected === null) return
       state.itemNames.set(projected.itemId, projected.toolName)
+      const detail = itemDetail(params.item)
       await state.hooks?.emit({
         type: method === 'item/started' ? 'bridge/tool-started' : 'bridge/tool-completed',
         data: {
@@ -850,6 +881,7 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
           toolName: projected.toolName,
           summary: projected.summary,
           status: method === 'item/started' ? 'running' : projected.failed ? 'failed' : 'completed',
+          ...detail === undefined ? {} : { detail },
         },
       })
       if (method === 'item/completed' && projected.fileChange) {

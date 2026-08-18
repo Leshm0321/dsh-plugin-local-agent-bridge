@@ -731,6 +731,78 @@ describe('LocalAgentPanel', () => {
     expect(screen.getByRole('button', { name: en['workspace.browse'] })).toBeTruthy()
   })
 
+  it('expands a tool row to show the call and its result', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      events: [
+        // A call emits started then completed for the same itemId. Two rows would
+        // show one call twice, with the result behind the stale one.
+        event(1, {
+          type: 'bridge/tool-started',
+          data: {
+            itemId: 'tool-1',
+            toolName: 'Read',
+            summary: 'Read: src/main.ts',
+            status: 'running',
+            detail: { input: '{\n  "file_path": "src/main.ts"\n}', output: null, truncated: false },
+          },
+        }),
+        event(2, {
+          type: 'bridge/tool-completed',
+          data: {
+            itemId: 'tool-1',
+            toolName: 'Read',
+            summary: 'Read completed',
+            status: 'completed',
+            detail: {
+              input: '{\n  "file_path": "src/main.ts"\n}',
+              output: 'export const answer = 42',
+              truncated: true,
+            },
+          },
+        }),
+      ],
+      latestSequence: 2,
+    }))
+    renderPanel(fixture.remote())
+
+    // One row, showing the completed state.
+    const toggle = await screen.findByRole('button', { name: new RegExp(en['tool.expand']) })
+    expect(screen.queryByText('Read: src/main.ts')).toBeNull()
+    expect(screen.getByText('Read completed')).toBeTruthy()
+
+    // Collapsed by default: a transcript is read for its shape first.
+    expect(screen.queryByText('export const answer = 42')).toBeNull()
+
+    fireEvent.click(toggle)
+    // Arguments and result both appear, so the row explains itself.
+    expect(await screen.findByText(/"file_path": "src\/main\.ts"/)).toBeTruthy()
+    expect(screen.getByText('export const answer = 42')).toBeTruthy()
+    // Truncation is stated rather than left to look like the whole output.
+    expect(screen.getByText(en['tool.truncated'])).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(en['tool.collapse']) }))
+    await waitFor(() => { expect(screen.queryByText('export const answer = 42')).toBeNull() })
+  })
+
+  it('leaves a tool row unexpandable when the product described nothing beyond the summary', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      events: [event(1, {
+        type: 'bridge/tool-completed',
+        data: { itemId: 'tool-2', toolName: 'Glob', summary: 'Glob completed', status: 'completed' },
+      })],
+      latestSequence: 1,
+    }))
+    renderPanel(fixture.remote())
+
+    expect(await screen.findByText('Glob completed')).toBeTruthy()
+    // No affordance offered for detail that does not exist.
+    expect(screen.queryByRole('button', { name: new RegExp(en['tool.expand']) })).toBeNull()
+  })
+
   it('offers only the permission modes the session\u2019s product can honour', async () => {
     const fixture = new RemoteFixture()
     fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })

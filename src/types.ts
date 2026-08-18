@@ -91,6 +91,22 @@ export type BridgeSessionStatus =
  * it here produced two rows saying the same thing — one of them in whatever
  * language the Host happened to compose.
  */
+/**
+ * A tool call's arguments and result, as far as they are safe and useful to show.
+ *
+ * Deliberately strings rather than structured data: the products describe tool
+ * arguments in their own shapes, and the browser's job here is to let a reader
+ * see what happened, not to interpret it.
+ */
+export interface BridgeToolDetail {
+  /** The tool's arguments, formatted for reading. Null when it took none. */
+  readonly input: string | null
+  /** What the tool returned. Null while it is still running. */
+  readonly output: string | null
+  /** True when the Host cut either field at its length budget. */
+  readonly truncated: boolean
+}
+
 export type BridgeStatusNote =
   | 'cancelling-turn'
   | 'host-restarted-resumable'
@@ -265,6 +281,17 @@ export type BridgeEvent =
       readonly toolName: string
       readonly summary: string
       readonly status: 'running' | 'completed' | 'failed'
+      /**
+       * What the agent asked the tool to do, and what came back — the detail a
+       * terminal shows inline and the panel used to discard entirely, leaving
+       * only a one-line summary.
+       *
+       * Both are vendor text passed through the same redaction as any other, and
+       * both are truncated on the Host: a file read can return a whole file, and
+       * the browser has no use for more than an excerpt of it. Absent when the
+       * product reported nothing, or reported only what the summary already says.
+       */
+      readonly detail?: BridgeToolDetail
     }
   }
   | BridgeEventBase & {

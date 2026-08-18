@@ -40,6 +40,7 @@ import type {
   BridgeSessionStatus,
   BridgeSessionView,
   BridgeStatusNote,
+  BridgeToolDetail,
   NativeProviderView,
   PendingInteractionView,
 } from '../types.ts'
@@ -147,6 +148,8 @@ interface TimelineRow {
   readonly kind: 'user' | 'assistant' | 'reasoning' | 'tool' | 'status' | 'error'
   readonly title: string
   readonly text: string
+  /** Present on a tool row the product described beyond its summary. */
+  readonly detail?: BridgeToolDetail
 }
 
 
@@ -233,13 +236,22 @@ function timeline(events: readonly BridgeEvent[], t: PanelTranslate): TimelineRo
         rows.push({ key: `${key}:${group}`, kind, title: t(`row.${kind}`), text: event.data.text })
       }
     } else if (event.type === 'bridge/tool-started' || event.type === 'bridge/tool-updated' || event.type === 'bridge/tool-completed') {
-      rows.push({
-        key,
+      // One row per tool call, updated in place. A call emits started and then
+      // completed for the same itemId; two rows would show the same call twice
+      // and hide the result behind the row that no longer applies.
+      const existing = rows.findIndex(row => row.kind === 'tool' && row.key === `tool:${event.data.itemId}`)
+      const row: TimelineRow = {
+        key: `tool:${event.data.itemId}`,
         kind: 'tool',
         // The tool name is the vendor's; only the status word is ours.
         title: t('row.tool', { tool: event.data.toolName, status: t(`row.toolStatus.${event.data.status}`) }),
         text: event.data.summary,
-      })
+        // A completed event carries the call and its result; a started event only
+        // the call. Keeping the newer one means the row gains the result.
+        ...event.data.detail === undefined ? {} : { detail: event.data.detail },
+      }
+      if (existing >= 0) rows[existing] = row
+      else rows.push(row)
     } else if (event.type === 'bridge/file-change') {
       rows.push({ key, kind: 'tool', title: t('row.fileChange'), text: event.data.summary })
     } else if (event.type === 'bridge/error') {
@@ -461,6 +473,58 @@ function DirectoryBrowser({
         <ActionButton onClick={onCancel}>{t('browse.cancel')}</ActionButton>
       </div>
     </div>
+  )
+}
+
+/**
+ * One timeline row.
+ *
+ * A tool row the product described beyond its summary becomes expandable — the
+ * detail a terminal prints inline. Collapsed by default because a transcript is
+ * read for its shape first: a wall of tool output would bury the conversation the
+ * operator is actually following.
+ */
+function TimelineEntry({ row, t }: { row: TimelineRow; t: PanelTranslate }) {
+  const [open, setOpen] = useState(false)
+  const detail = row.detail
+  if (detail === undefined) {
+    return (
+      <article className={`lab-row-card ${ROW_MODIFIER[row.kind]}`}>
+        <small className="lab-row-label">{row.title}</small>
+        {row.text}
+      </article>
+    )
+  }
+  return (
+    <article className={`lab-row-card ${ROW_MODIFIER[row.kind]}`}>
+      <button
+        type="button"
+        className="lab-tool-toggle"
+        aria-expanded={open}
+        onClick={() => { setOpen(current => !current) }}
+      >
+        <span className="lab-row-label" style={{ margin: 0 }}>{row.title}</span>
+        <span className="lab-tool-toggle-hint">{open ? t('tool.collapse') : t('tool.expand')}</span>
+      </button>
+      {row.text}
+      {open && (
+        <div className="lab-tool-detail">
+          {detail.input !== null && (
+            <div className="lab-tool-field">
+              <span className="lab-tool-field-label">{t('tool.input')}</span>
+              <pre className="lab-tool-pre">{detail.input}</pre>
+            </div>
+          )}
+          {detail.output !== null && (
+            <div className="lab-tool-field">
+              <span className="lab-tool-field-label">{t('tool.output')}</span>
+              <pre className="lab-tool-pre">{detail.output}</pre>
+            </div>
+          )}
+          {detail.truncated && <span className="lab-tool-truncated">{t('tool.truncated')}</span>}
+        </div>
+      )}
+    </article>
   )
 }
 
@@ -1597,12 +1661,7 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                     />
                   )}
                   <div className="lab-stream">
-                    {rows.map(row => (
-                      <article key={row.key} className={`lab-row-card ${ROW_MODIFIER[row.kind]}`}>
-                        <small className="lab-row-label">{row.title}</small>
-                        {row.text}
-                      </article>
-                    ))}
+                    {rows.map(row => <TimelineEntry key={row.key} row={row} t={t} />)}
                   </div>
                 </div>
 

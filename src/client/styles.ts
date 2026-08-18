@@ -494,6 +494,50 @@ export const PANEL_STYLES = `
 }
 .lab-row-card--error .lab-row-label { color: var(--lab-danger); }
 
+/* ------------------------------------------------------------- tool detail */
+
+.lab-tool-toggle {
+  appearance: none;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  color: var(--lab-text-3);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.lab-tool-toggle:hover { color: var(--lab-text-2); }
+.lab-tool-toggle-hint { font-weight: 500; text-transform: none; letter-spacing: 0; opacity: .8; }
+.lab-tool-detail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 9px; }
+.lab-tool-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; }
+.lab-tool-field-label { font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--lab-text-3); }
+.lab-tool-pre {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 260px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-family: var(--lab-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--lab-text);
+  background: var(--lab-bg);
+  border: var(--lab-hairline) solid var(--lab-line);
+  border-radius: 7px;
+}
+.lab-tool-truncated { font-size: 11px; color: var(--lab-text-3); }
+
 /* ------------------------------------------------------- interaction card */
 
 .lab-interaction {

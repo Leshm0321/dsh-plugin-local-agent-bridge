@@ -33,6 +33,7 @@ import type {
   BridgeNativeSessionsResult,
   BridgeQuestion,
 } from '../types.ts'
+import { toolDetail } from '../core/tool-detail.ts'
 import { claudeSpawnSpec, ManagedClaudeProcess } from './claude-process.ts'
 
 /**
@@ -66,6 +67,12 @@ interface ActiveClaudeTurn {
 
 interface ClaudeTurnProjection {
   readonly toolNames: Map<string, string>
+  /**
+   * Arguments per in-flight tool call, so the completed event can show the call
+   * and its result together. Entries are removed as results arrive; a turn that
+   * ends with calls outstanding drops its projection wholesale.
+   */
+  readonly toolInputs: Map<string, unknown>
   locatorCaptured: boolean
   emittedText: boolean
   sawResult: boolean
@@ -292,6 +299,8 @@ async function projectMessage(
         projection.toolNames.set(block.id, block.name)
         const input = object(block.input) ?? {}
         const target = safeTarget(input)
+        projection.toolInputs.set(block.id, input)
+        const startedDetail = toolDetail(input)
         await hooks.emit({
           type: 'bridge/tool-started',
           data: {
@@ -299,6 +308,7 @@ async function projectMessage(
             toolName: block.name,
             summary: target === null ? block.name : `${block.name}: ${target}`,
             status: 'running',
+            ...startedDetail === undefined ? {} : { detail: startedDetail },
           },
         })
         if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(block.name)) {
@@ -316,6 +326,11 @@ async function projectMessage(
       if (block.type !== 'tool_result' || typeof block.tool_use_id !== 'string') continue
       const failed = block.is_error === true
       const toolName = projection.toolNames.get(block.tool_use_id) ?? 'tool'
+      // Carries the arguments again alongside the result: the completed row is
+      // the one a reader opens, and a result without the call that produced it
+      // is half the story.
+      const detail = toolDetail(projection.toolInputs.get(block.tool_use_id), block.content)
+      projection.toolInputs.delete(block.tool_use_id)
       await hooks.emit({
         type: 'bridge/tool-completed',
         data: {
@@ -323,6 +338,7 @@ async function projectMessage(
           toolName,
           summary: failed ? `${toolName} failed` : `${toolName} completed`,
           status: failed ? 'failed' : 'completed',
+          ...detail === undefined ? {} : { detail },
         },
       })
     }
@@ -463,6 +479,7 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
     }
     const projection: ClaudeTurnProjection = {
       toolNames: new Map(),
+      toolInputs: new Map(),
       locatorCaptured: hooks.nativeSessionLocator !== null,
       emittedText: false,
       sawResult: false,

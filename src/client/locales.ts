@@ -165,6 +165,13 @@ export const zh = {
   'note.host-restarted-resumable': '主机已重启。下一条消息会恢复原生会话。',
   'note.host-restarted-orphaned': '主机在原生会话建立标识之前就重启了，该会话无法恢复。',
 
+  // Expandable tool rows.
+  'tool.expand': '展开详情',
+  'tool.collapse': '收起详情',
+  'tool.input': '调用参数',
+  'tool.output': '返回结果',
+  'tool.truncated': '内容过长，仅显示开头部分。',
+
   // Timeline row labels.
   'row.delivery.started': '已发送',
   'row.delivery.steered': '已插入当前轮',
@@ -329,6 +336,12 @@ export const en = {
   'note.cancelling-turn': 'Cancelling the active native turn.',
   'note.host-restarted-resumable': 'The Host restarted. The next message will resume the native session.',
   'note.host-restarted-orphaned': 'The Host restarted before the native session identity was established, so it cannot be resumed.',
+
+  'tool.expand': 'Show detail',
+  'tool.collapse': 'Hide detail',
+  'tool.input': 'Arguments',
+  'tool.output': 'Result',
+  'tool.truncated': 'Too long to show in full; only the beginning is shown.',
 
   'row.delivery.started': 'Sent',
   'row.delivery.steered': 'Steered',
