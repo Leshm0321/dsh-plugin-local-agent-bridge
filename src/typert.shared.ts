@@ -1,20 +1,39 @@
 import { z } from 'zod'
+import type { BridgeSessionView, BridgeWorkspaceView, NativeProviderView } from './types.ts'
+
+/**
+ * Compile-time proof that a wire schema and its TypeScript view describe the
+ * same shape, in both directions.
+ *
+ * These schemas are `.strict()`, so the gateway rejects a payload carrying a
+ * property the schema does not list. A field added to the view without being
+ * added here therefore does not fail at build time — it fails at runtime, as
+ * `business result failed boundary validation`, with the whole call dead and no
+ * indication of which field is at fault. Asserting the shapes against each other
+ * turns that into a type error at the point of the omission.
+ */
+type Exact<A, B> = [A] extends [B] ? [B] extends [A] ? true : never : never
 
 const providerSchema = z.object({
   id: z.enum(['codex', 'claude', 'fake']),
   displayName: z.string(),
   installed: z.boolean(),
   version: z.string().nullable(),
+  supportedRange: z.string().nullable(),
   compatibility: z.enum(['supported', 'unsupported', 'unknown']),
-  health: z.enum(['not-installed', 'installed', 'ready', 'auth-required', 'error']),
+  health: z.enum(['not-installed', 'installed', 'unsupported', 'ready', 'auth-required', 'error']),
   message: z.string().nullable(),
 }).strict()
+
+const _providerShapeIsExact: Exact<z.infer<typeof providerSchema>, NativeProviderView> = true
 
 const workspaceSchema = z.object({
   id: z.string(),
   title: z.string(),
   status: z.enum(['ok', 'missing-dir']),
 }).strict()
+
+const _workspaceShapeIsExact: Exact<z.infer<typeof workspaceSchema>, BridgeWorkspaceView> = true
 
 const sessionStatusSchema = z.enum([
   'creating', 'idle', 'running', 'awaiting-approval', 'awaiting-answer',
@@ -35,6 +54,8 @@ const sessionSchema = z.object({
   archived: z.boolean(),
   persistenceVersion: z.number(),
 }).strict()
+
+const _sessionShapeIsExact: Exact<z.infer<typeof sessionSchema>, BridgeSessionView> = true
 
 const optionSchema = z.object({
   value: z.string(),
