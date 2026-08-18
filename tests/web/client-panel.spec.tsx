@@ -310,6 +310,9 @@ describe('LocalAgentPanel', () => {
     // Host enumerations are phrased by the Client, not shipped as English.
     expect(await screen.findByText(zh['row.delivery.queued'])).toBeTruthy()
     expect(screen.getByText(zh['error.USER_CANCELLED'])).toBeTruthy()
+    // A cancellation the operator asked for is labelled as such, not as a failure.
+    expect(screen.getByText(zh['row.cancelled'])).toBeTruthy()
+    expect(document.documentElement.textContent).not.toContain(zh['row.error'])
     // The vendor's own tool name survives translation; only the status word turns.
     expect(screen.getByText(`Write · ${zh['row.toolStatus.running']}`)).toBeTruthy()
 

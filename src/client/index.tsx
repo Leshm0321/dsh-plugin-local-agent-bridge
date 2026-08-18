@@ -290,7 +290,14 @@ function timeline(events: readonly BridgeEvent[], t: PanelTranslate): TimelineRo
     } else if (event.type === 'bridge/file-change') {
       rows.push({ key, kind: 'tool', title: t('row.fileChange'), text: event.data.summary })
     } else if (event.type === 'bridge/error') {
-      rows.push({ key, kind: 'error', title: t(`status.failed`), text: errorText(t, event.data.code, event.data.message) })
+      rows.push({
+        key,
+        kind: 'error',
+        // A turn the operator stopped is not a failure. Labelling it "Error"
+        // reads as something having gone wrong with what they just asked for.
+        title: event.data.code === 'USER_CANCELLED' ? t('row.cancelled') : t('row.error'),
+        text: errorText(t, event.data.code, event.data.message),
+      })
     } else if (event.type === 'bridge/session-status') {
       rows.push({
         key,
