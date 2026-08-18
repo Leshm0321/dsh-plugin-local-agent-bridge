@@ -56,3 +56,22 @@ Release validation must include:
 - Process-tree cleanup evidence after cancel, unload, and Host shutdown.
 
 Automated fixtures use synthetic values only. Never insert a real credential into a test report.
+
+## Enumerating product state
+
+The panel lists a product's slash commands, skills, MCP servers, and resumable
+sessions. All of it comes from the product's own API — the Agent SDK's
+`supportedCommands`, `mcpServerStatus` and `listSessions`, and Codex's
+`skills/list`, `mcpServerStatus/list` and `thread/list`. The plugin does not read
+`~/.claude`, `~/.codex`, or any file under them, so the prohibition on touching
+vendor state directories is unchanged by these features.
+
+Both products report absolute filesystem paths in these replies: a `SKILL.md`
+path per skill, a transcript path per session. Those fields are dropped where the
+reply is parsed rather than carried and redacted downstream, so no Host
+filesystem layout reaches the browser. Every string that does cross — a session
+title, a skill description — goes through the same redaction as any other vendor
+text.
+
+A native session locator is opaque to the bridge. It is passed to the product's
+own resume path and is never parsed, joined onto a path, or used to open a file.

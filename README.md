@@ -124,6 +124,23 @@ dsh plugin --profile web remove dsh-plugin-local-agent-bridge
 
 Plugin unload disposes active sessions, closes protocol transports, and waits for managed process trees to exit.
 
+## Continuing an existing session
+
+`Continue a session` lists the product-native sessions that already exist for the
+selected workspace — including ones started in a terminal — and picks one up in
+the browser. The chosen locator goes to the product's own resume path; the bridge
+never reads or replays a transcript.
+
+Enumeration goes through each product's own API (`listSessions` in the Agent SDK,
+`thread/list` in Codex), so the promise never to read `~/.claude` or `~/.codex`
+still holds. For Claude Code the listing excludes programmatic entrypoints, which
+is what the SDK documents for a session picker and also keeps the bridge from
+offering back the sessions it created itself.
+
+Session transcript paths stay on the Host. An unknown or expired locator makes
+the session `orphaned`, the same as a locator that stopped resolving after a Host
+restart.
+
 ## Commands, skills, and MCP
 
 Typing `/` in the composer lists what the session's product reports it can do,
