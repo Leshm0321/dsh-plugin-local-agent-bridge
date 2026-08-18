@@ -37,6 +37,14 @@ const workspaceSchema = z.object({
   id: z.string(),
   title: z.string(),
   status: z.enum(['ok', 'missing-dir']),
+  published: z.boolean(),
+}).strict()
+
+const directoryAddRequestSchema = z.object({ path: z.string() }).strict()
+const directoryRequestSchema = z.object({ directoryId: z.string() }).strict()
+const directoryPublishRequestSchema = z.object({
+  directoryId: z.string(),
+  published: z.boolean(),
 }).strict()
 
 const _workspaceShapeIsExact: Exact<z.infer<typeof workspaceSchema>, BridgeWorkspaceView> = true
@@ -224,4 +232,7 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('interactionRespond', [parameter('request', interactionResponseSchema)], z.object({ accepted: z.literal(true) }).strict()),
   invocation('sessionCompletions', [parameter('request', sessionIdRequestSchema)], completionsResultSchema),
   invocation('nativeSessions', [parameter('request', nativeSessionsRequestSchema)], nativeSessionsResultSchema),
+  invocation('directoryAdd', [parameter('request', directoryAddRequestSchema)], workspaceSchema),
+  invocation('directoryRemove', [parameter('request', directoryRequestSchema)], z.undefined()),
+  invocation('directoryPublish', [parameter('request', directoryPublishRequestSchema)], workspaceSchema),
 ] as const

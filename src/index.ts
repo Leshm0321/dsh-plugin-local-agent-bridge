@@ -1,17 +1,25 @@
+import { randomUUID } from 'node:crypto'
+import { stat } from 'node:fs/promises'
+import { basename, resolve } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { NativeProviderAdapter } from './core/provider.ts'
-import { BridgePersistence } from './core/persistence.ts'
+import { BridgePersistence, type PersistedBridgeDirectory } from './core/persistence.ts'
 import { BridgeSessionEngine } from './core/session-engine.ts'
 import { BridgeError } from './core/errors.ts'
 import { discoverProvider, isAdmissible, publicProvider } from './core/version.ts'
+import { redactText } from './core/redaction.ts'
 import { ClaudeProviderAdapter } from './providers/claude.ts'
 import { CodexProviderAdapter } from './providers/codex.ts'
 import { FakeProviderAdapter } from './providers/fake.ts'
 import type {
   BridgeCatalogResult,
+  BridgeDirectoryAddRequest,
+  BridgeDirectoryPublishRequest,
+  BridgeDirectoryRequest,
+  BridgeWorkspaceView,
   BridgeCompletionsResult,
   BridgeNativeSessionsRequest,
   BridgeNativeSessionsResult,
@@ -45,6 +53,19 @@ interface ResolvedConfig {
   readonly eventRetention: number
   readonly longPollMaxMs: number
   readonly processGraceMs: number
+}
+
+/**
+ * Whether a Host path is a directory that exists right now.
+ * @param path - absolute Host path.
+ * @returns true only for an existing directory.
+ */
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory()
+  } catch {
+    return false
+  }
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -84,6 +105,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
    * instead, so no *new* session starts on it.
    */
   private readonly adapters = new Map<ProviderId, NativeProviderAdapter>()
+  private persistence: BridgePersistence | null = null
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'localAgentBridge')
@@ -147,12 +169,26 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   protected async *[Service.init](): AsyncGenerator<() => Promise<void>, void, void> {
     await this.discoverProviders()
     const persistence = await BridgePersistence.open(this.ctx.storageDomain)
+    this.persistence = persistence
+    await this.adoptExistingWorkspaces(persistence)
     this.engine = await BridgeSessionEngine.create({
       persistence,
       providers: this.adapters,
       eventRetention: this.config.eventRetention,
       longPollMaxMs: this.config.longPollMaxMs,
       resolveWorkspace: async (workspaceId) => {
+        // The bridge's own directory list is authoritative. A session persisted
+        // before directories existed holds a Harness workspace id, so that is
+        // tried second — no migration, and an old session keeps working.
+        const directory = persistence.listDirectories().find(entry => entry.directoryId === workspaceId)
+        if (directory !== undefined) {
+          return {
+            id: directory.directoryId,
+            title: directory.title,
+            cwd: directory.path,
+            status: await isDirectory(directory.path) ? 'ok' : 'missing-dir',
+          }
+        }
         const workspace = this.ctx.workspaceRegistry.get(WorkspaceId(workspaceId))
         if (workspace === undefined) return undefined
         return {
@@ -166,6 +202,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     yield async () => {
       const engine = this.engine
       this.engine = null
+      this.persistence = null
       await engine?.dispose()
     }
   }
@@ -173,12 +210,66 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   @Remote('catalog')
   async catalog(): Promise<BridgeCatalogResult> {
     await this.discoverProviders()
-    const workspaces = await Promise.all(this.ctx.workspaceRegistry.list().map(async workspace => ({
-      id: String(workspace.id),
-      title: workspace.title,
-      status: await workspace.status(),
-    })))
-    return { providers: this.providerViews, workspaces }
+    return { providers: this.providerViews, workspaces: await this.listDirectories() }
+  }
+
+  @Remote('directoryAdd')
+  async directoryAdd(request: BridgeDirectoryAddRequest): Promise<BridgeWorkspaceView> {
+    const path = resolve(request.path.trim())
+    if (path.length === 0) throw new BridgeError('INVALID_REQUEST')
+    if (!await isDirectory(path)) throw new BridgeError('WORKSPACE_NOT_AVAILABLE')
+    const persistence = this.requirePersistence()
+    // Idempotent by path: adding the same directory twice is the operator
+    // repeating themselves, not a request for a second entry pointing at one
+    // place — which would then need two publish flags for one sidebar row.
+    const existing = persistence.listDirectories().find(entry => entry.path === path)
+    if (existing !== undefined) return await this.directoryView(existing)
+    const now = Date.now()
+    const record: PersistedBridgeDirectory = {
+      directoryId: randomUUID(),
+      path,
+      title: redactText(basename(path) || path, 256),
+      publishedWorkspaceId: null,
+      createdAt: now,
+      updatedAt: now,
+    }
+    await persistence.putDirectory(record)
+    return await this.directoryView(record)
+  }
+
+  @Remote('directoryRemove')
+  async directoryRemove(request: BridgeDirectoryRequest): Promise<void> {
+    const persistence = this.requirePersistence()
+    const record = persistence.listDirectories().find(entry => entry.directoryId === request.directoryId)
+    if (record === undefined) return
+    // Removing a published directory also removes the Harness workspace this
+    // plugin created for it. Nothing else the operator did in the Harness is
+    // touched, because only a publish could have created it.
+    if (record.publishedWorkspaceId !== null) {
+      await this.ctx.workspaceRegistry.delete(WorkspaceId(record.publishedWorkspaceId)).catch(() => false)
+    }
+    await persistence.deleteDirectory(request.directoryId)
+  }
+
+  @Remote('directoryPublish')
+  async directoryPublish(request: BridgeDirectoryPublishRequest): Promise<BridgeWorkspaceView> {
+    const persistence = this.requirePersistence()
+    const record = persistence.listDirectories().find(entry => entry.directoryId === request.directoryId)
+    if (record === undefined) throw new BridgeError('WORKSPACE_NOT_AVAILABLE')
+    const live = record.publishedWorkspaceId === null
+      ? undefined
+      : this.ctx.workspaceRegistry.get(WorkspaceId(record.publishedWorkspaceId))
+    let publishedWorkspaceId = live === undefined ? null : record.publishedWorkspaceId
+    if (request.published && publishedWorkspaceId === null) {
+      const created = await this.ctx.workspaceRegistry.create(record.path, record.title)
+      publishedWorkspaceId = String(created.id)
+    } else if (!request.published && publishedWorkspaceId !== null) {
+      await this.ctx.workspaceRegistry.delete(WorkspaceId(publishedWorkspaceId)).catch(() => false)
+      publishedWorkspaceId = null
+    }
+    const updated: PersistedBridgeDirectory = { ...record, publishedWorkspaceId, updatedAt: Date.now() }
+    await persistence.putDirectory(updated)
+    return await this.directoryView(updated)
   }
 
   @Remote('sessionsList')
@@ -235,6 +326,78 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     request: BridgeInteractionRespondRequest,
   ): Promise<BridgeInteractionRespondResult> {
     return await this.requireEngine().respondInteraction(request)
+  }
+
+  /**
+   * Import the Harness's existing workspaces as published directories, once.
+   *
+   * Without this, a workspace the operator added in the Harness before this
+   * plugin — or with an earlier build of it — would be invisible in the panel,
+   * and re-adding it by path would produce a second sidebar row for one
+   * directory. Matching on path makes the import idempotent, and they arrive
+   * already marked published because they genuinely are.
+   * @param persistence - the bridge's own store.
+   */
+  private async adoptExistingWorkspaces(persistence: BridgePersistence): Promise<void> {
+    const known = new Set(persistence.listDirectories().map(entry => entry.path))
+    for (const workspace of this.ctx.workspaceRegistry.list()) {
+      if (known.has(workspace.path)) continue
+      const now = Date.now()
+      await persistence.putDirectory({
+        directoryId: randomUUID(),
+        path: workspace.path,
+        title: redactText(workspace.title, 256),
+        publishedWorkspaceId: String(workspace.id),
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+  }
+
+  /**
+   * Every directory the bridge knows, with its publish flag reconciled against
+   * the Harness registry — a workspace the operator deleted there must not leave
+   * the panel claiming the directory is still published.
+   * @returns the browser-facing directory list, newest first.
+   */
+  private async listDirectories(): Promise<BridgeWorkspaceView[]> {
+    const persistence = this.persistence
+    if (persistence === null) return []
+    const records = persistence.listDirectories().sort((left, right) => right.createdAt - left.createdAt)
+    const views: BridgeWorkspaceView[] = []
+    for (const record of records) {
+      const live = record.publishedWorkspaceId !== null
+        && this.ctx.workspaceRegistry.get(WorkspaceId(record.publishedWorkspaceId)) !== undefined
+      if (!live && record.publishedWorkspaceId !== null) {
+        await persistence.putDirectory({ ...record, publishedWorkspaceId: null, updatedAt: Date.now() })
+      }
+      views.push({
+        id: record.directoryId,
+        title: record.title,
+        status: await isDirectory(record.path) ? 'ok' : 'missing-dir',
+        published: live,
+      })
+    }
+    return views
+  }
+
+  /**
+   * Project one directory record for the browser.
+   * @param record - the stored directory.
+   * @returns its view, with the publish flag as stored.
+   */
+  private async directoryView(record: PersistedBridgeDirectory): Promise<BridgeWorkspaceView> {
+    return {
+      id: record.directoryId,
+      title: record.title,
+      status: await isDirectory(record.path) ? 'ok' : 'missing-dir',
+      published: record.publishedWorkspaceId !== null,
+    }
+  }
+
+  private requirePersistence(): BridgePersistence {
+    if (this.persistence === null) throw new BridgeError('CONNECTION_LOST')
+    return this.persistence
   }
 
   private requireEngine(): BridgeSessionEngine {

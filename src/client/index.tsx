@@ -866,14 +866,12 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
     setAddingWorkspace(true)
     setError(undefined)
     try {
-      await workspaces.create(target)
-      // The bridge reads the registry through its own catalog, so the new
-      // Workspace only exists for this panel once the catalog is re-read.
-      const nextCatalog = unwrap(await remote.catalog())
-      setCatalog(nextCatalog)
-      const added = nextCatalog.workspaces.find(workspace => workspace.title === target.split(/[\\/]/).filter(Boolean).at(-1))
-        ?? nextCatalog.workspaces.at(-1)
-      if (added !== undefined && added.status === 'ok') setWorkspaceId(added.id)
+      // The bridge's own store, not the Harness registry: adding a directory for
+      // an agent to work in must not put it in the Harness sidebar, which has no
+      // way to hide a workspace once registered.
+      const added = unwrap(await remote.directoryAdd({ path: target }))
+      setCatalog(unwrap(await remote.catalog()))
+      if (added.status === 'ok') setWorkspaceId(added.id)
       setWorkspacePath('')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -920,6 +918,45 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
       if (picked !== null) await addWorkspace(picked)
     } catch {
       setBrowseSupport('none')
+    }
+  }
+
+  /**
+   * Turn a directory's Harness visibility on or off.
+   *
+   * The Harness has no hidden workspace, so this genuinely registers and
+   * unregisters one — which is why it is off by default and why the panel keeps
+   * its own list rather than putting every directory there.
+   * @param directoryId - the directory to publish or unpublish.
+   * @param published - the desired state.
+   */
+  const setPublished = async (directoryId: string, published: boolean): Promise<void> => {
+    setError(undefined)
+    try {
+      unwrap(await remote.directoryPublish({ directoryId, published }))
+      setCatalog(unwrap(await remote.catalog()))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  /**
+   * Drop a directory from the panel, and from the Harness if it was published.
+   * The directory on disk is untouched.
+   * @param directoryId - the directory to forget.
+   */
+  const removeDirectory = async (directoryId: string): Promise<void> => {
+    setError(undefined)
+    try {
+      unwrap(await remote.directoryRemove({ directoryId }))
+      const next = unwrap(await remote.catalog())
+      setCatalog(next)
+      // A session cannot be created against a directory that is gone.
+      setWorkspaceId(current => current === directoryId
+        ? next.workspaces.find(entry => entry.status === 'ok')?.id
+        : current)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
     }
   }
 
@@ -1187,6 +1224,45 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                   </form>
 
                   {browseSupport === 'none' && <p className="lab-card-hint" style={{ margin: '9px 0 0' }}>{t('browse.unavailable')}</p>}
+
+                  {allWorkspaces.length > 0 && (
+                    <>
+                      <p className="lab-section-label" style={{ margin: '12px 2px 0' }}>{t('workspace.list')}</p>
+                      <p className="lab-card-hint" style={{ margin: '5px 0 0' }}>{t('workspace.publish.hint')}</p>
+                      <div className="lab-dirs">
+                        {allWorkspaces.map(workspace => (
+                          <div className="lab-dir" key={workspace.id}>
+                            <span>
+                              <span className="lab-dir-name" title={workspace.title}>{workspace.title}</span>
+                              {workspace.status !== 'ok' && (
+                                <span className="lab-dir-gone">{t('workspace.missingDir')}</span>
+                              )}
+                            </span>
+                            <span className="lab-dir-actions">
+                              <button
+                                type="button"
+                                role="switch"
+                                className="lab-switch"
+                                aria-checked={workspace.published}
+                                aria-label={`${t('workspace.publish')} — ${workspace.title}`}
+                                title={workspace.published ? t('workspace.published') : t('workspace.publish')}
+                                onClick={() => { void setPublished(workspace.id, !workspace.published) }}
+                              />
+                              <button
+                                type="button"
+                                className="lab-icon-btn"
+                                aria-label={`${t('workspace.remove')} — ${workspace.title}`}
+                                title={t('workspace.remove')}
+                                onClick={() => { void removeDirectory(workspace.id) }}
+                              >
+                                <IconCloseOutline16 />
+                              </button>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {blockedProviders.length > 0 && (

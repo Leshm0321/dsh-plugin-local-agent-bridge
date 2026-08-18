@@ -82,7 +82,7 @@ const catalog: BridgeCatalogResult = {
     health: 'ready',
     message: null,
   }],
-  workspaces: [{ id: 'workspace-1', title: 'Fixture workspace', status: 'ok' }],
+  workspaces: [{ id: 'workspace-1', title: 'Fixture workspace', status: 'ok', published: false }],
 }
 
 function event(
@@ -158,6 +158,23 @@ class RemoteFixture {
     ok: true as const,
     value: { sessions: [] as BridgeNativeSession[], unavailable: false },
   }))
+  readonly directoryAdd = vi.fn(async (_request: { path: string }) => ({
+    ok: true as const,
+    value: { id: 'workspace-1', title: 'Fixture workspace', status: 'ok' as const, published: false },
+  }))
+  readonly directoryRemove = vi.fn(async (_request: { directoryId: string }) => ({
+    ok: true as const,
+    value: undefined,
+  }))
+  readonly directoryPublish = vi.fn(async (request: { directoryId: string; published: boolean }) => ({
+    ok: true as const,
+    value: {
+      id: request.directoryId,
+      title: 'Fixture workspace',
+      status: 'ok' as const,
+      published: request.published,
+    },
+  }))
   readonly sessionRead = vi.fn((request: { bridgeSessionId: string }, signal?: AbortSignal) => {
     const next = this.reads.shift()
     if (next !== undefined) return Promise.resolve({ ok: true as const, value: next })
@@ -211,6 +228,7 @@ function translator(locale: 'zh' | 'en') {
 
 interface RenderOptions {
   readonly locale?: 'zh' | 'en'
+  /** Observes the Harness registry seam, to prove the panel does not write it. */
   readonly createWorkspace?: (path: string) => Promise<void>
   readonly pickDirectory?: () => Promise<string | null>
   readonly listDirectory?: (path?: string) => Promise<unknown>
@@ -265,6 +283,9 @@ function renderPanel(remote: LocalAgentRemote, options: RenderOptions = {}): voi
     remote,
     t,
     workspaces: {
+      // `create` is no longer used by the panel — a directory goes to the
+      // bridge's own store — but the seam stays so a test can prove nothing
+      // writes the Harness registry from here.
       create: options.createWorkspace ?? (async () => {}),
       // Both routes always exist on the real service; a Profile that does not
       // serve one makes it reject, which is what these defaults reproduce.
@@ -506,10 +527,7 @@ describe('LocalAgentPanel', () => {
       ok: true,
       value: { providers: catalog.providers, workspaces: [] },
     })
-    const created: string[] = []
-    renderPanel(fixture.remote(), {
-      createWorkspace: async (path) => { created.push(path) },
-    })
+    renderPanel(fixture.remote())
 
     // An empty registry says so, and Create session stays unavailable.
     expect(await screen.findByText(en['workspace.empty'])).toBeTruthy()
@@ -520,7 +538,7 @@ describe('LocalAgentPanel', () => {
       ok: true,
       value: {
         providers: catalog.providers,
-        workspaces: [{ id: 'workspace-1', title: 'Fixture workspace', status: 'ok' }],
+        workspaces: [{ id: 'workspace-1', title: 'Fixture workspace', status: 'ok', published: false }],
       },
     })
     fireEvent.change(screen.getByPlaceholderText(en['workspace.path.placeholder']), {
@@ -528,20 +546,106 @@ describe('LocalAgentPanel', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: en['workspace.add.submit'] }))
 
-    // Surrounding whitespace is trimmed before the path reaches the Host.
-    await waitFor(() => { expect(created).toEqual(['/host/projects/Fixture workspace']) })
+    // Surrounding whitespace is trimmed before the path reaches the Host, and it
+    // goes to the bridge's own store rather than the Harness registry.
+    await waitFor(() => {
+      expect(fixture.directoryAdd).toHaveBeenCalledWith({ path: '/host/projects/Fixture workspace' })
+    })
     // The new workspace is selected, so the operator can create a session next.
     await waitFor(() => {
       expect((screen.getByRole('button', { name: en['create.submit'] }) as HTMLButtonElement).disabled).toBe(false)
     })
   })
 
+  it('keeps a new directory out of the Harness sidebar until it is published', async () => {
+    const fixture = new RemoteFixture()
+    const harnessRegistrations: string[] = []
+    renderPanel(fixture.remote(), {
+      createWorkspace: async (path) => { harnessRegistrations.push(path) },
+    })
+
+    fireEvent.change(await screen.findByPlaceholderText(en['workspace.path.placeholder']), {
+      target: { value: '/host/projects/private' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: en['workspace.add.submit'] }))
+
+    // It reaches the bridge's own store...
+    await waitFor(() => { expect(fixture.directoryAdd).toHaveBeenCalledWith({ path: '/host/projects/private' }) })
+    // ...and nothing reaches the Harness registry, which is the whole point: a
+    // Harness workspace cannot be hidden once it exists.
+    expect(harnessRegistrations).toEqual([])
+    expect(fixture.directoryPublish).not.toHaveBeenCalled()
+
+    // The switch reports the directory as not shown in the Harness.
+    const toggle = screen.getByRole('switch', { name: new RegExp(en['workspace.publish']) })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+  })
+
+  it('publishes and unpublishes a directory through the switch', async () => {
+    const fixture = new RemoteFixture()
+    renderPanel(fixture.remote())
+
+    const toggle = await screen.findByRole('switch', { name: new RegExp(en['workspace.publish']) })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+
+    // Turning it on asks the Host to register the workspace.
+    fixture.catalog.mockResolvedValue({
+      ok: true,
+      value: {
+        providers: catalog.providers,
+        workspaces: [{ id: 'workspace-1', title: 'Fixture workspace', status: 'ok', published: true }],
+      },
+    })
+    fireEvent.click(toggle)
+    await waitFor(() => {
+      expect(fixture.directoryPublish).toHaveBeenCalledWith({ directoryId: 'workspace-1', published: true })
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: new RegExp(en['workspace.publish']) }).getAttribute('aria-checked')).toBe('true')
+    })
+
+    // And off again — reversible, unlike registering directly.
+    fixture.catalog.mockResolvedValue({
+      ok: true,
+      value: {
+        providers: catalog.providers,
+        workspaces: [{ id: 'workspace-1', title: 'Fixture workspace', status: 'ok', published: false }],
+      },
+    })
+    fireEvent.click(screen.getByRole('switch', { name: new RegExp(en['workspace.publish']) }))
+    await waitFor(() => {
+      expect(fixture.directoryPublish).toHaveBeenLastCalledWith({ directoryId: 'workspace-1', published: false })
+    })
+  })
+
+  it('removes a directory from the panel and drops it as a session target', async () => {
+    const fixture = new RemoteFixture()
+    renderPanel(fixture.remote())
+
+    await screen.findByRole('button', { name: en['create.submit'] })
+    // A usable directory means a session can be created.
+    expect((screen.getByRole('button', { name: en['create.submit'] }) as HTMLButtonElement).disabled).toBe(false)
+
+    fixture.catalog.mockResolvedValue({
+      ok: true,
+      value: { providers: catalog.providers, workspaces: [] },
+    })
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(en['workspace.remove']) }))
+
+    await waitFor(() => {
+      expect(fixture.directoryRemove).toHaveBeenCalledWith({ directoryId: 'workspace-1' })
+    })
+    // The selection cannot survive the directory it pointed at.
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: en['create.submit'] }) as HTMLButtonElement).disabled).toBe(true)
+    })
+    expect(await screen.findByText(en['workspace.empty'])).toBeTruthy()
+  })
+
   it('browses the Host directory tree when the Profile serves the browse capability', async () => {
     const fixture = new RemoteFixture()
     const visited: (string | undefined)[] = []
-    const created: string[] = []
     renderPanel(fixture.remote(), {
-      createWorkspace: async (path) => { created.push(path) },
       listDirectory: async (path) => {
         visited.push(path)
         if (path === undefined || path === '/host') return level('/host', ['projects', '.cache'])
@@ -567,15 +671,13 @@ describe('LocalAgentPanel', () => {
 
     // Choosing registers the directory the browser is currently showing.
     fireEvent.click(screen.getByRole('button', { name: en['browse.useThis'] }))
-    await waitFor(() => { expect(created).toEqual(['/host/projects']) })
+    await waitFor(() => { expect(fixture.directoryAdd).toHaveBeenCalledWith({ path: '/host/projects' }) })
   })
 
   it('falls back to the Host chooser when browsing is not the composed capability', async () => {
     const fixture = new RemoteFixture()
-    const created: string[] = []
     let pickCalls = 0
     renderPanel(fixture.remote(), {
-      createWorkspace: async (path) => { created.push(path) },
       // A browse Profile is the one that rejects pickDirectory; a native
       // Profile is the one that rejects listDirectory. This is the latter.
       listDirectory: async () => { throw new Error('host.listDirectory needs the browse capability') },
@@ -583,7 +685,7 @@ describe('LocalAgentPanel', () => {
     })
 
     fireEvent.click(await screen.findByRole('button', { name: en['workspace.browse'] }))
-    await waitFor(() => { expect(created).toEqual(['/host/picked']) })
+    await waitFor(() => { expect(fixture.directoryAdd).toHaveBeenCalledWith({ path: '/host/picked' }) })
     expect(pickCalls).toBe(1)
     // The probe failing must not surface as an error to the operator.
     expect(screen.queryByText(/needs the browse capability/)).toBeNull()
@@ -606,9 +708,7 @@ describe('LocalAgentPanel', () => {
 
   it('leaves the registry untouched when the browser is dismissed', async () => {
     const fixture = new RemoteFixture()
-    const created: string[] = []
     renderPanel(fixture.remote(), {
-      createWorkspace: async (path) => { created.push(path) },
       listDirectory: async () => level('/host', ['projects']),
     })
 
@@ -616,7 +716,7 @@ describe('LocalAgentPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: en['browse.cancel'] }))
 
     await waitFor(() => { expect(screen.queryByRole('button', { name: en['browse.useThis'] })).toBeNull() })
-    expect(created).toEqual([])
+    expect(fixture.directoryAdd).not.toHaveBeenCalled()
     // Dismissing returns to the offer rather than hiding it.
     expect(screen.getByRole('button', { name: en['workspace.browse'] })).toBeTruthy()
   })

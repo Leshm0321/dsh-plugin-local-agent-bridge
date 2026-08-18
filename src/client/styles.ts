@@ -617,6 +617,80 @@ export const PANEL_STYLES = `
 .lab-composer-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
 .lab-composer-hint { display: block; margin-top: 7px; font-size: 11px; color: var(--lab-text-3); }
 
+/* ------------------------------------------------------ directory list */
+
+.lab-dirs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin-top: 8px; }
+.lab-dir {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: var(--lab-r-control);
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-dir:hover { background: var(--lab-hover); }
+.lab-dir-name {
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-dir-gone { color: var(--lab-danger); font-size: 11px; }
+.lab-dir-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+
+/* A compact switch, so the row stays one line in a 288px column. */
+.lab-switch {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 18px;
+  border-radius: var(--lab-r-chip);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  background: var(--lab-fill-strong);
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--lab-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+  transition: transform var(--lab-fast) var(--lab-ease);
+}
+.lab-switch[aria-checked='true'] { background: var(--lab-accent); }
+.lab-switch[aria-checked='true']::after { transform: translateX(12px); }
+.lab-switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--lab-accent) 16%, transparent);
+}
+.lab-switch:disabled { opacity: .45; cursor: default; }
+
+.lab-icon-btn {
+  appearance: none;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--lab-text-3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--lab-fast) var(--lab-ease), color var(--lab-fast) var(--lab-ease);
+}
+.lab-icon-btn:hover { background: var(--lab-hover); color: var(--lab-danger); }
+
 /* ---------------------------------------------------------- session picker */
 
 .lab-resume { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-height: 0; }

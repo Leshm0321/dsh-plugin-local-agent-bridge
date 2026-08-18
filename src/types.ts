@@ -41,6 +41,29 @@ export interface BridgeWorkspaceView {
   readonly id: string
   readonly title: string
   readonly status: 'ok' | 'missing-dir'
+  /**
+   * Whether this directory is also registered as a DeepSeek Harness workspace,
+   * and therefore visible in the Harness sidebar.
+   *
+   * The bridge owns its own directory list because a Harness workspace has no
+   * visibility dimension — once registered it is in the sidebar permanently — so
+   * adding a directory for an agent to work in must not imply putting it there.
+   * Publishing is opt-in per directory and reversible.
+   */
+  readonly published: boolean
+}
+
+export interface BridgeDirectoryAddRequest {
+  /** Absolute Host path; resolved and validated on the Host. */
+  readonly path: string
+}
+
+export interface BridgeDirectoryRequest {
+  readonly directoryId: string
+}
+
+export interface BridgeDirectoryPublishRequest extends BridgeDirectoryRequest {
+  readonly published: boolean
 }
 
 export type BridgeSessionStatus =
