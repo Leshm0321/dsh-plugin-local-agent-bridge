@@ -971,6 +971,7 @@ export const PANEL_STYLES = `
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.lab-palette-path { font-family: var(--lab-mono); font-size: 11px; color: var(--lab-text-3); grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .lab-palette-note { padding: 10px 8px; font-size: 12px; line-height: 1.5; color: var(--lab-text-3); }
 
 /* ---------------------------------------------------------------- notices */

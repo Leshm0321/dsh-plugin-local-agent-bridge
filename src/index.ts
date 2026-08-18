@@ -19,6 +19,8 @@ import type {
   BridgeDirectoryAddRequest,
   BridgeDirectoryPublishRequest,
   BridgeDirectoryRequest,
+  BridgeFileSearchRequest,
+  BridgeFileSearchResult,
   BridgeWorkspaceView,
   BridgeCompletionsResult,
   BridgeNativeSessionsRequest,
@@ -173,6 +175,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     const persistence = await BridgePersistence.open(this.ctx.storageDomain)
     this.persistence = persistence
     await this.adoptExistingWorkspaces(persistence)
+    await this.repointSessionsAtDirectories(persistence)
     this.engine = await BridgeSessionEngine.create({
       persistence,
       providers: this.adapters,
@@ -343,6 +346,11 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     return await engine.setPermissionMode(request.bridgeSessionId, request.mode)
   }
 
+  @Remote('sessionFiles')
+  async sessionFiles(request: BridgeFileSearchRequest): Promise<BridgeFileSearchResult> {
+    return await this.requireEngine().searchFiles(request.bridgeSessionId, request.query)
+  }
+
   @Remote('interactionRespond')
   async interactionRespond(
     request: BridgeInteractionRespondRequest,
@@ -373,6 +381,40 @@ export class LocalAgentBridgeService extends TypertRemoteService {
         createdAt: now,
         updatedAt: now,
       })
+    }
+  }
+
+  /**
+   * Point sessions written before directories existed at a directory record.
+   *
+   * Such a session holds a Harness workspace id. That used to be stable, but a
+   * directory can now be unpublished — which deletes the Harness workspace — and
+   * the session would then resolve to nothing and report its workspace as
+   * unavailable, with no way back from the panel.
+   *
+   * Rewritten to the bridge's own directory id, matched on the path the Harness
+   * workspace points at. When that workspace is already gone the title is used
+   * instead, and only when exactly one directory matches: a title is a base name,
+   * so two directories can share one, and pointing a session at the wrong
+   * directory would run an agent somewhere the operator did not choose. A session
+   * that matches nothing is left alone to report unavailable honestly.
+   * @param persistence - the bridge's own store.
+   */
+  private async repointSessionsAtDirectories(persistence: BridgePersistence): Promise<void> {
+    const directories = persistence.listDirectories()
+    if (directories.length === 0) return
+    const byId = new Set(directories.map(entry => entry.directoryId))
+    const byPath = new Map(directories.map(entry => [entry.path, entry.directoryId]))
+    for (const record of persistence.list()) {
+      if (byId.has(record.workspaceId)) continue
+      const workspace = this.ctx.workspaceRegistry.get(WorkspaceId(record.workspaceId))
+      let directoryId = workspace === undefined ? undefined : byPath.get(workspace.path)
+      if (directoryId === undefined) {
+        const sameTitle = directories.filter(entry => entry.title === record.workspaceTitle)
+        directoryId = sameTitle.length === 1 ? sameTitle[0]?.directoryId : undefined
+      }
+      if (directoryId === undefined) continue
+      await persistence.put({ ...record, workspaceId: directoryId })
     }
   }
 

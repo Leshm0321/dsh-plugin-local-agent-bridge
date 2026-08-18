@@ -165,6 +165,12 @@ export const zh = {
   'note.host-restarted-resumable': '主机已重启。下一条消息会恢复原生会话。',
   'note.host-restarted-orphaned': '主机在原生会话建立标识之前就重启了，该会话无法恢复。',
 
+  // File references, opened by typing "@".
+  'files.heading': '工作区文件',
+  'files.hint': '输入 @ 引用工作区里的文件',
+  'files.empty': '没有匹配的文件。',
+  'files.partial': '匹配项过多，仅显示一部分。',
+
   // Expandable tool rows.
   'tool.expand': '展开详情',
   'tool.collapse': '收起详情',
@@ -336,6 +342,11 @@ export const en = {
   'note.cancelling-turn': 'Cancelling the active native turn.',
   'note.host-restarted-resumable': 'The Host restarted. The next message will resume the native session.',
   'note.host-restarted-orphaned': 'The Host restarted before the native session identity was established, so it cannot be resumed.',
+
+  'files.heading': 'Workspace files',
+  'files.hint': 'Type @ to reference a file',
+  'files.empty': 'No matching file.',
+  'files.partial': 'Too many matches to list; showing some of them.',
 
   'tool.expand': 'Show detail',
   'tool.collapse': 'Hide detail',

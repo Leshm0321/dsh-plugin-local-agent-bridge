@@ -33,6 +33,7 @@ import type {
   BridgeContextUsage,
   BridgeErrorCode,
   BridgeEvent,
+  BridgeFileSearchResult,
   BridgeNativeSessionsResult,
   BridgePermissionMode,
   BridgePermissionModeView,
@@ -720,26 +721,46 @@ function formatWhen(epochMs: number): string {
 }
 
 /**
- * The slash prefix the operator types to open the palette. Not localized: it is
- * the syntax Claude Code itself uses, and Codex skills are filtered by the same
- * gesture even though their names carry no slash.
+ * What the composer is currently completing.
+ *
+ * Two gestures, both taken from the products' own terminals: `/` picks a command
+ * or skill, `@` picks a file from the working directory. They differ in where
+ * they may appear, which is what this distinguishes.
  */
-const PALETTE_TRIGGER = '/'
+interface CompletionTrigger {
+  readonly kind: 'command' | 'file'
+  readonly query: string
+  /** Index in the draft where the trigger character sits. */
+  readonly start: number
+}
 
 /**
- * Read the palette query out of the composer.
+ * Read what the composer is completing, if anything.
  *
- * The palette opens only while the draft is a single leading-slash token — the
- * gesture that means "I am picking a command", the same as in the products' own
- * terminals. A slash later in a sentence is a path or a date, and a space after
- * the token means the operator has moved on to arguments, so both close it.
+ * `/` only counts at the very start of the draft — that is the gesture meaning "I
+ * am picking a command", and a slash later in a sentence is a path or a date.
+ *
+ * `@` counts anywhere a word can begin, because referencing a file is something
+ * done mid-sentence: "compare @src/main.ts with @src/old.ts". It is therefore
+ * required to follow whitespace or start the draft, so an email address or a
+ * decorator does not open a file list.
+ *
+ * A space after either token ends the completion: the operator has moved on.
  * @param draft - the composer's current contents.
- * @returns the query after the slash, or null when the palette should stay shut.
+ * @returns what is being completed, or null.
  */
-function paletteQuery(draft: string): string | null {
-  if (!draft.startsWith(PALETTE_TRIGGER)) return null
-  const rest = draft.slice(PALETTE_TRIGGER.length)
-  return /\s/.test(rest) ? null : rest
+function completionTrigger(draft: string): CompletionTrigger | null {
+  if (draft.startsWith('/')) {
+    const rest = draft.slice(1)
+    return /\s/.test(rest) ? null : { kind: 'command', query: rest, start: 0 }
+  }
+  // Scan back from the end for the last `@` that begins a word.
+  const at = draft.lastIndexOf('@')
+  if (at < 0) return null
+  const before = at === 0 ? '' : draft[at - 1] ?? ''
+  if (before.length > 0 && !/\s/.test(before)) return null
+  const rest = draft.slice(at + 1)
+  return /\s/.test(rest) ? null : { kind: 'file', query: rest, start: at }
 }
 
 /**
@@ -776,62 +797,69 @@ function rankCompletions(
 }
 
 /**
- * The command palette: what the product itself says it can do.
+ * The composer's completion list, for either gesture.
  *
- * Selecting an entry writes the product's own invocation text into the composer
- * and nothing more — the bridge never executes a command on the product's
- * behalf. That keeps `/compact` meaning exactly what it means in a terminal, and
- * means a product that gains, renames or drops a command needs no change here.
- * MCP servers are listed but not selectable: they are inventory, not something
- * the composer can invoke.
+ * `/` lists what the product itself says it can do; `@` lists files from the
+ * session's working directory. Both are rendered here so the arrow keys, Enter and
+ * the selection highlight behave identically — the operator learns one interaction,
+ * not two.
+ *
+ * Selecting a command writes the product's own invocation text; the bridge never
+ * executes anything on the product's behalf. MCP servers are listed but not
+ * selectable: they are inventory, not something the composer can invoke.
  */
-function CommandPalette({
-  completions,
+function CompletionPalette({
+  kind,
+  entries,
+  servers,
   pending,
-  query,
+  partial,
   activeIndex,
   t,
   onPick,
 }: {
-  completions: readonly BridgeCompletion[]
+  kind: CompletionTrigger['kind']
+  entries: readonly BridgeCompletion[]
+  servers: readonly BridgeCompletion[]
   pending: boolean
-  query: string
+  partial: boolean
   activeIndex: number
   t: PanelTranslate
   onPick: (completion: BridgeCompletion) => void
 }) {
-  const matches = rankCompletions(completions, query)
-  const commands = matches.filter(entry => entry.kind === 'command')
-  const servers = matches.filter(entry => entry.kind === 'mcp')
-
-  if (pending) return <div className="lab-palette"><p className="lab-palette-note">{t('palette.pending')}</p></div>
-  if (completions.length === 0) return <div className="lab-palette"><p className="lab-palette-note">{t('palette.none')}</p></div>
-  if (matches.length === 0) return <div className="lab-palette"><p className="lab-palette-note">{t('palette.empty')}</p></div>
-
-  let cursor = -1
+  if (kind === 'command' && pending) {
+    return <div className="lab-palette"><p className="lab-palette-note">{t('palette.pending')}</p></div>
+  }
+  if (entries.length === 0 && servers.length === 0) {
+    return (
+      <div className="lab-palette">
+        <p className="lab-palette-note">{kind === 'file' ? t('files.empty') : t('palette.empty')}</p>
+      </div>
+    )
+  }
   return (
-    <div className="lab-palette" role="listbox" aria-label={t('palette.commands')}>
-      {commands.length > 0 && <p className="lab-palette-group">{t('palette.commands')}</p>}
-      {commands.map((entry) => {
-        cursor += 1
-        const selected = cursor === activeIndex
-        return (
-          <button
-            key={`command:${entry.name}`}
-            type="button"
-            role="option"
-            aria-selected={selected}
-            className="lab-palette-item"
-            // The composer keeps focus: the operator is still typing the filter.
-            onMouseDown={event => { event.preventDefault() }}
-            onClick={() => { onPick(entry) }}
-          >
-            <span className="lab-palette-name">{entry.insertText ?? entry.name}</span>
-            {entry.argumentHint !== null && <span className="lab-palette-arg">{entry.argumentHint}</span>}
-            {entry.description !== null && <span className="lab-palette-desc">{entry.description}</span>}
-          </button>
-        )
-      })}
+    <div className="lab-palette" role="listbox" aria-label={kind === 'file' ? t('files.heading') : t('palette.commands')}>
+      {entries.length > 0 && (
+        <p className="lab-palette-group">{kind === 'file' ? t('files.heading') : t('palette.commands')}</p>
+      )}
+      {entries.map((entry, index) => (
+        <button
+          key={`${kind}:${entry.insertText ?? entry.name}`}
+          type="button"
+          role="option"
+          aria-selected={index === activeIndex}
+          className="lab-palette-item"
+          // The composer keeps focus: the operator is still typing the filter.
+          onMouseDown={event => { event.preventDefault() }}
+          onClick={() => { onPick(entry) }}
+        >
+          <span className="lab-palette-name">{kind === 'file' ? entry.name : entry.insertText ?? entry.name}</span>
+          {entry.argumentHint !== null && <span className="lab-palette-arg">{entry.argumentHint}</span>}
+          {entry.description !== null && (
+            <span className={kind === 'file' ? 'lab-palette-path' : 'lab-palette-desc'}>{entry.description}</span>
+          )}
+        </button>
+      ))}
       {servers.length > 0 && <p className="lab-palette-group">{t('palette.mcp')}</p>}
       {servers.map(entry => (
         <button
@@ -846,6 +874,7 @@ function CommandPalette({
           {entry.description !== null && <span className="lab-palette-desc">{entry.description}</span>}
         </button>
       ))}
+      {partial && <p className="lab-palette-note">{t('files.partial')}</p>}
     </div>
   )
 }
@@ -936,6 +965,7 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
   const [paletteIndex, setPaletteIndex] = useState(0)
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [files, setFiles] = useState<BridgeFileSearchResult>({ matches: [], partial: false })
   const timelineRef = useRef<HTMLDivElement>(null)
   const [nativeSessions, setNativeSessions] = useState<BridgeNativeSessionsResult>()
   const [nativeSessionsOpen, setNativeSessionsOpen] = useState(false)
@@ -1021,6 +1051,31 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
     return () => { cancelled = true }
   }, [open, remote, selectedId, sessionStatus])
 
+  const draftTrigger = completionTrigger(draft)
+
+  /**
+   * Fetch file matches while `@` is being typed.
+   *
+   * Debounced because every keystroke would otherwise walk the working directory
+   * again, and the walk is deliberate work on the Host. The timer is cleared on
+   * each change, so only the pause after typing costs anything.
+   */
+  const fileQuery = draftTrigger?.kind === 'file' ? draftTrigger.query : null
+  useEffect(() => {
+    if (fileQuery === null || selectedId === undefined) {
+      setFiles({ matches: [], partial: false })
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      void remote.sessionFiles({ bridgeSessionId: selectedId, query: fileQuery })
+        .then(unwrap)
+        .then(next => { if (!cancelled) setFiles(next) })
+        .catch(() => { if (!cancelled) setFiles({ matches: [], partial: false }) })
+    }, 120)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [fileQuery, remote, selectedId])
+
   const rows = useMemo(() => timeline(snapshot?.events ?? [], t), [snapshot?.events, t])
 
   /**
@@ -1047,11 +1102,34 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
     const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
     if (distanceFromBottom < 140) element.scrollTop = element.scrollHeight
   }, [rows, snapshot?.pendingInteraction])
-  const query = paletteQuery(draft)
-  const paletteOpen = query !== null && selectedId !== undefined
-  const paletteMatches = useMemo(
-    () => query === null ? [] : rankCompletions(completions.completions, query).filter(entry => entry.insertText !== null),
-    [completions.completions, query],
+  const paletteOpen = draftTrigger !== null && selectedId !== undefined
+  /**
+   * The selectable entries behind whichever trigger is active, in one list so the
+   * arrow keys and Enter do not need to know which gesture opened it. A file's
+   * insertion text is its workspace-relative path prefixed with `@`, which is how
+   * both products read a file reference in a prompt.
+   */
+  const paletteMatches = useMemo<BridgeCompletion[]>(() => {
+    if (draftTrigger === null) return []
+    if (draftTrigger.kind === 'command') {
+      return rankCompletions(completions.completions, draftTrigger.query).filter(entry => entry.insertText !== null)
+    }
+    return files.matches.map(match => ({
+      kind: 'command' as const,
+      name: match.name,
+      insertText: `@${match.path}`,
+      description: match.path,
+      argumentHint: null,
+      status: null,
+    }))
+  }, [completions.completions, draftTrigger, files.matches])
+
+  /** MCP servers, shown as inventory beneath the commands. */
+  const paletteServers = useMemo(
+    () => draftTrigger?.kind === 'command'
+      ? rankCompletions(completions.completions, draftTrigger.query).filter(entry => entry.kind === 'mcp')
+      : [],
+    [completions.completions, draftTrigger],
   )
   const allProviders = catalog?.providers ?? []
   // Every product the Host could not offer, with the reason it could not. The
@@ -1262,8 +1340,14 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
    * @param completion - the entry the operator chose.
    */
   const pickCompletion = (completion: BridgeCompletion): void => {
-    if (completion.insertText === null) return
-    setDraft(completion.argumentHint === null ? completion.insertText : `${completion.insertText} `)
+    if (completion.insertText === null || draftTrigger === null) return
+    // Replaces only the token being completed, so a file picked mid-sentence
+    // leaves the rest of the draft alone — "compare @src/main.ts with @…".
+    const head = draft.slice(0, draftTrigger.start)
+    // A trailing space when more is expected: an argument for a command, another
+    // word after a file reference.
+    const tail = draftTrigger.kind === 'file' || completion.argumentHint !== null ? ' ' : ''
+    setDraft(`${head}${completion.insertText}${tail}`)
     setPaletteIndex(0)
   }
 
@@ -1666,11 +1750,13 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                 </div>
 
                 <form className="lab-composer" onSubmit={send}>
-                  {paletteOpen && (
-                    <CommandPalette
-                      completions={completions.completions}
+                  {paletteOpen && draftTrigger !== null && (
+                    <CompletionPalette
+                      kind={draftTrigger.kind}
+                      entries={paletteMatches}
+                      servers={paletteServers}
                       pending={completions.pending}
-                      query={query}
+                      partial={draftTrigger.kind === 'file' && files.partial}
                       activeIndex={paletteIndex}
                       t={t}
                       onPick={pickCompletion}

@@ -170,6 +170,10 @@ class RemoteFixture {
     ok: true as const,
     value: undefined,
   }))
+  readonly sessionFiles = vi.fn(async (_request: { bridgeSessionId: string; query: string }) => ({
+    ok: true as const,
+    value: { matches: [] as { path: string; name: string }[], partial: false },
+  }))
   readonly sessionPermissionMode = vi.fn(async (request: { bridgeSessionId: string; mode: string }) => ({
     ok: true as const,
     value: { ...session, permissionMode: request.mode as BridgeSessionView['permissionMode'] },
@@ -729,6 +733,67 @@ describe('LocalAgentPanel', () => {
     expect(fixture.directoryAdd).not.toHaveBeenCalled()
     // Dismissing returns to the offer rather than hiding it.
     expect(screen.getByRole('button', { name: en['workspace.browse'] })).toBeTruthy()
+  })
+
+  it('completes a workspace file from an @ anywhere a word can start', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.sessionFiles.mockResolvedValue({
+      ok: true,
+      value: {
+        matches: [
+          { path: 'src/main.ts', name: 'main.ts' },
+          { path: 'src/domain/mainframe.ts', name: 'mainframe.ts' },
+        ],
+        partial: false,
+      },
+    })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+
+    // Mid-sentence, because referencing a file is something done while writing.
+    fireEvent.change(composer, { target: { value: 'please read @main' } })
+    const listbox = await screen.findByRole('listbox', { name: en['files.heading'] })
+    await waitFor(() => {
+      expect(fixture.sessionFiles).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', query: 'main' })
+    })
+    // Name first with the path beneath, since two files often share a name.
+    expect(within(listbox).getByText('main.ts')).toBeTruthy()
+    expect(within(listbox).getByText('src/main.ts')).toBeTruthy()
+
+    fireEvent.click(within(listbox).getByText('main.ts'))
+    // Only the @token is replaced; the rest of the draft survives, and a trailing
+    // space lets the sentence continue.
+    await waitFor(() => { expect(composer.value).toBe('please read @src/main.ts ') })
+  })
+
+  it('does not treat an @ inside a word as a file reference', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    // An email address, a decorator, a handle: none of them are asking for a file.
+    fireEvent.change(composer, { target: { value: 'mail me at someone@example.com' } })
+    await waitFor(() => { expect(screen.queryByRole('listbox')).toBeNull() })
+    expect(fixture.sessionFiles).not.toHaveBeenCalled()
+  })
+
+  it('says when the file list was cut short rather than implying it is complete', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.sessionFiles.mockResolvedValue({
+      ok: true,
+      value: { matches: [{ path: 'a.ts', name: 'a.ts' }], partial: true },
+    })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    fireEvent.change(await screen.findByPlaceholderText(en['composer.placeholder']), { target: { value: '@a' } })
+    expect(await screen.findByText(en['files.partial'])).toBeTruthy()
   })
 
   it('expands a tool row to show the call and its result', async () => {

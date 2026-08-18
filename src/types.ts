@@ -413,6 +413,29 @@ export interface BridgeNativeSessionsResult {
   readonly unavailable: boolean
 }
 
+/** One file the composer can reference with `@`. */
+export interface BridgeFileMatch {
+  /** Path relative to the session's working directory, forward-slashed. */
+  readonly path: string
+  readonly name: string
+}
+
+export interface BridgeFileSearchResult {
+  readonly matches: readonly BridgeFileMatch[]
+  /**
+   * True when the Host stopped before exhausting the tree. A completion list is
+   * read while typing, so a bounded partial answer is preferred to a complete one
+   * that arrives late — and the panel says so rather than implying the list is
+   * everything.
+   */
+  readonly partial: boolean
+}
+
+export interface BridgeFileSearchRequest extends BridgeSessionIdRequest {
+  /** What the operator typed after `@`; empty lists the shallowest files. */
+  readonly query: string
+}
+
 export interface BridgeCatalogResult {
   readonly providers: readonly NativeProviderView[]
   readonly workspaces: readonly BridgeWorkspaceView[]

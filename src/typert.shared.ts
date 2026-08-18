@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type {
   BridgeCompletion,
   BridgeContextUsage,
+  BridgeFileMatch,
   BridgePermissionModeView,
   BridgeNativeSession,
   BridgeSessionView,
@@ -168,6 +169,23 @@ const permissionModeRequestSchema = z.object({
   mode: permissionModeSchema,
 }).strict()
 
+const fileMatchSchema = z.object({
+  path: z.string(),
+  name: z.string(),
+}).strict()
+
+const _fileMatchShapeIsExact: Exact<z.infer<typeof fileMatchSchema>, BridgeFileMatch> = true
+
+const fileSearchResultSchema = z.object({
+  matches: z.array(fileMatchSchema).readonly(),
+  partial: z.boolean(),
+}).strict()
+
+const fileSearchRequestSchema = z.object({
+  bridgeSessionId: z.string(),
+  query: z.string(),
+}).strict()
+
 const nativeSessionsRequestSchema = z.object({
   providerId: z.enum(['codex', 'claude', 'fake']),
   workspaceId: z.string(),
@@ -266,4 +284,5 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('directoryRemove', [parameter('request', directoryRequestSchema)], z.undefined()),
   invocation('directoryPublish', [parameter('request', directoryPublishRequestSchema)], workspaceSchema),
   invocation('sessionPermissionMode', [parameter('request', permissionModeRequestSchema)], sessionSchema),
+  invocation('sessionFiles', [parameter('request', fileSearchRequestSchema)], fileSearchResultSchema),
 ] as const

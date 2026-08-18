@@ -8,6 +8,7 @@ import type {
   BridgeSessionReadRequest,
   BridgeSessionReadResult,
   BridgeCompletionsResult,
+  BridgeFileSearchResult,
   BridgeNativeSessionsResult,
   BridgePermissionMode,
   BridgeSessionStatus,
@@ -19,6 +20,7 @@ import type {
   ProviderId,
 } from '../types.ts'
 import { BridgeError, bridgeError } from './errors.ts'
+import { searchFiles } from './file-search.ts'
 import type {
   BridgeEventDraft,
   NativeProviderAdapter,
@@ -369,6 +371,22 @@ export class BridgeSessionEngine {
     runtime.record.permissionMode = mode
     await this.touch(runtime)
     return sessionView(runtime.record)
+  }
+
+  /**
+   * Files under the session's working directory matching a query.
+   *
+   * The root comes from the Host's own workspace resolution, never from the
+   * browser, so `@` can only ever see inside the directory the session runs in.
+   * @param bridgeSessionId - the session, which supplies the root.
+   * @param query - what the operator typed after `@`.
+   * @returns ranked matches.
+   */
+  async searchFiles(bridgeSessionId: string, query: string): Promise<BridgeFileSearchResult> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    const workspace = await this.requireWorkspace(runtime.record.workspaceId)
+    return await searchFiles(workspace.cwd, query)
   }
 
   async dispose(): Promise<void> {
