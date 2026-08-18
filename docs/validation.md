@@ -68,13 +68,18 @@ Capture a browser trace through the full fake-provider flow and assert:
 Validation below was first run on Windows with DSH CLI `0.1.0-rc.7`, Codex
 `0.147.0`, Claude Code `2.1.220`, and Claude Agent SDK `0.3.220`.
 
-It was then re-run on macOS (Apple silicon, Node 26) with DSH CLI `0.1.0-rc.7`
-and Claude Code `2.1.234`, covering plugin install into the built-in `web`
-Profile, loader composition, Client module delivery, provider discovery, the
-Fake Provider flow end to end, and real Claude Code sessions through streaming,
-a real `Write` approval, cancellation, and page-refresh recovery. The locally
-installed Codex `0.144.6` was correctly refused as `unsupported`. Codex itself
-was therefore not smoke-tested on macOS.
+It was then re-run on macOS (Apple silicon, Node 26) with DSH CLI `0.1.0-rc.7`,
+Claude Code `2.1.234`, and Codex `0.147.0`, covering plugin install into the
+built-in `web` Profile, loader composition, Client module delivery, provider
+discovery, the Fake Provider flow end to end, real Claude Code sessions through
+streaming, a real `Write` approval, cancellation and page-refresh recovery, and a
+real Codex session over `codex app-server --stdio`.
+
+That run began with Codex `0.144.6` installed, which was correctly refused as
+`unsupported` with both the installed version and the admitted range named in the
+panel. After upgrading to `0.147.0` on the Host, the browser's Refresh button
+alone moved it to `ready` and a session started on it — no Profile restart, which
+is what the Startup section has always told the operator to expect.
 
 In both runs the DSH Web Profile remained bound to `127.0.0.1:3080`, telemetry
 was disabled, and all sessions used a disposable validation workspace holding no
@@ -85,7 +90,7 @@ confidential source. Reports retain only generic success facts.
 | 1 | No Anthropic/OpenAI login entry in the browser | Automated + manually verified | Client source/DOM control scans pass. The real `Local Agents` dialog contains no login, OAuth, device-code, API-key, or token control. A fresh DOM scan found 29 controls and zero login-like controls. The separate DSH core model-configuration dialog is not part of this plugin. |
 | 2 | Browser E2E network record contains no vendor-domain request | Manually verified | A fresh CDP capture across reload, plugin boot, catalog, session replay, and a Fake Provider turn recorded 94 requests; every HTTP request targeted `127.0.0.1:3080`, including `dsh-plugin-local-agent-bridge/client.js` and `localAgentBridge/*`, with zero Anthropic, Claude, OpenAI, or ChatGPT URLs. |
 | 3 | Browser and Remote Payload contain no vendor credential or auth-file content | Automated | Credential canaries are scanned across Remote events, persistence, rendered DOM, browser-request spies, browser storage fixtures, cookies, and downloads. All canaries and credential markers are absent. No real credential store was inspected. |
-| 4 | Claude/Codex start from Host-installed executables | Automated + manually verified | Discovery/version tests pass. Real browser sessions successfully launched the installed `codex app-server --stdio` path and the official Claude Agent SDK configured with the installed Host `claude` executable. |
+| 4 | Claude/Codex start from Host-installed executables | Automated + manually verified | Discovery/version tests pass, and the launch form is pinned for Windows, macOS, and Linux from any host. Real browser sessions on both Windows and macOS launched the installed `codex app-server --stdio` path and the official Claude Agent SDK configured with the installed Host `claude` executable. On macOS the managed child was observed as the resolved executable itself — `/Users/…/.local/bin/claude --output-format stream-json … --permission-prompt-tool stdio --resume=…` — confirming the Host PATH resolution, the captured native locator, and the stdio approval channel. |
 | 5 | Both providers create sessions and sustain at least three turns | Manually verified | Codex completed three continuous turns plus cancellation. Claude completed multiple continuous turns including resume after Host restart, tool use, AskUserQuestion, and cancellation. |
 | 6 | Text is displayed incrementally | Automated + manually verified | Provider integration tests assert delta projection. Fake Provider and real Claude runs produced multiple text deltas; Claude deltas now share one stable turn-level item ID so one answer renders as one streaming row. |
 | 7 | Browser can approve or reject at least one real tool request | Manually verified | A real Claude `Write` request in the disposable workspace entered `awaiting-approval`; `Allow once` completed the tool. Fake Provider and provider integration tests also cover allow, deny, and cancel resolutions. |
@@ -118,6 +123,4 @@ confidential source. Reports retain only generic success facts.
 - A real-product smoke run on a Linux Host. Linux shares the macOS launch path
   and is covered by the automated per-platform tests, but no session has been
   driven against the real products there.
-- A real Codex session on macOS or Linux; the only Codex smoke run so far is the
-  Windows one against `0.147.0`.
 - Multi-user isolation and RBAC remain out of scope for this single-user MVP.
