@@ -87,11 +87,15 @@ product, so the operator does not have to reach for this document.
 
 ### Workspace selection opens on the Host desktop
 
-- `Local Agents` can register a workspace by absolute path from inside the
-  panel, which needs no picker at all. Its `Browse…` button probes the Host with
-  a listing read: a `browse` Profile gets an in-panel directory sheet, a `native`
-  Profile gets the Host's own dialog, and if neither is served the panel says so
-  and keeps the path field.
+- `Local Agents` keeps its own working-directory list and can add one by
+  absolute path, which needs no picker at all. Its `Browse…` button probes the
+  Host with a listing read: a `browse` Profile gets an in-panel directory sheet, a
+  `native` Profile gets the Host's own dialog, and if neither is served the panel
+  says so and keeps the path field.
+- A directory added in the panel is not a Harness workspace until `Show in
+  DeepSeek Harness` is switched on for it. Use that switch, not the Harness
+  sidebar, to control whether it appears there — unpublishing deletes the
+  workspace this plugin created, and nothing else.
 - For DSH's own sidebar flow: the built-in Web Profile selected the
   automatic/native directory picker because DSH is loopback-bound. On Windows
   that is the folder dialog, on macOS the open panel, on Linux a desktop portal

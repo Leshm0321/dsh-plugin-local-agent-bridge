@@ -76,12 +76,24 @@ Open the loopback URL printed by DSH, normally `http://127.0.0.1:3080`, or reach
 
 The built-in `web` Profile is required because it supplies the DSH Web App, API proxy, frontend assets, and Client runtime. A newly created custom Profile contains only the base bundle unless the operator explicitly adds `@deepseek-ai/dsh-web-app`; installing this plugin into such a base-only Profile does not create a browser UI.
 
-### Workspace selection
+### Working directories
 
-`Local Agents` registers a Host directory itself: type an absolute path in
-`Add workspace` and the Host resolves and validates it. That route works in
-every Profile and from any browser, local or remote, so no picker configuration
-is required to get started.
+`Local Agents` keeps its own list of working directories. Type an absolute path in
+`Add working directory`, or use `Browse…`; the Host resolves and validates it.
+That route works in every Profile and from any browser, local or remote, so no
+picker configuration is required to get started.
+
+A directory added this way is **private to the panel**. It does not appear in the
+DeepSeek Harness sidebar unless you turn on `Show in DeepSeek Harness` for it,
+and turning that off removes it again. The switch is per directory and off by
+default, because a Harness workspace has no visibility dimension — `WorkspaceRecord`
+carries path, title, sessions and timestamps — so anything registered there is in
+the sidebar for good, and giving an agent somewhere to work should not imply that.
+
+Workspaces you already added in the Harness are imported into the list on first
+load and shown as published, so they stay usable and stay visible. Removing a
+directory from the panel also removes the Harness workspace if this plugin
+published it; the directory on disk is never touched.
 
 `Browse…` next to it opens a directory chooser inside the panel. DSH exposes
 directory choosing as a capability with two kinds, and they are not

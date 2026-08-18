@@ -22,7 +22,8 @@ its interruption without a cancellation marker), replay reset, persistence
 recovery, Codex App Server lifecycle and login rejection, Claude SDK
 resume/streaming/interactions/cancellation, Client create/poll/respond/reconnect
 behavior, bilingual rendering against the shipped dictionaries, unavailable-product
-diagnostics, in-panel workspace registration, directory-capability probing and its two
+diagnostics, in-panel working-directory
+ownership and its opt-in Harness publishing, directory-capability probing and its two
 fallbacks, the stylesheet's theme-token and scoping guarantees, the command palette across both
 products' invocation syntaxes, and resuming a product-native session.
 
