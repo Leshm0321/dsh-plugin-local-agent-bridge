@@ -68,6 +68,15 @@ export const zh = {
   'composer.send': '发送',
   'composer.hint': 'Codex 运行中的消息会即时插入当前轮；Claude 的消息排队等待当前轮结束。',
 
+  // Slash-command / skill / MCP palette, opened by typing "/".
+  'palette.hint': '输入 / 唤起本机 Agent 的命令与 Skill',
+  'palette.commands': '命令与 Skill',
+  'palette.mcp': 'MCP 服务器',
+  'palette.empty': '没有匹配的命令。',
+  'palette.pending': '发送一条消息后，本机 Agent 才会报告它可用的命令与 Skill。',
+  'palette.none': '这个 Agent 没有报告任何命令或 Skill。',
+  'palette.mcpNotInvocable': '仅供参考，不能直接调用',
+
   // Approval and question cards.
   'interaction.approval': '需要授权',
   'interaction.question': '需要输入',
@@ -189,6 +198,14 @@ export const en = {
   'composer.placeholder': 'Send to the native agent on the host…',
   'composer.send': 'Send',
   'composer.hint': 'Running Codex messages are steered; Claude messages queue until the active turn completes.',
+
+  'palette.hint': 'Type / for this agent\u2019s commands and skills',
+  'palette.commands': 'Commands and skills',
+  'palette.mcp': 'MCP servers',
+  'palette.empty': 'No matching command.',
+  'palette.pending': 'Send a message first — the agent reports its commands and skills once a turn has run.',
+  'palette.none': 'This agent reported no commands or skills.',
+  'palette.mcpNotInvocable': 'Reference only; not invocable here',
 
   'interaction.approval': 'Approval required',
   'interaction.question': 'Input required',

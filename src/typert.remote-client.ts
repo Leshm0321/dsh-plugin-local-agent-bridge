@@ -4,6 +4,7 @@ import type {
 } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   BridgeCatalogResult,
+  BridgeCompletionsResult,
   BridgeInteractionRespondRequest,
   BridgeInteractionRespondResult,
   BridgeSendResult,
@@ -32,6 +33,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     interactionRespond: (
       request: BridgeInteractionRespondRequest,
     ) => Promise<RemoteResult<BridgeInteractionRespondResult>>
+    sessionCompletions: (request: BridgeSessionIdRequest) => Promise<RemoteResult<BridgeCompletionsResult>>
   }
 
   interface TypertRemoteMap {
@@ -54,6 +56,9 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'localAgentBridge/interactionRespond': (
       request: BridgeInteractionRespondRequest,
     ) => Promise<RemoteResult<BridgeInteractionRespondResult>>
+    'localAgentBridge/sessionCompletions': (
+      request: BridgeSessionIdRequest,
+    ) => Promise<RemoteResult<BridgeCompletionsResult>>
   }
 
   interface TypertRemoteNamespaceMap {

@@ -1,5 +1,10 @@
 import { z } from 'zod'
-import type { BridgeSessionView, BridgeWorkspaceView, NativeProviderView } from './types.ts'
+import type {
+  BridgeCompletion,
+  BridgeSessionView,
+  BridgeWorkspaceView,
+  NativeProviderView,
+} from './types.ts'
 
 /**
  * Compile-time proof that a wire schema and its TypeScript view describe the
@@ -95,6 +100,22 @@ const eventSchema = z.object({
   data: z.record(z.string(), z.unknown()),
 }).strict()
 
+const completionSchema = z.object({
+  kind: z.enum(['command', 'mcp']),
+  name: z.string(),
+  insertText: z.string().nullable(),
+  description: z.string().nullable(),
+  argumentHint: z.string().nullable(),
+  status: z.string().nullable(),
+}).strict()
+
+const _completionShapeIsExact: Exact<z.infer<typeof completionSchema>, BridgeCompletion> = true
+
+const completionsResultSchema = z.object({
+  completions: z.array(completionSchema),
+  pending: z.boolean(),
+}).strict()
+
 const catalogSchema = z.object({
   providers: z.array(providerSchema),
   workspaces: z.array(workspaceSchema),
@@ -180,4 +201,5 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('sessionCancel', [parameter('request', sessionIdRequestSchema)], z.undefined()),
   invocation('sessionArchive', [parameter('request', archiveRequestSchema)], sessionSchema),
   invocation('interactionRespond', [parameter('request', interactionResponseSchema)], z.object({ accepted: z.literal(true) }).strict()),
+  invocation('sessionCompletions', [parameter('request', sessionIdRequestSchema)], completionsResultSchema),
 ] as const

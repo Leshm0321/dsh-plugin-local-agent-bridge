@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ButtonHTMLAttributes, FormEvent, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, FormEvent, KeyboardEvent, ReactNode } from 'react'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 // Type-only: merges `locale` onto Context and declares the LocaleNamespaceMap
@@ -27,6 +27,8 @@ import type {
 import remoteContribution from '../typert.remote-client.ts'
 import type {
   BridgeCatalogResult,
+  BridgeCompletion,
+  BridgeCompletionsResult,
   BridgeErrorCode,
   BridgeEvent,
   BridgeQuestion,
@@ -457,6 +459,137 @@ function DirectoryBrowser({
   )
 }
 
+/**
+ * The slash prefix the operator types to open the palette. Not localized: it is
+ * the syntax Claude Code itself uses, and Codex skills are filtered by the same
+ * gesture even though their names carry no slash.
+ */
+const PALETTE_TRIGGER = '/'
+
+/**
+ * Read the palette query out of the composer.
+ *
+ * The palette opens only while the draft is a single leading-slash token — the
+ * gesture that means "I am picking a command", the same as in the products' own
+ * terminals. A slash later in a sentence is a path or a date, and a space after
+ * the token means the operator has moved on to arguments, so both close it.
+ * @param draft - the composer's current contents.
+ * @returns the query after the slash, or null when the palette should stay shut.
+ */
+function paletteQuery(draft: string): string | null {
+  if (!draft.startsWith(PALETTE_TRIGGER)) return null
+  const rest = draft.slice(PALETTE_TRIGGER.length)
+  return /\s/.test(rest) ? null : rest
+}
+
+/**
+ * Rank completions against the query.
+ *
+ * A prefix match outranks a substring match, which outranks a description hit,
+ * so typing `co` puts `/compact` above a skill that merely mentions compaction.
+ * Matching is case-insensitive and touches only vendor-provided text.
+ * @param completions - everything the product reported.
+ * @param query - the text after the slash; empty lists everything.
+ * @returns the matches, best first.
+ */
+function rankCompletions(
+  completions: readonly BridgeCompletion[],
+  query: string,
+): BridgeCompletion[] {
+  const needle = query.toLowerCase()
+  if (needle.length === 0) return [...completions]
+  const scored: { completion: BridgeCompletion; score: number }[] = []
+  for (const completion of completions) {
+    const name = completion.name.toLowerCase()
+    const score = name.startsWith(needle)
+      ? 0
+      : name.includes(needle)
+        ? 1
+        : (completion.description ?? '').toLowerCase().includes(needle)
+          ? 2
+          : -1
+    if (score >= 0) scored.push({ completion, score })
+  }
+  return scored
+    .sort((left, right) => left.score - right.score || left.completion.name.localeCompare(right.completion.name))
+    .map(entry => entry.completion)
+}
+
+/**
+ * The command palette: what the product itself says it can do.
+ *
+ * Selecting an entry writes the product's own invocation text into the composer
+ * and nothing more — the bridge never executes a command on the product's
+ * behalf. That keeps `/compact` meaning exactly what it means in a terminal, and
+ * means a product that gains, renames or drops a command needs no change here.
+ * MCP servers are listed but not selectable: they are inventory, not something
+ * the composer can invoke.
+ */
+function CommandPalette({
+  completions,
+  pending,
+  query,
+  activeIndex,
+  t,
+  onPick,
+}: {
+  completions: readonly BridgeCompletion[]
+  pending: boolean
+  query: string
+  activeIndex: number
+  t: PanelTranslate
+  onPick: (completion: BridgeCompletion) => void
+}) {
+  const matches = rankCompletions(completions, query)
+  const commands = matches.filter(entry => entry.kind === 'command')
+  const servers = matches.filter(entry => entry.kind === 'mcp')
+
+  if (pending) return <div className="lab-palette"><p className="lab-palette-note">{t('palette.pending')}</p></div>
+  if (completions.length === 0) return <div className="lab-palette"><p className="lab-palette-note">{t('palette.none')}</p></div>
+  if (matches.length === 0) return <div className="lab-palette"><p className="lab-palette-note">{t('palette.empty')}</p></div>
+
+  let cursor = -1
+  return (
+    <div className="lab-palette" role="listbox" aria-label={t('palette.commands')}>
+      {commands.length > 0 && <p className="lab-palette-group">{t('palette.commands')}</p>}
+      {commands.map((entry) => {
+        cursor += 1
+        const selected = cursor === activeIndex
+        return (
+          <button
+            key={`command:${entry.name}`}
+            type="button"
+            role="option"
+            aria-selected={selected}
+            className="lab-palette-item"
+            // The composer keeps focus: the operator is still typing the filter.
+            onMouseDown={event => { event.preventDefault() }}
+            onClick={() => { onPick(entry) }}
+          >
+            <span className="lab-palette-name">{entry.insertText ?? entry.name}</span>
+            {entry.argumentHint !== null && <span className="lab-palette-arg">{entry.argumentHint}</span>}
+            {entry.description !== null && <span className="lab-palette-desc">{entry.description}</span>}
+          </button>
+        )
+      })}
+      {servers.length > 0 && <p className="lab-palette-group">{t('palette.mcp')}</p>}
+      {servers.map(entry => (
+        <button
+          key={`mcp:${entry.name}`}
+          type="button"
+          className="lab-palette-item"
+          disabled
+          title={t('palette.mcpNotInvocable')}
+        >
+          <span className="lab-palette-name">{entry.name}</span>
+          {entry.status !== null && <span className="lab-palette-arg">{entry.status}</span>}
+          {entry.description !== null && <span className="lab-palette-desc">{entry.description}</span>}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function InteractionCard({
   interaction,
   remote,
@@ -539,6 +672,8 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
   const [error, setError] = useState<string>()
   const [workspacePath, setWorkspacePath] = useState('')
   const [addingWorkspace, setAddingWorkspace] = useState(false)
+  const [completions, setCompletions] = useState<BridgeCompletionsResult>({ completions: [], pending: true })
+  const [paletteIndex, setPaletteIndex] = useState(0)
   const [browseSupport, setBrowseSupport] = useState<BrowseSupport>('unknown')
   const [listing, setListing] = useState<DirectoryListing>()
   const [listingBusy, setListingBusy] = useState(false)
@@ -601,7 +736,31 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
     return () => { controller.abort() }
   }, [open, remote, selectedId])
 
+  // Re-read when the session changes and whenever it returns to idle: a turn is
+  // what makes Claude Code able to report its commands at all, and the operator
+  // may have added a skill or MCP server on the Host between turns.
+  const sessionStatus = snapshot?.session.status
+  useEffect(() => {
+    if (!open || selectedId === undefined) {
+      setCompletions({ completions: [], pending: true })
+      return
+    }
+    if (sessionStatus !== undefined && BUSY_STATUSES.includes(sessionStatus)) return
+    let cancelled = false
+    void remote.sessionCompletions({ bridgeSessionId: selectedId })
+      .then(unwrap)
+      .then(next => { if (!cancelled) setCompletions(next) })
+      .catch(() => { if (!cancelled) setCompletions({ completions: [], pending: true }) })
+    return () => { cancelled = true }
+  }, [open, remote, selectedId, sessionStatus])
+
   const rows = useMemo(() => timeline(snapshot?.events ?? [], t), [snapshot?.events, t])
+  const query = paletteQuery(draft)
+  const paletteOpen = query !== null && selectedId !== undefined
+  const paletteMatches = useMemo(
+    () => query === null ? [] : rankCompletions(completions.completions, query).filter(entry => entry.insertText !== null),
+    [completions.completions, query],
+  )
   const allProviders = catalog?.providers ?? []
   // Every product the Host could not offer, with the reason it could not. The
   // Host already computed an exact diagnosis; dropping these rows from the UI
@@ -712,6 +871,49 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
       setSelectedId(undefined)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  /**
+   * Put a completion's own invocation text in the composer.
+   *
+   * A trailing space when the command takes arguments, so the operator can keep
+   * typing; otherwise the draft is ready to send as it stands.
+   * @param completion - the entry the operator chose.
+   */
+  const pickCompletion = (completion: BridgeCompletion): void => {
+    if (completion.insertText === null) return
+    setDraft(completion.argumentHint === null ? completion.insertText : `${completion.insertText} `)
+    setPaletteIndex(0)
+  }
+
+  /**
+   * Composer keys, while the palette is open.
+   *
+   * Arrow keys move the selection, Enter and Tab accept it, Escape closes the
+   * palette by clearing the trigger. Every one of these is a key the textarea
+   * would otherwise act on, so they are only intercepted while the palette is
+   * actually showing something.
+   * @param event - the keydown on the composer.
+   */
+  const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (!paletteOpen || paletteMatches.length === 0) return
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const step = event.key === 'ArrowDown' ? 1 : -1
+      setPaletteIndex(current => (current + step + paletteMatches.length) % paletteMatches.length)
+      return
+    }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      const chosen = paletteMatches[paletteIndex]
+      if (chosen === undefined) return
+      event.preventDefault()
+      pickCompletion(chosen)
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      setDraft('')
     }
   }
 
@@ -936,19 +1138,32 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                 </div>
 
                 <form className="lab-composer" onSubmit={send}>
+                  {paletteOpen && (
+                    <CommandPalette
+                      completions={completions.completions}
+                      pending={completions.pending}
+                      query={query}
+                      activeIndex={paletteIndex}
+                      t={t}
+                      onPick={pickCompletion}
+                    />
+                  )}
                   <div className="lab-composer-row">
                     <textarea
                       className="lab-textarea"
                       value={draft}
                       placeholder={t('composer.placeholder')}
                       disabled={selectedId === undefined}
-                      onChange={event => { setDraft(event.target.value) }}
+                      onChange={event => { setDraft(event.target.value); setPaletteIndex(0) }}
+                      onKeyDown={onComposerKeyDown}
                     />
                     <ActionButton primary type="submit" disabled={selectedId === undefined || draft.trim().length === 0}>
                       <IconSendOutline16 /> {t('composer.send')}
                     </ActionButton>
                   </div>
-                  <small className="lab-composer-hint">{t('composer.hint')}</small>
+                  <small className="lab-composer-hint">
+                    {completions.completions.length > 0 ? `${t('palette.hint')} · ${t('composer.hint')}` : t('composer.hint')}
+                  </small>
                 </form>
               </main>
             </div>

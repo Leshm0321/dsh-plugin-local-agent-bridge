@@ -210,6 +210,54 @@ export type BridgeEvent =
     readonly data: { readonly code: BridgeErrorCode; readonly message: string }
   }
 
+/**
+ * Where a completion came from, so the browser can group and label the list.
+ *
+ * `command` is a native slash command or skill the product itself resolves;
+ * `mcp` is a configured MCP server, listed so the operator can see what the
+ * product has available without leaving the browser.
+ */
+export type BridgeCompletionKind = 'command' | 'mcp'
+
+/** One entry in a session's completion list, exactly as the product reported it. */
+export interface BridgeCompletion {
+  readonly kind: BridgeCompletionKind
+  /** Display name, as the product spells it. Vendor text; never translated. */
+  readonly name: string
+  /**
+   * The text to place in the composer, or null for an entry that is information
+   * only.
+   *
+   * Composed on the Host because only the Host knows the product's syntax, and
+   * the two products do not share one: a Claude Code command is invoked as
+   * `/name`, while a Codex skill is named `namespace:skill` and is not a slash
+   * command at all. An MCP server is not invocable from the composer, so it
+   * carries null and the browser shows it as inventory.
+   */
+  readonly insertText: string | null
+  /** The product's own one-line description, or null when it gave none. */
+  readonly description: string | null
+  /** The product's argument hint, e.g. `<file>`, or null. */
+  readonly argumentHint: string | null
+  /**
+   * For `mcp`, the connection or auth state the product reports, so a server
+   * that is configured but unreachable is visibly different from a live one.
+   * Null for a command.
+   */
+  readonly status: string | null
+}
+
+export interface BridgeCompletionsResult {
+  readonly completions: readonly BridgeCompletion[]
+  /**
+   * True when the product has not yet been asked. Claude Code exposes its
+   * command list only through a live SDK query, so a session that has never run
+   * a turn has nothing to report yet — which is a different thing from a product
+   * that reported an empty list.
+   */
+  readonly pending: boolean
+}
+
 export interface BridgeCatalogResult {
   readonly providers: readonly NativeProviderView[]
   readonly workspaces: readonly BridgeWorkspaceView[]

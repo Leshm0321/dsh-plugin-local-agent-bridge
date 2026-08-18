@@ -23,7 +23,7 @@ import type {
   ProviderTurnRequest,
 } from '../core/provider.ts'
 import { redactText, redactValue } from '../core/redaction.ts'
-import type { BridgeQuestion } from '../types.ts'
+import type { BridgeCompletion, BridgeCompletionsResult, BridgeQuestion } from '../types.ts'
 
 type JsonObject = Record<string, unknown>
 
@@ -306,6 +306,96 @@ function itemProjection(item: JsonObject): {
   }
 }
 
+/**
+ * Read a `skills/list` reply into completions.
+ *
+ * Codex groups skills by working directory and reports each one with an
+ * absolute `SKILL.md` path, a scope and an enabled flag. Only the name and
+ * description cross to the browser: the path is Host filesystem detail that has
+ * no business leaving the Host, and it is dropped here rather than redacted so
+ * there is nothing to leak by accident.
+ *
+ * Parsing is deliberately permissive. This is a read-only convenience, so a
+ * reply shaped differently by a future Codex yields fewer entries instead of
+ * failing a turn.
+ * @param reply - the raw JSON-RPC result, or null when the call failed.
+ * @returns completions for every enabled skill.
+ */
+function codexSkills(reply: unknown): BridgeCompletion[] {
+  const groups = readArray(readProperty(reply, 'data'))
+  const completions: BridgeCompletion[] = []
+  for (const group of groups) {
+    for (const skill of readArray(readProperty(group, 'skills'))) {
+      const name = readString(readProperty(skill, 'name'))
+      if (name === null) continue
+      if (readProperty(skill, 'enabled') === false) continue
+      const description = readString(readProperty(skill, 'description'))
+      completions.push({
+        kind: 'command',
+        name: redactText(name, 128),
+        // A Codex skill is not a slash command; its name is what the model
+        // resolves, so that is what goes in the composer.
+        insertText: redactText(name, 128),
+        description: description === null ? null : redactText(description, 512),
+        argumentHint: null,
+        status: null,
+      })
+    }
+  }
+  return completions
+}
+
+/**
+ * Read an `mcpServerStatus/list` reply into completions.
+ * @param reply - the raw JSON-RPC result, or null when the call failed.
+ * @returns one information-only completion per configured server.
+ */
+function codexMcpServers(reply: unknown): BridgeCompletion[] {
+  const completions: BridgeCompletion[] = []
+  for (const server of readArray(readProperty(reply, 'data'))) {
+    const name = readString(readProperty(server, 'name'))
+    if (name === null) continue
+    const info = readProperty(server, 'serverInfo')
+    const version = readString(readProperty(info, 'version'))
+    const toolNames = Object.keys(readRecord(readProperty(server, 'tools')))
+    completions.push({
+      kind: 'mcp',
+      name: redactText(name, 128),
+      insertText: null,
+      description: [
+        version === null ? null : `v${version}`,
+        toolNames.length === 0 ? null : toolNames.slice(0, 6).join(', '),
+      ].filter(part => part !== null).join(' · ') || null,
+      argumentHint: null,
+      // Codex reports auth rather than connection state here.
+      status: readString(readProperty(server, 'authStatus')),
+    })
+  }
+  return completions
+}
+
+/** Read one property off an unknown value, or undefined when it is not an object. */
+function readProperty(value: unknown, key: string): unknown {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>)[key] : undefined
+}
+
+/** Narrow an unknown value to an array, or empty. */
+function readArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+/** Narrow an unknown value to a record, or empty. */
+function readRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+/** Narrow an unknown value to a non-empty string, or null. */
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null
+}
+
 export class CodexProviderAdapter implements NativeProviderAdapter {
   readonly id = 'codex' as const
   readonly supportsSteer = true
@@ -353,6 +443,31 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
       state.hooks = null
       state.completion = null
       state.earlyCompleted = null
+    }
+  }
+
+  async listCompletions(_bridgeSessionId: string, cwd: string): Promise<BridgeCompletionsResult> {
+    if (this.disposed) return { completions: [], pending: true }
+    let connection: CodexConnection
+    try {
+      connection = await this.ensureConnection()
+    } catch {
+      // Starting the App Server just to list skills is not worth reporting a
+      // failure for; the browser shows nothing and the next attempt retries.
+      return { completions: [], pending: true }
+    }
+    const [skills, servers] = await Promise.all([
+      // The workspace directory is passed explicitly, so a session that has not
+      // yet started a thread still gets that directory's skills. Empty `cwds`
+      // would fall back to the App Server process's own directory, which is
+      // wherever DSH was launched from and has nothing to do with the session.
+      connection.transport.request('skills/list', { cwds: [cwd], forceReload: false }).catch(() => null),
+      connection.transport.request('mcpServerStatus/list', {}).catch(() => null),
+    ])
+    if (skills === null && servers === null) return { completions: [], pending: true }
+    return {
+      completions: [...codexSkills(skills), ...codexMcpServers(servers)],
+      pending: false,
     }
   }
 

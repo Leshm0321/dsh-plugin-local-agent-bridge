@@ -617,6 +617,84 @@ export const PANEL_STYLES = `
 .lab-composer-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
 .lab-composer-hint { display: block; margin-top: 7px; font-size: 11px; color: var(--lab-text-3); }
 
+/* -------------------------------------------------------- command palette */
+
+/* Anchored above the composer rather than as a modal: the operator is mid-typing
+   and the filter text stays in the composer, so the list has to appear without
+   taking focus away from it. */
+.lab-composer { position: relative; }
+.lab-palette {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(100% - 6px);
+  z-index: 5;
+  max-height: min(320px, 44vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  background: var(--lab-surface);
+  border: var(--lab-hairline) solid var(--lab-line-strong);
+  border-radius: var(--lab-r-card);
+  box-shadow: 0 -4px 12px -6px rgba(0, 0, 0, .18), 0 -16px 40px -20px rgba(0, 0, 0, .3);
+  animation: lab-palette-in var(--lab-fast) var(--lab-ease);
+}
+@keyframes lab-palette-in {
+  from { opacity: 0; transform: translateY(6px) }
+  to { opacity: 1; transform: none }
+}
+@media (prefers-reduced-motion: reduce) { .lab-palette { animation: none } }
+
+.lab-palette-group {
+  padding: 5px 8px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--lab-caption);
+}
+.lab-palette-item {
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  padding: 7px 8px;
+  color: var(--lab-text);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-palette-item:hover { background: var(--lab-hover); }
+/* Keyboard selection has to look identical to hover, because the operator is
+   arrowing through the list with their hands on the keys. */
+.lab-palette-item[aria-selected='true'] { background: var(--lab-hover); }
+.lab-palette-item:disabled { cursor: default; }
+.lab-palette-item:disabled:hover { background: transparent; }
+.lab-palette-name {
+  min-width: 0;
+  font-family: var(--lab-mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-palette-arg { font-family: var(--lab-mono); font-size: 11px; color: var(--lab-text-3); }
+.lab-palette-desc {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--lab-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-palette-note { padding: 10px 8px; font-size: 12px; line-height: 1.5; color: var(--lab-text-3); }
+
 /* ---------------------------------------------------------------- notices */
 
 .lab-error-banner {

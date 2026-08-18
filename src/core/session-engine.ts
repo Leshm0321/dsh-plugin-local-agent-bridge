@@ -7,6 +7,7 @@ import type {
   BridgeSessionCreateRequest,
   BridgeSessionReadRequest,
   BridgeSessionReadResult,
+  BridgeCompletionsResult,
   BridgeSessionStatus,
   BridgeSessionView,
   BridgeStatusNote,
@@ -286,6 +287,29 @@ export class BridgeSessionEngine {
     await this.setStatus(runtime, 'running', null)
     resolution.resolve(request.resolution)
     return { accepted: true }
+  }
+
+  /**
+   * The slash commands, skills and MCP servers the session's product reports.
+   *
+   * A provider that cannot enumerate them, or has not been asked yet, yields an
+   * empty list marked pending — the browser then shows nothing rather than the
+   * bridge inventing entries the product would not understand.
+   * @param bridgeSessionId - the session to report for.
+   * @returns the product's completions.
+   */
+  async listCompletions(bridgeSessionId: string): Promise<BridgeCompletionsResult> {
+    const runtime = this.requireSession(bridgeSessionId)
+    const provider = this.providers.get(runtime.record.providerId)
+    if (provider?.listCompletions === undefined) return { completions: [], pending: false }
+    try {
+      const workspace = await this.requireWorkspace(runtime.record.workspaceId)
+      return await provider.listCompletions(bridgeSessionId, workspace.cwd)
+    } catch {
+      // Enumeration is a convenience; a product that refuses must not turn a
+      // panel refresh into an error banner.
+      return { completions: [], pending: true }
+    }
   }
 
   async dispose(): Promise<void> {

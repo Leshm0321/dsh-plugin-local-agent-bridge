@@ -2,7 +2,7 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 /**
@@ -46,6 +46,7 @@ import {
 } from '../../src/client/index.tsx'
 import type {
   BridgeCatalogResult,
+  BridgeCompletion,
   BridgeEvent,
   BridgeSessionReadResult,
   BridgeSessionView,
@@ -142,6 +143,10 @@ class RemoteFixture {
   readonly sessionCancel = vi.fn(async () => ({ ok: true as const, value: undefined }))
   readonly sessionArchive = vi.fn(async () => ({ ok: true as const, value: { ...session, archived: true } }))
   readonly interactionRespond = vi.fn(async () => ({ ok: true as const, value: { accepted: true as const } }))
+  readonly sessionCompletions = vi.fn(async () => ({
+    ok: true as const,
+    value: { completions: [] as BridgeCompletion[], pending: false },
+  }))
   readonly sessionRead = vi.fn((request: { bridgeSessionId: string }, signal?: AbortSignal) => {
     const next = this.reads.shift()
     if (next !== undefined) return Promise.resolve({ ok: true as const, value: next })
@@ -198,6 +203,30 @@ interface RenderOptions {
   readonly createWorkspace?: (path: string) => Promise<void>
   readonly pickDirectory?: () => Promise<string | null>
   readonly listDirectory?: (path?: string) => Promise<unknown>
+}
+
+/**
+ * Click a palette entry by its displayed invocation text.
+ *
+ * Scoped to the listbox: the same text can appear in the composer's own hint,
+ * and a bare text query then matches both.
+ * @param text - the invocation text shown on the entry.
+ */
+async function pickFromPalette(text: string): Promise<void> {
+  const listbox = await screen.findByRole('listbox')
+  fireEvent.click(await within(listbox).findByText(text))
+}
+
+/**
+ * The palette's own options.
+ *
+ * `getAllByRole('option')` would also return the provider and workspace
+ * `<select>` children, which carry the same role — scoping to the listbox is
+ * what makes these assertions about the palette rather than the whole form.
+ * @returns the palette entries in render order.
+ */
+function paletteOptions(): HTMLElement[] {
+  return within(screen.getByRole('listbox')).getAllByRole('option')
 }
 
 /** A directory level shaped the way the Host's browse capability reports one. */
@@ -579,6 +608,184 @@ describe('LocalAgentPanel', () => {
     expect(created).toEqual([])
     // Dismissing returns to the offer rather than hiding it.
     expect(screen.getByRole('button', { name: en['workspace.browse'] })).toBeTruthy()
+  })
+
+  it('opens the command palette on a leading slash and keeps it shut otherwise', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.sessionCompletions.mockResolvedValue({
+      ok: true,
+      value: {
+        pending: false,
+        completions: [
+          { kind: 'command', name: 'compact', insertText: '/compact', description: 'Compact the context', argumentHint: null, status: null },
+          { kind: 'command', name: 'review', insertText: '/review', description: null, argumentHint: '<path>', status: null },
+        ],
+      },
+    })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder'])
+    expect(screen.queryByRole('listbox')).toBeNull()
+
+    fireEvent.change(composer, { target: { value: '/' } })
+    const listbox = await screen.findByRole('listbox')
+    expect(within(listbox).getByText('/compact')).toBeTruthy()
+    expect(within(listbox).getByText('/review')).toBeTruthy()
+
+    // A slash mid-sentence is a path or a date, not a command gesture.
+    fireEvent.change(composer, { target: { value: 'look at src/main.ts' } })
+    await waitFor(() => { expect(screen.queryByRole('listbox')).toBeNull() })
+
+    // A space after the token means the operator moved on to arguments.
+    fireEvent.change(composer, { target: { value: '/compact now' } })
+    await waitFor(() => { expect(screen.queryByRole('listbox')).toBeNull() })
+  })
+
+  it('ranks a prefix match above a description match', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.sessionCompletions.mockResolvedValue({
+      ok: true,
+      value: {
+        pending: false,
+        completions: [
+          { kind: 'command', name: 'review', insertText: '/review', description: 'Also compacts first', argumentHint: null, status: null },
+          { kind: 'command', name: 'compact', insertText: '/compact', description: null, argumentHint: null, status: null },
+        ],
+      },
+    })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    fireEvent.change(await screen.findByPlaceholderText(en['composer.placeholder']), { target: { value: '/comp' } })
+    await screen.findByRole('listbox')
+    const names = paletteOptions().map(item => item.querySelector('.lab-palette-name')?.textContent)
+    expect(names).toEqual(['/compact', '/review'])
+  })
+
+  it('inserts the product\u2019s own invocation text, which differs per product', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.sessionCompletions.mockResolvedValue({
+      ok: true,
+      value: {
+        pending: false,
+        completions: [
+          // Claude Code: a slash command, no arguments.
+          { kind: 'command', name: 'compact', insertText: '/compact', description: null, argumentHint: null, status: null },
+          // Claude Code: takes an argument, so the draft needs room for it.
+          { kind: 'command', name: 'review', insertText: '/review', description: null, argumentHint: '<path>', status: null },
+          // Codex: a skill, named without a slash — the Host decided this text.
+          { kind: 'command', name: 'browser:control', insertText: 'browser:control', description: null, argumentHint: null, status: null },
+        ],
+      },
+    })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+
+    fireEvent.change(composer, { target: { value: '/compact' } })
+    await pickFromPalette('/compact')
+    // No argument hint: ready to send exactly as it stands.
+    await waitFor(() => { expect(composer.value).toBe('/compact') })
+
+    fireEvent.change(composer, { target: { value: '/review' } })
+    await pickFromPalette('/review')
+    // An argument hint earns a trailing space so typing can continue.
+    await waitFor(() => { expect(composer.value).toBe('/review ') })
+
+    fireEvent.change(composer, { target: { value: '/browser' } })
+    await pickFromPalette('browser:control')
+    // The Codex form carries no slash, because that is not how Codex resolves it.
+    await waitFor(() => { expect(composer.value).toBe('browser:control') })
+  })
+
+  it('drives the palette from the keyboard without stealing focus from the composer', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.sessionCompletions.mockResolvedValue({
+      ok: true,
+      value: {
+        pending: false,
+        completions: [
+          { kind: 'command', name: 'alpha', insertText: '/alpha', description: null, argumentHint: null, status: null },
+          { kind: 'command', name: 'beta', insertText: '/beta', description: null, argumentHint: null, status: null },
+        ],
+      },
+    })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    fireEvent.change(composer, { target: { value: '/' } })
+    await screen.findByRole('listbox')
+
+    // The first entry is selected, so Enter picks something immediately.
+    expect(paletteOptions()[0]?.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(composer, { key: 'ArrowDown' })
+    expect(paletteOptions()[1]?.getAttribute('aria-selected')).toBe('true')
+    // Wrapping, so arrowing past the end returns to the top.
+    fireEvent.keyDown(composer, { key: 'ArrowDown' })
+    expect(paletteOptions()[0]?.getAttribute('aria-selected')).toBe('true')
+
+    fireEvent.keyDown(composer, { key: 'ArrowUp' })
+    fireEvent.keyDown(composer, { key: 'Enter' })
+    await waitFor(() => { expect(composer.value).toBe('/beta') })
+
+    // Escape clears the trigger rather than leaving a stray slash behind.
+    fireEvent.change(composer, { target: { value: '/' } })
+    await screen.findByRole('listbox')
+    fireEvent.keyDown(composer, { key: 'Escape' })
+    await waitFor(() => { expect(composer.value).toBe('') })
+  })
+
+  it('lists MCP servers as inventory that the composer cannot invoke', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.sessionCompletions.mockResolvedValue({
+      ok: true,
+      value: {
+        pending: false,
+        completions: [
+          { kind: 'command', name: 'compact', insertText: '/compact', description: null, argumentHint: null, status: null },
+          { kind: 'mcp', name: 'node_repl', insertText: null, description: 'v1.5.0 · js_reset', argumentHint: null, status: 'unsupported' },
+        ],
+      },
+    })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    fireEvent.change(await screen.findByPlaceholderText(en['composer.placeholder']), { target: { value: '/' } })
+    await screen.findByRole('listbox')
+
+    expect(screen.getByText(en['palette.mcp'])).toBeTruthy()
+    expect(screen.getByText('node_repl')).toBeTruthy()
+    // Reported state is visible, so a configured-but-unreachable server reads
+    // differently from a live one.
+    expect(screen.getByText('unsupported')).toBeTruthy()
+    // Not an option, and not clickable: it has no invocation text.
+    const server = screen.getByText('node_repl').closest('button') as HTMLButtonElement
+    expect(server.disabled).toBe(true)
+    expect(server.getAttribute('role')).not.toBe('option')
+    // Only the command counts as a keyboard-selectable match.
+    expect(paletteOptions()).toHaveLength(1)
+  })
+
+  it('explains that Claude Code reports its commands only after a turn has run', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.sessionCompletions.mockResolvedValue({ ok: true, value: { completions: [], pending: true } })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    fireEvent.change(await screen.findByPlaceholderText(en['composer.placeholder']), { target: { value: '/' } })
+    // Pending is not the same as "this agent has no commands", and the panel says
+    // which one it is.
+    expect(await screen.findByText(en['palette.pending'])).toBeTruthy()
+    expect(screen.queryByText(en['palette.none'])).toBeNull()
   })
 
   it('has no vendor login surface, vendor request, storage residue, or credential canary', async () => {

@@ -12,6 +12,7 @@ import { CodexProviderAdapter } from './providers/codex.ts'
 import { FakeProviderAdapter } from './providers/fake.ts'
 import type {
   BridgeCatalogResult,
+  BridgeCompletionsResult,
   BridgeInteractionRespondRequest,
   BridgeInteractionRespondResult,
   BridgeSendResult,
@@ -209,6 +210,11 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   @Remote('sessionArchive')
   async sessionArchive(request: BridgeSessionArchiveRequest): Promise<BridgeSessionView> {
     return await this.requireEngine().archiveSession(request.bridgeSessionId, request.archived ?? true)
+  }
+
+  @Remote('sessionCompletions')
+  async sessionCompletions(request: BridgeSessionIdRequest): Promise<BridgeCompletionsResult> {
+    return await this.requireEngine().listCompletions(request.bridgeSessionId)
   }
 
   @Remote('interactionRespond')

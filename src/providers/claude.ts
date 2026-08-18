@@ -23,7 +23,7 @@ import type {
   ProviderTurnRequest,
 } from '../core/provider.ts'
 import { redactText, redactValue } from '../core/redaction.ts'
-import type { BridgeQuestion } from '../types.ts'
+import type { BridgeCompletion, BridgeCompletionsResult, BridgeQuestion } from '../types.ts'
 import { claudeSpawnSpec, ManagedClaudeProcess } from './claude-process.ts'
 
 interface ActiveClaudeTurn {
@@ -342,6 +342,17 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
   readonly id = 'claude' as const
   readonly supportsSteer = false
   private readonly active = new Map<string, ActiveClaudeTurn>()
+  /**
+   * Completions per session, captured during a turn.
+   *
+   * `supportedCommands()` and `mcpServerStatus()` live on the SDK's Query, which
+   * exists only while a turn is running — there is no way to ask an idle session.
+   * So the list is read once the query is open and kept, and a session that has
+   * never run a turn reports `pending` rather than an empty list. Re-read on
+   * every turn, because the operator can add a skill or an MCP server on the Host
+   * between turns.
+   */
+  private readonly completions = new Map<string, BridgeCompletionsResult>()
 
   constructor(
     private readonly subprocess: SubprocessRuntime,
@@ -379,6 +390,9 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
     }
     try {
       active.query = claudeQuery({ prompt: text, options })
+      // Fire and forget: the turn must not wait on a convenience read, and a
+      // product that refuses the control request still has to run its turn.
+      void this.captureCompletions(hooks.bridgeSessionId, active.query)
       for await (const message of active.query) {
         await projectMessage(message, hooks, projection)
       }
@@ -387,6 +401,53 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
       hooks.signal.removeEventListener('abort', relayAbort)
       await this.cleanup(active)
       this.active.delete(hooks.bridgeSessionId)
+    }
+  }
+
+  async listCompletions(bridgeSessionId: string): Promise<BridgeCompletionsResult> {
+    return this.completions.get(bridgeSessionId) ?? { completions: [], pending: true }
+  }
+
+  /**
+   * Read the session's commands and MCP servers off a live query.
+   *
+   * Every failure is swallowed: this is a browser convenience, and an SDK that
+   * declines a control request — an older build, a product mid-shutdown — must
+   * not disturb the turn that is starting. The previous list stays in that case,
+   * which is better than emptying it.
+   * @param bridgeSessionId - session to record against.
+   * @param query - the live SDK query for the turn just started.
+   */
+  private async captureCompletions(bridgeSessionId: string, query: Query): Promise<void> {
+    const [commands, servers] = await Promise.all([
+      query.supportedCommands().catch(() => []),
+      query.mcpServerStatus().catch(() => []),
+    ])
+    const completions: BridgeCompletion[] = [
+      ...commands.map(command => ({
+        kind: 'command' as const,
+        name: redactText(command.name, 128),
+        // Claude Code resolves these as slash commands, so that is the form the
+        // composer needs.
+        insertText: `/${redactText(command.name, 128)}`,
+        description: command.description.length === 0 ? null : redactText(command.description, 512),
+        argumentHint: command.argumentHint.length === 0 ? null : redactText(command.argumentHint, 128),
+        status: null,
+      })),
+      ...servers.map(server => ({
+        kind: 'mcp' as const,
+        name: redactText(server.name, 128),
+        insertText: null,
+        // serverInfo only arrives once connected; its absence is not an error.
+        description: server.serverInfo === undefined ? null : redactText(server.serverInfo.name, 512),
+        argumentHint: null,
+        status: server.status,
+      })),
+    ]
+    // A turn that was cancelled before this resolved must not resurrect state
+    // for a session the engine has since disposed.
+    if (this.active.has(bridgeSessionId) || this.completions.has(bridgeSessionId)) {
+      this.completions.set(bridgeSessionId, { completions, pending: false })
     }
   }
 
@@ -406,6 +467,7 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
   }
 
   async disposeSession(bridgeSessionId: string): Promise<void> {
+    this.completions.delete(bridgeSessionId)
     const active = this.active.get(bridgeSessionId)
     if (active === undefined) return
     await this.cancel(bridgeSessionId)
