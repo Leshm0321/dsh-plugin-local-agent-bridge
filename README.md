@@ -124,6 +124,30 @@ dsh plugin --profile web remove dsh-plugin-local-agent-bridge
 
 Plugin unload disposes active sessions, closes protocol transports, and waits for managed process trees to exit.
 
+## Commands, skills, and MCP
+
+Typing `/` in the composer lists what the session's product reports it can do,
+filtered as you type and navigable with the arrow keys. Selecting an entry writes
+the product's own invocation text and nothing else — the bridge never runs a
+command on the product's behalf, so `/compact` means what it means in a terminal
+and a product that renames a command needs no change here.
+
+The invocation syntax is the product's, not the bridge's:
+
+| Product | Reported through | Invoked as |
+| --- | --- | --- |
+| Claude Code | `supportedCommands()` on a live SDK query | `/name` |
+| Codex | `skills/list` for the session's workspace directory | `namespace:skill` |
+
+Claude Code can only be asked while a turn is running, so its list appears after
+the session's first message and is refreshed on each later turn; until then the
+panel says the product has not reported yet, which is not the same as reporting
+none. Codex answers at any time.
+
+MCP servers from both products are listed with the state each reports, as
+inventory — they are not invocable from the composer. Skill filesystem paths stay
+on the Host.
+
 ## Runtime behavior
 
 - Codex uses one managed App Server process for multiple mapped threads, with `thread/start`, `thread/resume`, `turn/start`, `turn/steer`, and `turn/interrupt`.

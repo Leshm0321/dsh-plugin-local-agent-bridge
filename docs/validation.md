@@ -22,7 +22,9 @@ its interruption without a cancellation marker), replay reset, persistence
 recovery, Codex App Server lifecycle and login rejection, Claude SDK
 resume/streaming/interactions/cancellation, Client create/poll/respond/reconnect
 behavior, bilingual rendering against the shipped dictionaries, unavailable-product
-diagnostics, and in-panel workspace registration.
+diagnostics, in-panel workspace registration, directory-capability probing and its two
+fallbacks, the stylesheet's theme-token and scoping guarantees, and the command
+palette across both products' invocation syntaxes.
 
 ## Real-product smoke checklist
 
@@ -94,6 +96,7 @@ confidential source. Reports retain only generic success facts.
 | 5 | Both providers create sessions and sustain at least three turns | Manually verified | Codex completed three continuous turns plus cancellation. Claude completed multiple continuous turns including resume after Host restart, tool use, AskUserQuestion, and cancellation. |
 | 6 | Text is displayed incrementally | Automated + manually verified | Provider integration tests assert delta projection. Fake Provider and real Claude runs produced multiple text deltas; Claude deltas now share one stable turn-level item ID so one answer renders as one streaming row. |
 | 7 | Browser can approve or reject at least one real tool request | Manually verified | A real Claude `Write` request in the disposable workspace entered `awaiting-approval`; `Allow once` completed the tool. Fake Provider and provider integration tests also cover allow, deny, and cancel resolutions. |
+| 8a | Browser can invoke each product's own commands and skills | Automated + manually verified | Typing `/` lists what the product reports: 57 entries from real Claude Code (after its first turn, since the SDK exposes them only on a live query) and 44 from real Codex `0.147.0` (immediately, using the session's workspace directory). Insertion uses each product's own syntax — `/name` for Claude Code, `namespace:skill` for Codex — and the bridge executes nothing itself. MCP servers are listed as non-invocable inventory. Codex reports an absolute `SKILL.md` path per skill; it is dropped on the Host and confirmed absent from the rendered panel. |
 | 8 | Browser can answer Claude AskUserQuestion; Codex equivalent when supported | Automated + manually verified | A real Claude AskUserQuestion displayed Alpha/Beta options, accepted the browser answer, and completed the turn. Codex request-user-input and MCP form mappings are covered by protocol tests; the tested Codex model answered a requested choice in text instead of invoking the optional tool. |
 | 9 | Running turns can be cancelled and managed work stops | Automated + manually verified | Fake, real Codex, and real Claude turns all move through `cancelling` to `USER_CANCELLED` and return to `idle`, and the managed child is gone afterwards. The macOS run initially surfaced `PROVIDER_START_FAILED` here: the abort signal was authoritative but the reported code came from pattern-matching an SDK message that carries no cancellation marker. Fixed, and pinned by a provider double whose interruption is deliberately opaque. |
 | 10 | Refresh restores session and current state | Manually verified | Browser reload restored provider catalog, sessions, history, terminal state, and pending/recovered status. Host restart also restored native-locator-backed sessions. |
