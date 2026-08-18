@@ -1,5 +1,7 @@
 # Local Agent Bridge
 
+**English** | [简体中文](README.zh-CN.md)
+
 Drive the **Claude Code** and **Codex** installations already on your machine from
 the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) browser UI.
 
