@@ -1,5 +1,6 @@
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { satisfies, valid } from 'semver'
+import { type NativeCommand, nativeCommand } from './platform.ts'
 import type { NativeProviderView, ProviderCompatibility, ProviderId } from '../types.ts'
 import { BridgeError } from './errors.ts'
 import { redactText } from './redaction.ts'
@@ -14,14 +15,17 @@ export interface DiscoveryOptions {
   readonly signal?: AbortSignal
 }
 
-function versionArgv(executable: string): { argv: string[]; env?: NodeJS.ProcessEnv } {
-  if (process.platform !== 'win32' || !/\.(?:cmd|bat)$/i.test(executable)) {
-    return { argv: [executable, '--version'] }
-  }
-  return {
-    argv: ['cmd.exe', '/d', '/v:off', '/s', '/c', '%DSH_LOCAL_AGENT_EXECUTABLE%', '--version'],
-    env: { DSH_LOCAL_AGENT_EXECUTABLE: `"${executable}"` },
-  }
+/** Environment variable carrying the executable path for the Windows probe. */
+const VERSION_EXECUTABLE_ENV = 'DSH_LOCAL_AGENT_EXECUTABLE'
+
+/**
+ * The argv that asks a Host-installed product for its version.
+ * @param executable - resolved absolute path to the product.
+ * @param platform - target platform; defaults to the running one.
+ * @returns the spawn description.
+ */
+export function versionArgv(executable: string, platform: NodeJS.Platform = process.platform): NativeCommand {
+  return nativeCommand(executable, ['--version'], VERSION_EXECUTABLE_ENV, platform)
 }
 
 export function parseProductVersion(output: string): string | null {

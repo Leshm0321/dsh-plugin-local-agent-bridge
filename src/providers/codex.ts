@@ -1,6 +1,6 @@
-import { extname } from 'node:path'
 import Ajv, { type ValidateFunction } from 'ajv'
 import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol'
+import { type NativeCommand, nativeCommand } from '../core/platform.ts'
 import type {
   SubprocessHandle,
   SubprocessRuntime,
@@ -147,15 +147,17 @@ function validate<T>(method: string, params: JsonObject): T {
   return params as T
 }
 
-function executableArgv(executable: string): { argv: string[]; env?: NodeJS.ProcessEnv } {
-  const extension = extname(executable).toLowerCase()
-  if (process.platform !== 'win32' || extension !== '.cmd' && extension !== '.bat') {
-    return { argv: [executable, 'app-server', '--stdio'] }
-  }
-  return {
-    argv: ['cmd.exe', '/d', '/v:off', '/s', '/c', '%DSH_LOCAL_AGENT_CODEX_EXECUTABLE%', 'app-server', '--stdio'],
-    env: { DSH_LOCAL_AGENT_CODEX_EXECUTABLE: `"${executable}"` },
-  }
+/** Environment variable carrying the executable path for the Windows spawn. */
+const CODEX_EXECUTABLE_ENV = 'DSH_LOCAL_AGENT_CODEX_EXECUTABLE'
+
+/**
+ * The argv that starts the Codex App Server over stdio.
+ * @param executable - resolved absolute path to `codex`.
+ * @param platform - target platform; defaults to the running one.
+ * @returns the spawn description.
+ */
+export function executableArgv(executable: string, platform: NodeJS.Platform = process.platform): NativeCommand {
+  return nativeCommand(executable, ['app-server', '--stdio'], CODEX_EXECUTABLE_ENV, platform)
 }
 
 function approvalOutcome(resolution: ProviderInteractionResolution): 'accept' | 'decline' | 'cancel' {

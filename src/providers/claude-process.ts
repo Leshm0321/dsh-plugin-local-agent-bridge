@@ -4,7 +4,6 @@
  * process-tree ownership and cleanup.
  */
 import { EventEmitter } from 'node:events'
-import { extname } from 'node:path'
 import type {
   SpawnedProcess,
   SpawnOptions,
@@ -14,7 +13,9 @@ import {
   type SubprocessHandle,
   type SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
+import { nativeCommand } from '../core/platform.ts'
 
+/** Environment variable carrying the executable path for the Windows spawn. */
 const WINDOWS_BATCH_EXECUTABLE_ENV = 'DSH_LOCAL_AGENT_CLAUDE_EXECUTABLE'
 
 function asError(value: unknown): Error {
@@ -37,15 +38,12 @@ export function claudeSpawnSpec(
   if (options.cwd === undefined || options.cwd.length === 0) {
     throw new Error('local-agent-bridge: Claude SDK omitted its workspace')
   }
-  const extension = extname(options.command).toLowerCase()
-  const batchShim = platform === 'win32' && (extension === '.cmd' || extension === '.bat')
-  const env = sdkEnvironmentOverlay(options.env)
-  const argv = batchShim
-    ? ['cmd.exe', '/d', '/v:off', '/s', '/c', `%${WINDOWS_BATCH_EXECUTABLE_ENV}%`, ...options.args]
-    : [options.command, ...options.args]
-  if (batchShim) env[WINDOWS_BATCH_EXECUTABLE_ENV] = `"${options.command}"`
+  const command = nativeCommand(options.command, options.args, WINDOWS_BATCH_EXECUTABLE_ENV, platform)
+  // The SDK's own environment wins; the shim variable is layered on top of it
+  // because only the argv form above consumes it.
+  const env = Object.assign(sdkEnvironmentOverlay(options.env), command.env)
   return {
-    argv,
+    argv: command.argv,
     cwd: options.cwd,
     stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
     graceMs,
