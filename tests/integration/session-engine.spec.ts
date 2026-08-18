@@ -396,3 +396,180 @@ describe('BridgeSessionEngine with FakeProviderAdapter', () => {
     expect(waiting.pendingInteraction).not.toBeNull()
   })
 })
+
+describe('resumed history', () => {
+  /**
+   * A provider that reports a transcript, the way both real adapters do after
+   * reading it back through their product's own API.
+   */
+  class HistoryAdapter implements NativeProviderAdapter {
+    readonly id = 'fake' as const
+    readonly supportsSteer = false
+    readonly asked: { locator: string; cwd: string }[] = []
+
+    constructor(private readonly entries: number, private readonly clipped = false) {}
+
+    async readHistory(locator: string, cwd: string) {
+      this.asked.push({ locator, cwd })
+      return {
+        events: Array.from({ length: this.entries }, (_unused, index) => ({
+          type: 'bridge/user-message' as const,
+          data: { text: `entry ${index}`, delivery: 'started' as const },
+        })),
+        truncated: this.clipped,
+      }
+    }
+
+    async startTurn(): Promise<void> {}
+    async steer(): Promise<void> {}
+    async cancel(): Promise<void> {}
+    async disposeSession(): Promise<void> {}
+    async dispose(): Promise<void> {}
+  }
+
+  async function engineWith(adapter: NativeProviderAdapter, eventRetention?: number) {
+    const memory = new MemoryPersistence()
+    return await BridgeSessionEngine.create({
+      persistence: asPersistence(memory),
+      providers: new Map<ProviderId, NativeProviderAdapter>([['fake', adapter]]),
+      resolveWorkspace: async id => id === workspace.id ? workspace : undefined,
+      longPollMaxMs: 100,
+      ...eventRetention === undefined ? {} : { eventRetention },
+    })
+  }
+
+  it('replays the product’s transcript into a resumed session, and marks where it ends', async () => {
+    const adapter = new HistoryAdapter(3)
+    const engine = await engineWith(adapter)
+    const created = await engine.createSession({
+      providerId: 'fake',
+      workspaceId: workspace.id,
+      resumeLocator: 'native-42',
+    })
+
+    // The adapter is asked with the product's own locator and the Host-resolved
+    // working directory; the browser supplies neither.
+    expect(adapter.asked).toEqual([{ locator: 'native-42', cwd: workspace.cwd }])
+
+    const result = await engine.read({ bridgeSessionId: created.bridgeSessionId })
+    const texts = result.events
+      .filter(entry => entry.type === 'bridge/user-message')
+      .map(entry => (entry.data as { text: string }).text)
+    expect(texts).toEqual(['entry 0', 'entry 1', 'entry 2'])
+
+    // History events belong to no bridge turn, because the turns that produced
+    // them were the product's.
+    for (const entry of result.events.filter(item => item.type === 'bridge/user-message')) {
+      expect(entry.bridgeTurnId).toBeNull()
+    }
+
+    const marker = result.events.find(entry => entry.type === 'bridge/history')
+    expect(marker?.data).toEqual({ restored: 3, truncated: false })
+    // And it comes last, so the line falls between the old conversation and
+    // whatever this session does next.
+    expect(result.events.at(-1)?.type).toBe('bridge/history')
+    await engine.dispose()
+  })
+
+  it('keeps the end of a long transcript and says the rest was dropped', async () => {
+    // Retention 10 leaves room for 5 history events, so the newest 5 of 8 survive:
+    // the end of a conversation is what a reader needs in order to continue it.
+    const engine = await engineWith(new HistoryAdapter(8), 10)
+    const created = await engine.createSession({
+      providerId: 'fake',
+      workspaceId: workspace.id,
+      resumeLocator: 'native-long',
+    })
+
+    const result = await engine.read({ bridgeSessionId: created.bridgeSessionId })
+    const texts = result.events
+      .filter(entry => entry.type === 'bridge/user-message')
+      .map(entry => (entry.data as { text: string }).text)
+    expect(texts).toEqual(['entry 3', 'entry 4', 'entry 5', 'entry 6', 'entry 7'])
+    expect(result.events.find(entry => entry.type === 'bridge/history')?.data)
+      .toEqual({ restored: 5, truncated: true })
+    await engine.dispose()
+  })
+
+  it('keeps the newest events when the adapter itself returns more than fits', async () => {
+    // Two ceilings apply — the adapter's and the engine's — and both must keep the
+    // end. The engine's is exercised here; the adapters' is the same slice, and the
+    // combination is what puts the *recent* conversation on screen rather than the
+    // opening of a long one.
+    const engine = await engineWith(new HistoryAdapter(6), 4)
+    const created = await engine.createSession({
+      providerId: 'fake',
+      workspaceId: workspace.id,
+      resumeLocator: 'native-tail',
+    })
+    const result = await engine.read({ bridgeSessionId: created.bridgeSessionId })
+    const texts = result.events
+      .filter(entry => entry.type === 'bridge/user-message')
+      .map(entry => (entry.data as { text: string }).text)
+    expect(texts).toEqual(['entry 4', 'entry 5'])
+    await engine.dispose()
+  })
+
+  it('repeats the adapter’s own report that a transcript arrived clipped', async () => {
+    // The engine cannot infer this: a transcript trimmed to exactly the adapter's
+    // ceiling looks identical to one that happened to be that length. Six events
+    // fit in a retention of 100, so only the adapter's report can be the reason
+    // this says truncated.
+    const engine = await engineWith(new HistoryAdapter(6, true), 100)
+    const created = await engine.createSession({
+      providerId: 'fake',
+      workspaceId: workspace.id,
+      resumeLocator: 'native-clipped',
+    })
+    const result = await engine.read({ bridgeSessionId: created.bridgeSessionId })
+    expect(result.events.find(entry => entry.type === 'bridge/history')?.data)
+      .toEqual({ restored: 6, truncated: true })
+    await engine.dispose()
+  })
+
+  it('reads no history for a session that is not resuming anything', async () => {
+    const adapter = new HistoryAdapter(3)
+    const engine = await engineWith(adapter)
+    const created = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id })
+
+    expect(adapter.asked).toEqual([])
+    const result = await engine.read({ bridgeSessionId: created.bridgeSessionId })
+    expect(result.events.some(entry => entry.type === 'bridge/history')).toBe(false)
+    await engine.dispose()
+  })
+
+  it('still creates the session when the transcript cannot be read', async () => {
+    class FailingHistory extends HistoryAdapter {
+      override async readHistory(): Promise<never> {
+        throw new Error('transcript gone')
+      }
+    }
+
+    const engine = await engineWith(new FailingHistory(0))
+    // A history that cannot be read is a cosmetic loss; the resume it belongs to
+    // still works, and failing here would make a usable session look broken.
+    const created = await engine.createSession({
+      providerId: 'fake',
+      workspaceId: workspace.id,
+      resumeLocator: 'native-broken',
+    })
+    expect(created.bridgeSessionId).toBeTruthy()
+    const result = await engine.read({ bridgeSessionId: created.bridgeSessionId })
+    expect(result.events.some(entry => entry.type === 'bridge/history')).toBe(false)
+    await engine.dispose()
+  })
+
+  it('creates a session against a provider that cannot read transcripts at all', async () => {
+    // FakeProviderAdapter has no readHistory; an optional reader that is absent
+    // must not be a reason to fail a resume.
+    const engine = await engineWith(new FakeProviderAdapter())
+    const created = await engine.createSession({
+      providerId: 'fake',
+      workspaceId: workspace.id,
+      resumeLocator: 'native-none',
+    })
+    const result = await engine.read({ bridgeSessionId: created.bridgeSessionId })
+    expect(result.events.some(entry => entry.type === 'bridge/history')).toBe(false)
+    await engine.dispose()
+  })
+})

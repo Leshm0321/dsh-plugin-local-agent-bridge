@@ -156,6 +156,10 @@ export const PANEL_STYLES = `
 
 /* -------------------------------------------------------------------- header */
 
+/* Toggle and title travel together on the left, so the control sits on the side
+   it acts on. */
+.lab-titlebar-lead { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
 .lab-titlebar {
   display: flex;
   align-items: center;
@@ -198,8 +202,42 @@ export const PANEL_STYLES = `
 /* Everything except the rail's own buttons is out, not merely hidden, so the
    collapsed rail cannot scroll or catch focus. */
 .lab-body--collapsed .lab-aside > *:not(.lab-rail) { display: none; }
+/* The icon rail: what the sidebar becomes at 52px. Hidden while the sidebar is
+   open, because everything in it is already there in full. */
 .lab-rail { display: none; }
-.lab-body--collapsed .lab-rail { display: grid; gap: 6px; }
+.lab-body--collapsed .lab-rail { display: grid; gap: 6px; justify-items: center; }
+.lab-rail-session {
+  appearance: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--lab-text-2);
+  background: var(--lab-fill);
+  border: 0;
+  border-radius: var(--lab-r-control);
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease), color var(--lab-fast) var(--lab-ease);
+}
+.lab-rail-session:hover { background: var(--lab-fill-strong); }
+.lab-rail-session:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--lab-accent) 16%, transparent);
+}
+.lab-rail-session--on { color: var(--lab-on-accent); background: var(--lab-accent); }
+/* A running turn, visible without expanding. */
+.lab-rail-busy {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lab-warn);
+}
 .lab-aside {
   min-height: 0;
   overflow-y: auto;
@@ -492,6 +530,26 @@ export const PANEL_STYLES = `
 .lab-row-card--reasoning { background: transparent; border-style: dashed; color: var(--lab-text-2); }
 .lab-row-card--status { background: transparent; border-color: transparent; padding: 2px 13px; color: var(--lab-text-3); font-size: 12px; }
 .lab-row-card--status .lab-row-label { margin-bottom: 0; display: inline; margin-right: 8px; }
+/* The history rule: a line across the transcript with a caption sitting in it,
+   marking where the resumed conversation ends. Not a card, because it describes
+   the transcript rather than being part of it. */
+.lab-history-rule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+  font-size: 11px;
+  color: var(--lab-text-3);
+}
+.lab-history-rule::before,
+.lab-history-rule::after {
+  content: '';
+  flex: 1 1 0;
+  height: var(--lab-hairline);
+  background: var(--lab-line-strong);
+}
+.lab-history-label { flex: none; }
+
 .lab-row-card--tool { font-family: var(--lab-mono); font-size: 12px; background: var(--lab-fill); border-color: transparent; }
 .lab-row-card--error {
   border-color: color-mix(in srgb, var(--lab-danger) 35%, var(--lab-line));
@@ -1037,21 +1095,101 @@ export const PANEL_STYLES = `
 .lab-model-check { color: var(--lab-accent); font-size: 12px; }
 
 /* Effort sits under its own model, indented, because it only applies there. */
-.lab-effort-row { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 9px 7px 18px; }
-.lab-effort {
-  appearance: none;
-  font: inherit;
-  font-size: 11px;
-  padding: 3px 8px;
-  color: var(--lab-text-2);
-  background: var(--lab-fill);
-  border: 0;
-  border-radius: var(--lab-r-chip);
-  cursor: pointer;
-  transition: background var(--lab-fast) var(--lab-ease), color var(--lab-fast) var(--lab-ease);
+.lab-effort { padding: 2px 9px 8px 18px; }
+.lab-effort-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
 }
-.lab-effort:hover { background: var(--lab-fill-strong); }
-.lab-effort--on { color: var(--lab-on-accent); background: var(--lab-accent); }
+.lab-effort-label { font-size: 11px; color: var(--lab-text-3); }
+.lab-effort-value { font-size: 11px; color: var(--lab-text-2); }
+
+/* The stops overlay the track, so both share one positioning context. */
+.lab-effort-track { position: relative; display: flex; align-items: center; height: 22px; }
+
+.lab-effort-input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.lab-effort-input:focus-visible { outline: none; }
+
+/* Filled portion up to the thumb, unfilled after it. No browser paints this the
+   same way, and Firefox's ::-moz-range-progress covers only one half, so the whole
+   track is drawn from one gradient driven by the progress property. */
+.lab-effort-input::-webkit-slider-runnable-track {
+  height: 22px;
+  border-radius: 11px;
+  background:
+    linear-gradient(
+      to right,
+      var(--lab-accent) 0 var(--lab-effort-progress, 0%),
+      var(--lab-fill-strong) var(--lab-effort-progress, 0%) 100%
+    );
+}
+.lab-effort-input::-moz-range-track {
+  height: 22px;
+  border-radius: 11px;
+  background:
+    linear-gradient(
+      to right,
+      var(--lab-accent) 0 var(--lab-effort-progress, 0%),
+      var(--lab-fill-strong) var(--lab-effort-progress, 0%) 100%
+    );
+}
+.lab-effort-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--lab-surface);
+  box-shadow: 0 1px 4px -1px rgba(0, 0, 0, .35);
+  cursor: grab;
+}
+.lab-effort-input::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--lab-surface);
+  box-shadow: 0 1px 4px -1px rgba(0, 0, 0, .35);
+  cursor: grab;
+}
+.lab-effort-input:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--lab-accent) 26%, transparent);
+}
+
+/* Inset by half a thumb at each end, so a dot sits exactly where the thumb lands
+   for that level rather than drifting toward the middle. */
+.lab-effort-stops {
+  position: absolute;
+  inset: 0 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.lab-effort-stop {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  /* One ink that reads on both halves of the track, without knowing which half a
+     given dot is on. The difference blend inverts against whatever is behind it,
+     so a pale dot goes dark on the light unfilled track and light on the filled
+     one. This matters because the theme's accent is nearly black, and an overlay
+     blend, tried first, vanished on it completely. */
+  background: color-mix(in srgb, var(--lab-on-accent) 60%, transparent);
+  mix-blend-mode: difference;
+}
 
 .lab-quota {
   display: inline-flex;

@@ -104,6 +104,7 @@ export const zh = {
   'model.defaultHint': '沿用你在 CLI 里配置的模型',
   'model.unavailable': '发送一条消息后，Claude Code 才会报告可选模型；Codex 随时可选。',
   'effort.label': '推理强度',
+  'effort.unset': '产品默认',
   'effort.low': '低',
   'effort.medium': '中',
   'effort.high': '高',
@@ -170,6 +171,11 @@ export const zh = {
   'palette.pending': '发送一条消息后，本机 Agent 才会报告它可用的命令与 Skill。',
   'palette.none': '这个 Agent 没有报告任何命令或 Skill。',
   'palette.mcpNotInvocable': '仅供参考，不能直接调用',
+
+  // The line between a resumed session's existing transcript and this session's
+  // own work.
+  'history.restored': '以上 {count} 条来自这个会话已有的记录',
+  'history.truncated': '以上 {count} 条来自这个会话已有的记录（更早的内容未载入）',
 
   // Approval and question cards.
   'interaction.approval': '需要授权',
@@ -338,6 +344,7 @@ export const en = {
   'model.defaultHint': 'Keep whatever you configured in the CLI',
   'model.unavailable': 'Claude Code reports its models once a message has been sent; Codex answers at any time.',
   'effort.label': 'Reasoning effort',
+  'effort.unset': 'Product default',
   'effort.low': 'Low',
   'effort.medium': 'Medium',
   'effort.high': 'High',
@@ -397,6 +404,9 @@ export const en = {
   'palette.pending': 'Send a message first — the agent reports its commands and skills once a turn has run.',
   'palette.none': 'This agent reported no commands or skills.',
   'palette.mcpNotInvocable': 'Reference only; not invocable here',
+
+  'history.restored': 'The {count} entries above come from this session’s existing transcript',
+  'history.truncated': 'The {count} entries above come from this session’s existing transcript; earlier ones were not loaded',
 
   'interaction.approval': 'Approval required',
   'interaction.question': 'Input required',

@@ -1,4 +1,5 @@
 import {
+  getSessionMessages,
   listSessions,
   query as claudeQuery,
   type CanUseTool,
@@ -14,6 +15,7 @@ import {
   type SDKMessage,
   type SDKControlGetContextUsageResponse,
   type SDKPartialAssistantMessage,
+  type SessionMessage,
   type SpawnOptions,
 } from '@anthropic-ai/claude-agent-sdk'
 import {
@@ -23,7 +25,9 @@ import {
 } from '@deepseek-ai/dsh-subprocess'
 import { BridgeError } from '../core/errors.ts'
 import type {
+  BridgeEventDraft,
   NativeProviderAdapter,
+  ProviderHistory,
   ProviderInteractionResolution,
   ProviderTurnHooks,
   ProviderTurnRequest,
@@ -516,6 +520,132 @@ function projectModel(model: ModelInfo): BridgeModel {
   }
 }
 
+/**
+ * Events restored from one product transcript at most.
+ *
+ * A resumed session's history competes with its own turns for the engine's event
+ * retention, so the oldest part of a very long conversation is dropped rather than
+ * pushing out what happens next. The panel says when that happened.
+ */
+const HISTORY_EVENT_LIMIT = 240
+
+/**
+ * Messages read from a transcript.
+ *
+ * Deliberately far above the event ceiling. One agent turn can be a hundred
+ * tool_use and tool_result messages around a single reply, so a limit near the
+ * event ceiling would read a long conversation's opening and stop — which is the
+ * half nobody needs. Reading wide and keeping the tail is what puts the *recent*
+ * conversation on screen.
+ */
+const HISTORY_MESSAGE_LIMIT = 4_000
+
+/**
+ * Turn one stored transcript into bridge events.
+ *
+ * The stored shape is the Anthropic message shape the live stream already uses, so
+ * the projection mirrors `projectMessage` rather than inventing a second reading of
+ * the same data.
+ *
+ * Two things are deliberately dropped. A `thinking` block's `signature` is an
+ * opaque attestation blob of no use to a reader, and tool results are folded into
+ * the tool call they answer instead of appearing as separate user messages — which
+ * is how the live timeline shows them, and how a terminal does.
+ * @param messages - what the SDK read back, oldest first.
+ * @returns event drafts, oldest first.
+ */
+function projectHistory(messages: readonly SessionMessage[]): ProviderHistory {
+  // Results first, so a tool call can be emitted complete rather than as a
+  // running call that never finishes.
+  const results = new Map<string, unknown>()
+  for (const entry of messages) {
+    const content = (entry.message as { content?: unknown } | null)?.content
+    if (!Array.isArray(content)) continue
+    for (const block of content) {
+      const id = (block as { tool_use_id?: unknown }).tool_use_id
+      if ((block as { type?: unknown }).type === 'tool_result' && typeof id === 'string') {
+        results.set(id, (block as { content?: unknown }).content)
+      }
+    }
+  }
+
+  const events: BridgeEventDraft[] = []
+  for (const entry of messages) {
+    const message = entry.message as { role?: unknown; content?: unknown } | null
+    const content = message?.content
+    if (entry.type === 'user') {
+      // A plain string is the common case. A block list is usually tool results,
+      // already folded into their calls above — but not always: a message sent with
+      // an attachment arrives as text and image blocks, and reading only strings
+      // silently dropped exactly the messages a person had taken the trouble to
+      // illustrate. The text blocks are kept; an image is noted as an attachment
+      // rather than carried, since the panel has no use for the base64 and the
+      // browser has no reason to receive it.
+      const text = typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? content
+            .filter(block => (block as { type?: unknown }).type === 'text')
+            .map(block => (block as { text?: unknown }).text)
+            .filter((part): part is string => typeof part === 'string')
+            .join('\n')
+          : ''
+      if (text.trim().length === 0) continue
+      events.push({
+        type: 'bridge/user-message',
+        data: { text: redactText(text, 8_192), delivery: 'started' },
+      })
+      continue
+    }
+    if (entry.type !== 'assistant' || !Array.isArray(content)) continue
+    for (const block of content) {
+      const kind = (block as { type?: unknown }).type
+      if (kind === 'text') {
+        const text = (block as { text?: unknown }).text
+        if (typeof text !== 'string' || text.trim().length === 0) continue
+        events.push({
+          type: 'bridge/text-delta',
+          data: { text: redactText(text, 8_192), itemId: `claude-history-${entry.uuid}` },
+        })
+      } else if (kind === 'thinking') {
+        const thinking = (block as { thinking?: unknown }).thinking
+        // Often empty in a stored transcript: signed reasoning is not written to
+        // disk. An empty block is nothing to show, not a blank row.
+        if (typeof thinking !== 'string' || thinking.trim().length === 0) continue
+        events.push({
+          type: 'bridge/reasoning-delta',
+          data: { text: redactText(thinking, 8_192), itemId: `claude-history-${entry.uuid}` },
+        })
+      } else if (kind === 'tool_use') {
+        const id = (block as { id?: unknown }).id
+        const name = (block as { name?: unknown }).name
+        if (typeof id !== 'string' || typeof name !== 'string') continue
+        const input = (block as { input?: unknown }).input
+        // Computed once: spreading two separate calls leaves the optional field
+        // typed as possibly-undefined, which the event union rightly refuses.
+        const detail = toolDetail(input, results.get(id))
+        events.push({
+          type: 'bridge/tool-completed',
+          data: {
+            itemId: id,
+            toolName: redactText(name, 128),
+            summary: redactText(name, 256),
+            status: 'completed',
+            ...detail === undefined ? {} : { detail },
+          },
+        })
+      }
+    }
+  }
+  // The tail, not the head: an operator continuing a conversation needs how it
+  // ended. Truncating from the front, as this did at first, showed the opening of
+  // a long session — in one real case a single user message followed by a hundred
+  // tool calls — and none of what had just been agreed.
+  return events.length > HISTORY_EVENT_LIMIT
+    ? { events: events.slice(-HISTORY_EVENT_LIMIT), truncated: true }
+    : { events, truncated: false }
+}
+
 export class ClaudeProviderAdapter implements NativeProviderAdapter {
   readonly id = 'claude' as const
   readonly supportsSteer = false
@@ -641,6 +771,25 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
 
   async listCompletions(bridgeSessionId: string): Promise<BridgeCompletionsResult> {
     return this.completions.get(bridgeSessionId) ?? { completions: [], pending: true }
+  }
+
+  async readHistory(locator: string, cwd: string): Promise<ProviderHistory> {
+    let messages: SessionMessage[]
+    try {
+      // `dir` scopes the lookup to this project, matching how `listSessions`
+      // offered the session in the first place.
+      messages = await getSessionMessages(locator, { dir: cwd, limit: HISTORY_MESSAGE_LIMIT })
+    } catch {
+      // A locator the product no longer knows, or a build without this call:
+      // an empty history is a cosmetic loss, and the resume itself still works.
+      return { events: [], truncated: false }
+    }
+    // A transcript longer than the read itself is also a truncation, and the only
+    // evidence of it is having been handed exactly as many messages as were asked
+    // for.
+    const clipped = messages.length >= HISTORY_MESSAGE_LIMIT
+    const history = projectHistory(messages)
+    return clipped ? { events: history.events, truncated: true } : history
   }
 
   async listModels(): Promise<BridgeModelsResult> {

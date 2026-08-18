@@ -18,7 +18,9 @@ import mcpElicitationSchema from '../../generated/codex/0.147.0/schema/McpServer
 import permissionsApprovalSchema from '../../generated/codex/0.147.0/schema/PermissionsRequestApprovalParams.json'
 import { BridgeError } from '../core/errors.ts'
 import type {
+  BridgeEventDraft,
   NativeProviderAdapter,
+  ProviderHistory,
   ProviderInteractionResolution,
   ProviderTurnHooks,
   ProviderTurnRequest,
@@ -412,6 +414,84 @@ function codexThreads(reply: unknown): BridgeNativeSession[] {
 }
 
 /**
+ * Events restored from one thread at most. See the Claude adapter's note: a
+ * resumed session's history competes with its own turns for event retention.
+ */
+const HISTORY_EVENT_LIMIT = 240
+
+/**
+ * Turn a stored thread item into bridge events.
+ *
+ * The stored items are the same shapes the live notifications carry, so tool calls
+ * go through the same `itemProjection` and `itemDetail` the live path uses. A
+ * history row and a live row therefore read identically, which is the point —
+ * anything else would make the transcript look like a different product.
+ *
+ * Messages are the exception, because live text arrives as deltas and a stored
+ * message is whole: one event carries what a stream built up over many.
+ * @param item - one item from a stored turn.
+ * @returns event drafts for that item, possibly none.
+ */
+function historyItemEvents(item: JsonObject): BridgeEventDraft[] {
+  if (item.type === 'userMessage') {
+    // Content is a block list even for plain text, matching the input shape
+    // `turn/start` takes.
+    const text = readArray(item.content)
+      .map(block => readString(readProperty(block, 'text')))
+      .filter((part): part is string => part !== null && part.trim().length > 0)
+      .join('')
+    if (text.trim().length === 0) return []
+    return [{
+      type: 'bridge/user-message',
+      data: { text: redactText(text, 8_192), delivery: 'started' },
+    }]
+  }
+  if (item.type === 'agentMessage') {
+    const text = readString(item.text)
+    if (text === null || text.trim().length === 0) return []
+    return [{
+      type: 'bridge/text-delta',
+      data: { text: redactText(text, 8_192), itemId: readString(item.id) ?? null },
+    }]
+  }
+  if (item.type === 'reasoning') {
+    // Field name varies by build and is not in the schema for stored items, so
+    // the likely ones are tried in order rather than one being assumed.
+    const text = readString(item.text)
+      ?? readString(item.summary)
+      ?? readArray(item.content)
+        .map(block => readString(readProperty(block, 'text')))
+        .filter((part): part is string => part !== null)
+        .join('')
+    if (text === null || text.trim().length === 0) return []
+    return [{
+      type: 'bridge/reasoning-delta',
+      data: { text: redactText(text, 8_192), itemId: readString(item.id) ?? null },
+    }]
+  }
+  const projected = itemProjection(item)
+  if (projected === null) return []
+  const detail = itemDetail(item)
+  const events: BridgeEventDraft[] = [{
+    type: 'bridge/tool-completed',
+    data: {
+      itemId: projected.itemId,
+      toolName: projected.toolName,
+      summary: projected.summary,
+      status: projected.failed ? 'failed' : 'completed',
+      ...detail === undefined ? {} : { detail },
+    },
+  }]
+  if (projected.fileChange) {
+    events.push({
+      type: 'bridge/file-change',
+      data: { itemId: projected.itemId, summary: projected.summary },
+    })
+  }
+  return events
+}
+
+/**
  * Read a `model/list` reply into selectable models.
  *
  * Codex reports far more per model than a picker needs — upgrade prompts, input
@@ -658,6 +738,35 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
    * ago can already choose. The session id is unused for that reason.
    * @returns the product's models, or `unavailable` when it could not be asked.
    */
+  async readHistory(locator: string): Promise<ProviderHistory> {
+    if (this.disposed) return { events: [], truncated: false }
+    let connection: CodexConnection
+    try {
+      connection = await this.ensureConnection()
+    } catch {
+      return { events: [], truncated: false }
+    }
+    // `thread/read` with turns, not `thread/items/list`: this Codex declares the
+    // paginated item listing but answers it with "not supported yet", so the
+    // rollout history comes through the read instead.
+    const reply = await connection.transport
+      .request('thread/read', { threadId: locator, includeTurns: true })
+      .catch(() => null)
+    if (reply === null) return { events: [], truncated: false }
+    const events: BridgeEventDraft[] = []
+    for (const turn of readArray(readProperty(readProperty(reply, 'thread'), 'turns'))) {
+      for (const item of readArray(readProperty(turn, 'items'))) {
+        if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
+        events.push(...historyItemEvents(item as JsonObject))
+      }
+    }
+    // The tail, not the head: what matters when continuing a conversation is how
+    // it ended. See the Claude adapter's note.
+    return events.length > HISTORY_EVENT_LIMIT
+      ? { events: events.slice(-HISTORY_EVENT_LIMIT), truncated: true }
+      : { events, truncated: false }
+  }
+
   async listModels(): Promise<BridgeModelsResult> {
     if (this.disposed) return { models: [], unavailable: true }
     let connection: CodexConnection

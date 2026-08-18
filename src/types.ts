@@ -455,6 +455,23 @@ export type BridgeEvent =
     readonly data: { readonly turn: BridgeTurnView }
   }
   | BridgeEventBase & {
+    /**
+     * Marks the end of a resumed session's existing transcript.
+     *
+     * Everything before it happened in the product before this bridge session
+     * existed — read back through the product's own API, not replayed by it — and
+     * everything after it is this session's own work. The panel draws the line so
+     * a reader is never left wondering which turns they are looking at.
+     */
+    readonly type: 'bridge/history'
+    readonly data: {
+      /** Events restored from the product's transcript. */
+      readonly restored: number
+      /** True when the transcript was longer than the Host's ceiling. */
+      readonly truncated: boolean
+    }
+  }
+  | BridgeEventBase & {
     readonly type: 'bridge/provider-health'
     readonly data: { readonly provider: NativeProviderView }
   }

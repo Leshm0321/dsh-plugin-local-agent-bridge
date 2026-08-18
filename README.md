@@ -206,6 +206,13 @@ practice means Chromium. Transcripts are appended, so speech extends a typed
 sentence instead of replacing it. Note that a browser's recognition is not
 necessarily local — see [Security boundary](#security-boundary).
 
+## The sidebar
+
+The toggle sits at the titlebar's left, on the same side as the sidebar it
+controls. Collapsed, the sidebar becomes a 52px icon rail that still switches
+sessions — a running turn shows as a dot — and the content area takes the width
+back.
+
 ## Permission modes
 
 The modes are named after the Claude desktop app, because that vocabulary is what
@@ -242,6 +249,13 @@ the levels another does, and a model that takes none shows none.
 whatever you configured in the CLI itself, which is the right answer if you have
 already set a model there. A change applies from the next turn, for the same reason
 as the permission mode.
+
+Effort is a slider rather than a row of buttons, because the levels are one ordered
+axis of "think harder" and not five unrelated choices. It is a native range input,
+so keyboard and screen readers work without being reimplemented, and it announces
+the level's name rather than its index. Levels the panel has no word for — Codex
+ships an `ultra` the Claude SDK does not — are shown exactly as the product spells
+them.
 
 | Product | Models from | Applied through |
 | --- | --- | --- |
@@ -310,6 +324,29 @@ list, and it is invoked with the product's own syntax.
 `Browse existing sessions…` lists the native sessions that already exist for the
 selected directory, including ones you started in a terminal, and hands the one
 you choose to the product's own resume path.
+
+**The earlier conversation is loaded into the timeline.** Resuming gives the
+*product* its context back — that is what resuming means — but the panel only ever
+recorded its own turns, so continuing a session started in a terminal used to show
+a blank screen above a working agent. The transcript is now read back through each
+product's own API and written as ordinary events, so it persists, replays after a
+reload, and survives a Host restart like anything else. A rule across the
+transcript marks where the existing conversation ends.
+
+| Product | Transcript from | What it contains |
+| --- | --- | --- |
+| Claude Code | `getSessionMessages()` | Messages, thinking, and tool calls with their results |
+| Codex | `thread/read` with turns | Messages only — the rollout history holds no tool calls |
+
+The difference is the products', not the bridge's: Codex's stored history simply
+does not carry tool calls, and inventing them would be worse than their absence.
+`thread/items/list` would be the paginated equivalent, but this Codex answers it
+with "not supported yet".
+
+The newest part is kept, not the oldest. A long session's opening is rarely what
+you need in order to continue it — in one real case it was a single message
+followed by a hundred tool calls — so the tail survives and the panel says when
+earlier entries were dropped.
 
 Enumeration goes through each product's own API — the Agent SDK's `listSessions`,
 Codex's `thread/list` — never by reading `~/.claude` or `~/.codex`. For Claude

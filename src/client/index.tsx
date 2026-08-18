@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ButtonHTMLAttributes, FormEvent, KeyboardEvent, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, CSSProperties, FormEvent, KeyboardEvent, ReactNode } from 'react'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 // Type-only: merges `locale` onto Context and declares the LocaleNamespaceMap
@@ -114,6 +114,11 @@ const ROW_MODIFIER: Record<TimelineRow['kind'], string> = {
   tool: 'lab-row-card--tool',
   status: 'lab-row-card--status',
   error: 'lab-row-card--error',
+  // Empty because a history row never reaches this table: it is a rule across the
+  // transcript rather than a card, and TimelineEntry returns before consulting the
+  // modifier. The key stays so the record covers every kind and a new one cannot be
+  // added without a decision here.
+  history: '',
 }
 
 /**
@@ -182,7 +187,7 @@ interface SessionSnapshot {
 
 interface TimelineRow {
   readonly key: string
-  readonly kind: 'user' | 'assistant' | 'reasoning' | 'tool' | 'status' | 'error'
+  readonly kind: 'user' | 'assistant' | 'reasoning' | 'tool' | 'status' | 'error' | 'history'
   readonly title: string
   readonly text: string
   /** Present on a tool row the product described beyond its summary. */
@@ -299,6 +304,15 @@ function timeline(events: readonly BridgeEvent[], t: PanelTranslate): TimelineRo
         // reads as something having gone wrong with what they just asked for.
         title: event.data.code === 'USER_CANCELLED' ? t('row.cancelled') : t('row.error'),
         text: errorText(t, event.data.code, event.data.message),
+      })
+    } else if (event.type === 'bridge/history') {
+      rows.push({
+        key,
+        kind: 'history',
+        title: event.data.truncated
+          ? t('history.truncated', { count: event.data.restored })
+          : t('history.restored', { count: event.data.restored }),
+        text: '',
       })
     } else if (event.type === 'bridge/session-status') {
       rows.push({
@@ -524,6 +538,15 @@ function DirectoryBrowser({
 function TimelineEntry({ row, t }: { row: TimelineRow; t: PanelTranslate }) {
   const [open, setOpen] = useState(false)
   const detail = row.detail
+  if (row.kind === 'history') {
+    // A rule with a caption, not a card: it describes the transcript rather than
+    // being part of it, and a card would read as one more thing that was said.
+    return (
+      <p className="lab-history-rule">
+        <span className="lab-history-label">{row.title}</span>
+      </p>
+    )
+  }
   if (detail === undefined) {
     return (
       <article className={`lab-row-card ${ROW_MODIFIER[row.kind]}`}>
@@ -1004,19 +1027,12 @@ function ModelPicker({
                 )}
               </button>
               {entry.id === model && entry.efforts.length > 0 && (
-                <div className="lab-effort-row" role="group" aria-label={t('effort.label')}>
-                  {entry.efforts.map(level => (
-                    <button
-                      key={level}
-                      type="button"
-                      aria-pressed={level === effort}
-                      className={level === effort ? 'lab-effort lab-effort--on' : 'lab-effort'}
-                      onClick={() => { onSelect(entry.id, level) }}
-                    >
-                      {effortLabel(t, level)}
-                    </button>
-                  ))}
-                </div>
+                <EffortSlider
+                  efforts={entry.efforts}
+                  effort={effort}
+                  t={t}
+                  onSelect={level => { onSelect(entry.id, level) }}
+                />
               )}
             </div>
           ))}
@@ -1024,6 +1040,72 @@ function ModelPicker({
         </div>
       )}
     </span>
+  )
+}
+
+/**
+ * Reasoning effort as one continuous control rather than a row of buttons.
+ *
+ * The levels are ordered — low through max is a single axis of "think harder" —
+ * and a slider says that where separate buttons made five unrelated choices out of
+ * one. It is a native `range` for the same reason the rest of this panel uses
+ * native controls: keyboard, touch, and screen readers work without being
+ * reimplemented.
+ *
+ * Discrete, not continuous: `step` is one level, and `aria-valuetext` reads the
+ * level's name so the control announces "high" rather than "3".
+ */
+function EffortSlider({
+  efforts,
+  effort,
+  t,
+  onSelect,
+}: {
+  efforts: readonly string[]
+  effort: string | null
+  t: PanelTranslate
+  onSelect: (level: string) => void
+}) {
+  const last = efforts.length - 1
+  const found = effort === null ? -1 : efforts.indexOf(effort)
+  const index = found < 0 ? 0 : found
+  // Nothing chosen leaves the track unfilled rather than claiming the lowest
+  // level: the product's own setting is in force until the operator moves this.
+  const progress = found < 0 || last === 0 ? 0 : (index / last) * 100
+  const current = efforts[index]
+  return (
+    <div className="lab-effort">
+      <div className="lab-effort-head">
+        <span className="lab-effort-label">{t('effort.label')}</span>
+        <span className="lab-effort-value">
+          {found < 0 ? t('effort.unset') : effortLabel(t, current ?? '')}
+        </span>
+      </div>
+      <div className="lab-effort-track">
+        <input
+          type="range"
+          className="lab-effort-input"
+          min={0}
+          max={last}
+          step={1}
+          value={index}
+          // The filled portion has no cross-browser native equivalent, so the
+          // track paints it from this custom property.
+          style={{ '--lab-effort-progress': `${progress}%` } as CSSProperties}
+          aria-label={t('effort.label')}
+          aria-valuetext={found < 0 ? t('effort.unset') : effortLabel(t, current ?? '')}
+          onChange={(event) => {
+            const level = efforts[Number(event.target.value)]
+            if (level !== undefined) onSelect(level)
+          }}
+        />
+        {/* Decoration: the stops the thumb can land on. Inset by half a thumb so
+            each dot sits under the position that selects it. */}
+        <span className="lab-effort-stops" aria-hidden="true">
+          {efforts.map(level => <span key={level} className="lab-effort-stop" />)}
+        </span>
+      </div>
+    </div>
   )
 }
 
@@ -2278,19 +2360,25 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
         <div className="lab-root lab-scrim" role="dialog" aria-modal="true" aria-label={t('panel.name')}>
           <section className="lab-window">
             <header className="lab-titlebar">
-              <div>
-                <h2 className="lab-title">{t('panel.name')}</h2>
-                <p className="lab-subtitle">{t('panel.subtitle')}</p>
-              </div>
-              <div className="lab-titlebar-actions">
+              {/* The sidebar toggle sits on the same side as the sidebar it
+                  controls. It used to live with refresh and close on the right,
+                  which read as "collapse something over here". */}
+              <div className="lab-titlebar-lead">
                 <ActionButton
                   icon
                   aria-label={sidebarCollapsed ? t('panel.expandSidebar') : t('panel.collapseSidebar')}
                   title={sidebarCollapsed ? t('panel.expandSidebar') : t('panel.collapseSidebar')}
+                  aria-expanded={!sidebarCollapsed}
                   onClick={() => { setSidebarCollapsed(current => !current) }}
                 >
                   <IconPanelLeftOutline16 />
                 </ActionButton>
+                <div>
+                  <h2 className="lab-title">{t('panel.name')}</h2>
+                  <p className="lab-subtitle">{t('panel.subtitle')}</p>
+                </div>
+              </div>
+              <div className="lab-titlebar-actions">
                 <ActionButton icon aria-label={t('panel.refresh')} title={t('panel.refresh')} onClick={() => { void refresh() }}>
                   <IconRefreshOutline16 />
                 </ActionButton>
@@ -2302,17 +2390,28 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
 
             <div className={sidebarCollapsed ? 'lab-body lab-body--collapsed' : 'lab-body'}>
               <aside className="lab-aside">
-                {/* Shown only when collapsed: one control to bring the sidebar
-                    back, so the rail is never a dead end. */}
-                <div className="lab-rail">
-                  <ActionButton
-                    icon
-                    aria-label={t('panel.expandSidebar')}
-                    title={t('panel.expandSidebar')}
-                    onClick={() => { setSidebarCollapsed(false) }}
-                  >
-                    <IconPanelLeftOutline16 />
-                  </ActionButton>
+                {/* Shown only when collapsed. Sessions rather than a second
+                    expand button: the toggle already lives in the titlebar, and a
+                    rail whose only control reopened the thing it sits in was a
+                    dead end. Switching sessions is what the sidebar is for, so
+                    that is what survives at 52px. */}
+                <div className="lab-rail" role="tablist" aria-label={t('sessions.heading')}>
+                  {sessions.map(session => (
+                    <button
+                      key={session.bridgeSessionId}
+                      type="button"
+                      role="tab"
+                      aria-selected={selectedId === session.bridgeSessionId}
+                      className={selectedId === session.bridgeSessionId ? 'lab-rail-session lab-rail-session--on' : 'lab-rail-session'}
+                      title={`${session.title} · ${session.workspaceTitle} · ${t(`status.${session.status}`)}`}
+                      onClick={() => { setSelectedId(session.bridgeSessionId) }}
+                    >
+                      {session.providerId === 'claude' ? <IconSparkle16 size={14} /> : <IconCodeOutline16 />}
+                      {/* A busy session is the one thing worth seeing without
+                          expanding, so it gets a dot rather than a word. */}
+                      {BUSY_STATUSES.includes(session.status) && <span className="lab-rail-busy" />}
+                    </button>
+                  ))}
                 </div>
                 <div className="lab-card">
                   <h3 className="lab-card-title">{t('create.heading')}</h3>

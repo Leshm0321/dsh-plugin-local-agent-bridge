@@ -30,6 +30,7 @@ import { receiveUploads } from './uploads.ts'
 import type {
   BridgeEventDraft,
   NativeProviderAdapter,
+  ProviderHistory,
   ProviderInteractionRequest,
   ProviderInteractionResolution,
 } from './provider.ts'
@@ -249,7 +250,69 @@ export class BridgeSessionEngine {
       type: 'bridge/session-created',
       data: { session: sessionView(record) },
     })
+    if (record.nativeSessionLocator !== null) {
+      await this.restoreHistory(runtime, provider, record.nativeSessionLocator, workspace.cwd)
+    }
     return sessionView(record)
+  }
+
+  /**
+   * Replay a resumed session's existing transcript into the timeline.
+   *
+   * Resuming hands the earlier conversation to the *product* — it is in that
+   * product's context, which is the whole point — but the panel only ever recorded
+   * its own turns, so an operator continuing a session started in a terminal was
+   * shown a blank screen above a working agent. This reads the transcript back
+   * through the product's own API and writes it as ordinary events.
+   *
+   * Ordinary events on purpose. They persist, replay after a reload, and survive a
+   * Host restart exactly like live ones, because they go through the same append
+   * path; nothing in the browser needs a second way to load a conversation.
+   *
+   * Failure is silent. A history that cannot be read is a cosmetic loss, while the
+   * resume it belongs to still works — and reporting an error here would make a
+   * usable session look broken.
+   * @param runtime - the newly created session.
+   * @param provider - its adapter.
+   * @param locator - the product's own session identifier.
+   * @param cwd - the working directory, for products that scope transcripts by project.
+   */
+  private async restoreHistory(
+    runtime: RuntimeSession,
+    provider: NativeProviderAdapter,
+    locator: string,
+    cwd: string,
+  ): Promise<void> {
+    if (provider.readHistory === undefined) return
+    let history: ProviderHistory
+    try {
+      history = await provider.readHistory(locator, cwd)
+    } catch {
+      return
+    }
+    if (history.events.length === 0) return
+    // Bounded against the engine's own retention as well as the adapter's ceiling:
+    // an adapter is free to be generous, and the session's own turns must still
+    // have room. The oldest events go, because the end of a conversation is what
+    // a reader needs to continue it.
+    const room = Math.max(0, Math.floor(this.eventRetention / 2))
+    const kept = history.events.length > room ? history.events.slice(-room) : history.events
+    for (const event of kept) {
+      // Null turn id: these belong to turns the product ran, not to any turn this
+      // bridge started, and claiming one would tie them to a turn that never existed.
+      await this.append(runtime, null, event)
+    }
+    await this.append(runtime, null, {
+      type: 'bridge/history',
+      data: {
+        restored: kept.length,
+        // Either ceiling counts. The adapter's is invisible from here — a
+        // transcript trimmed to exactly the ceiling looks like one that happened
+        // to be that length — so it reports its own trimming rather than the
+        // engine guessing.
+        truncated: history.truncated || kept.length < history.events.length,
+      },
+    })
   }
 
   async archiveSession(bridgeSessionId: string, archived = true): Promise<BridgeSessionView> {

@@ -1545,7 +1545,12 @@ describe('LocalAgentPanel', () => {
     })
 
     fireEvent.click(screen.getByTitle(en['model.label']))
-    fireEvent.click(await screen.findByRole('button', { name: en['effort.high'] }))
+    // One slider rather than a button per level: the levels are an ordered axis,
+    // and it announces the level's name rather than its index.
+    const slider = await screen.findByRole('slider', { name: en['effort.label'] })
+    expect(slider.getAttribute('aria-valuetext')).toBe(en['effort.low'])
+    // The fixture model offers ['low', 'high'], so index 1 is `high`.
+    fireEvent.change(slider, { target: { value: '1' } })
     await waitFor(() => {
       expect(fixture.sessionModel).toHaveBeenLastCalledWith({
         bridgeSessionId: 'session-1',
@@ -1858,5 +1863,42 @@ describe('LocalAgentPanel', () => {
     expect(title).toContain(en['spend.cacheRead'].replace('{count}', '758.7M'))
     // Cache reads and writes stay apart: they price differently in both products.
     expect(title).toContain(en['spend.cacheWrite'].replace('{count}', '12k'))
+  })
+
+  it('marks where a resumed session’s existing transcript ends', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      events: [
+        event(1, { type: 'bridge/user-message', data: { text: 'from the terminal', delivery: 'started' } }),
+        event(2, { type: 'bridge/text-delta', data: { text: 'answered earlier', itemId: 'old' } }),
+        event(3, { type: 'bridge/history', data: { restored: 2, truncated: false } }),
+        event(4, { type: 'bridge/user-message', data: { text: 'and now from the browser', delivery: 'started' } }),
+      ],
+      latestSequence: 4,
+    }))
+    renderPanel(fixture.remote())
+
+    // The earlier conversation is there to read, rather than a blank screen above
+    // a working agent.
+    expect(await screen.findByText('from the terminal')).toBeTruthy()
+    expect(screen.getByText('answered earlier')).toBeTruthy()
+    // And the line saying which is which.
+    expect(screen.getByText(en['history.restored'].replace('{count}', '2'))).toBeTruthy()
+    expect(screen.getByText('and now from the browser')).toBeTruthy()
+  })
+
+  it('says when a transcript was too long to load whole', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      events: [event(1, { type: 'bridge/history', data: { restored: 240, truncated: true } })],
+      latestSequence: 1,
+    }))
+    renderPanel(fixture.remote())
+
+    // Truncation is stated rather than leaving the reader to assume the beginning
+    // of the conversation simply did not exist.
+    expect(await screen.findByText(en['history.truncated'].replace('{count}', '240'))).toBeTruthy()
   })
 })

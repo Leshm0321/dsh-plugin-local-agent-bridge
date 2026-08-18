@@ -89,6 +89,19 @@ export interface ProviderTurnHooks {
   requestInteraction(request: ProviderInteractionRequest): Promise<ProviderInteractionResolution>
 }
 
+/** A transcript read back from a product, and whether it arrived whole. */
+export interface ProviderHistory {
+  /** Events in chronological order, oldest first. */
+  readonly events: readonly BridgeEventDraft[]
+  /**
+   * True when the adapter dropped older events to stay within its ceiling. The
+   * engine cannot infer this — a transcript trimmed to exactly the ceiling looks
+   * the same as one that happened to be that length — and the panel says so, so a
+   * reader does not assume the conversation began where the screen does.
+   */
+  readonly truncated: boolean
+}
+
 export interface ProviderTurnRequest {
   readonly text: string
   readonly hooks: ProviderTurnHooks
@@ -132,6 +145,30 @@ export interface NativeProviderAdapter {
    * account-wide may ignore it.
    */
   listModels?(bridgeSessionId: string): Promise<BridgeModelsResult>
+  /**
+   * The transcript a product-native session already has, as bridge events.
+   *
+   * Resuming gives the *product* the earlier conversation — it is in that
+   * product's own context — but the panel's timeline starts empty, because the
+   * bridge only ever recorded its own turns. An operator who continued a session
+   * from a terminal therefore saw a blank screen above a working agent, with no
+   * way to tell what had been agreed.
+   *
+   * Read through each product's own API, the same way sessions are enumerated:
+   * the Agent SDK's `getSessionMessages`, Codex's `thread/read`. The bridge does
+   * not open transcript files, parse their format, or know where they live.
+   *
+   * Returns drafts rather than appending, so the engine keeps sole ownership of
+   * sequence numbers and persistence. Bounded by the adapter, because only the
+   * adapter knows how much of a product's transcript one event represents — and it
+   * reports having trimmed, since the engine cannot tell a short transcript from a
+   * long one that arrived clipped.
+   * @param locator - the product's own session identifier, opaque to the bridge.
+   * @param cwd - the session's working directory, for products that scope
+   * transcripts by project.
+   * @returns events in chronological order, oldest first.
+   */
+  readHistory?(locator: string, cwd: string): Promise<ProviderHistory>
   startTurn(request: ProviderTurnRequest): Promise<void>
   steer(bridgeSessionId: string, text: string): Promise<void>
   cancel(bridgeSessionId: string): Promise<void>

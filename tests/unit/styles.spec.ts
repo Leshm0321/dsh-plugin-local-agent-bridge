@@ -50,7 +50,10 @@ function definedClasses(): Set<string> {
  */
 function usedClasses(): Set<string> {
   const found = new Set<string>()
-  for (const token of clientSource.matchAll(/\blab-[a-z0-9-]+/g)) found.add(token[0])
+  // The lookbehind excludes CSS custom properties: `--lab-effort-progress` is a
+  // variable the stylesheet reads, not a class anything wears, and counting it
+  // demanded a rule that should never exist.
+  for (const token of clientSource.matchAll(/(?<!-)\blab-[a-z0-9-]+/g)) found.add(token[0])
   return found
 }
 
