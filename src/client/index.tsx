@@ -264,7 +264,15 @@ function timeline(events: readonly BridgeEvent[], t: PanelTranslate): TimelineRo
     } else if (event.type === 'bridge/error') {
       rows.push({ key, kind: 'error', title: t(`status.failed`), text: errorText(t, event.data.code, event.data.message) })
     } else if (event.type === 'bridge/session-status') {
-      rows.push({ key, kind: 'status', title: t(`status.${event.data.status}`), text: event.data.message ?? '' })
+      rows.push({
+        key,
+        kind: 'status',
+        title: t(`status.${event.data.status}`),
+        // A note is present only when it adds something the status word does
+        // not already say; an error-driven transition leaves it null because
+        // the bridge/error row above already named the cause.
+        text: event.data.note === null ? '' : t(`note.${event.data.note}`),
+      })
     }
   }
   return rows

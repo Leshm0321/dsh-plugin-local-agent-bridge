@@ -290,6 +290,16 @@ describe('BridgeSessionEngine with FakeProviderAdapter', () => {
     expect(errors).toHaveLength(1)
     expect(errors[0]?.data.code).toBe('USER_CANCELLED')
     expect(errors[0]?.data.message).not.toMatch(/could not be started/i)
+
+    // Status transitions carry a code, never Host-composed prose: the browser
+    // phrases them in its own locale. `cancelling` explains itself with a note;
+    // the terminal `idle` carries none, because the error row above already
+    // named the cause and repeating it produced two rows saying one thing.
+    const statuses = eventsOf(result, 'bridge/session-status')
+    expect(statuses.map(item => [item.data.status, item.data.note])).toEqual(
+      expect.arrayContaining([['cancelling', 'cancelling-turn'], ['idle', null]]),
+    )
+    for (const status of statuses) expect(status.data).not.toHaveProperty('message')
     expect(eventsOf(result, 'bridge/turn-completed').at(-1)?.data.turn).toMatchObject({
       status: 'cancelled',
       stopReason: 'USER_CANCELLED',
@@ -336,7 +346,9 @@ describe('BridgeSessionEngine with FakeProviderAdapter', () => {
     })
     expect(recovered.events.at(-1)).toMatchObject({
       type: 'bridge/session-status',
-      data: { status: 'idle' },
+      // A locator was captured before the restart, so this session is resumable
+      // and says so through a code rather than an English sentence.
+      data: { status: 'idle', note: 'host-restarted-resumable' },
     })
 
     const restartedAgain = await createEngine(new MemoryPersistence([restartedMemory.snapshot(session.bridgeSessionId)]))

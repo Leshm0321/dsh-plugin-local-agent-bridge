@@ -9,6 +9,7 @@ import type {
   BridgeSessionReadResult,
   BridgeSessionStatus,
   BridgeSessionView,
+  BridgeStatusNote,
   BridgeTurnStatus,
   BridgeTurnView,
   PendingInteractionView,
@@ -246,7 +247,7 @@ export class BridgeSessionEngine {
   async cancel(bridgeSessionId: string): Promise<void> {
     const runtime = this.requireSession(bridgeSessionId)
     if (runtime.activeRun === null || runtime.activeAbort === null) return
-    await this.setStatus(runtime, 'cancelling', 'Cancelling the active native turn.')
+    await this.setStatus(runtime, 'cancelling', 'cancelling-turn')
     await this.cancelPendingInteraction(runtime, runtime.activeTurn?.bridgeTurnId ?? runtime.record.lastTurnId)
     runtime.activeAbort.abort(new BridgeError('USER_CANCELLED'))
     await this.requireProvider(runtime.record.providerId).cancel(bridgeSessionId).catch(() => {})
@@ -341,9 +342,9 @@ export class BridgeSessionEngine {
       type: 'bridge/session-status',
       data: {
         status: record.status,
-        message: isRecoverableNativeSession(record)
-          ? 'The host restarted. The next message will resume the native session.'
-          : 'The host restarted before the native session identity was established.',
+        note: isRecoverableNativeSession(record)
+          ? 'host-restarted-resumable'
+          : 'host-restarted-orphaned',
       },
     })
   }
@@ -390,7 +391,6 @@ export class BridgeSessionEngine {
   ): Promise<void> {
     let completed: BridgeTurnView
     let terminalStatus: BridgeSessionStatus
-    let terminalMessage: string | null
     try {
       await provider.startTurn({
         text,
@@ -411,7 +411,6 @@ export class BridgeSessionEngine {
       })
       completed = terminalTurn(turn, 'completed', 'completed')
       terminalStatus = 'idle'
-      terminalMessage = null
     } catch (error) {
       const normalized = bridgeError(error, 'PROVIDER_START_FAILED')
       const cancelled = controller.signal.aborted || normalized.code === 'USER_CANCELLED'
@@ -433,7 +432,6 @@ export class BridgeSessionEngine {
         : reported.code === 'NATIVE_SESSION_ORPHANED'
           ? 'orphaned'
           : 'failed'
-      terminalMessage = reported.message
     } finally {
       const pending = runtime.pendingResolution
       if (pending !== null) {
@@ -446,7 +444,7 @@ export class BridgeSessionEngine {
       runtime.activeAbort = null
       runtime.activeTurn = null
       runtime.activeRun = null
-      await this.setStatus(runtime, terminalStatus!, terminalMessage!)
+      await this.setStatus(runtime, terminalStatus!, null)
       if (terminalStatus! === 'idle' && runtime.record.queuedInputs.length > 0) {
         const next = runtime.record.queuedInputs.shift()
         if (next !== undefined) {
@@ -524,15 +522,23 @@ export class BridgeSessionEngine {
     })
   }
 
+  /**
+   * Record a status transition and publish it.
+   * @param runtime - the live session.
+   * @param status - the status being entered.
+   * @param note - why, as a code the Client localizes; null when the reason is
+   * already carried by an adjacent `bridge/error` event or needs no explaining.
+   */
   private async setStatus(
     runtime: RuntimeSession,
     status: BridgeSessionStatus,
-    message: string | null,
+    note: BridgeStatusNote | null,
   ): Promise<void> {
     runtime.record.status = status
     await this.append(runtime, runtime.activeTurn?.bridgeTurnId ?? runtime.record.lastTurnId, {
       type: 'bridge/session-status',
-      data: { status, message: message === null ? null : redactText(message, 1_024) },
+      // A fixed code needs no redaction; there is no free text left to leak.
+      data: { status, note },
     })
   }
 

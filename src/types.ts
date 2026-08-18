@@ -55,6 +55,19 @@ export type BridgeSessionStatus =
   | 'failed'
   | 'orphaned'
 
+/**
+ * Why a session changed status, as a code the Client phrases in its own locale.
+ *
+ * An error-driven transition carries no note: the `bridge/error` event appended
+ * immediately before it already names the cause with its own code, and repeating
+ * it here produced two rows saying the same thing — one of them in whatever
+ * language the Host happened to compose.
+ */
+export type BridgeStatusNote =
+  | 'cancelling-turn'
+  | 'host-restarted-resumable'
+  | 'host-restarted-orphaned'
+
 export type BridgeTurnStatus =
   | 'running'
   | 'completed'
@@ -145,7 +158,7 @@ export type BridgeEvent =
   }
   | BridgeEventBase & {
     readonly type: 'bridge/session-status'
-    readonly data: { readonly status: BridgeSessionStatus; readonly message: string | null }
+    readonly data: { readonly status: BridgeSessionStatus; readonly note: BridgeStatusNote | null }
   }
   | BridgeEventBase & {
     readonly type: 'bridge/user-message'

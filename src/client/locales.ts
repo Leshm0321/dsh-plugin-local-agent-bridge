@@ -94,6 +94,11 @@ export const zh = {
   'status.failed': '已失败',
   'status.orphaned': '会话已失联',
 
+  // Why a status changed, when the status word alone does not say it.
+  'note.cancelling-turn': '正在中止本机上正在进行的轮次。',
+  'note.host-restarted-resumable': '主机已重启。下一条消息会恢复原生会话。',
+  'note.host-restarted-orphaned': '主机在原生会话建立标识之前就重启了，该会话无法恢复。',
+
   // Timeline row labels.
   'row.delivery.started': '已发送',
   'row.delivery.steered': '已插入当前轮',
@@ -193,6 +198,10 @@ export const en = {
   'status.auth-required': 'Host login required',
   'status.failed': 'Failed',
   'status.orphaned': 'Orphaned',
+
+  'note.cancelling-turn': 'Cancelling the active native turn.',
+  'note.host-restarted-resumable': 'The Host restarted. The next message will resume the native session.',
+  'note.host-restarted-orphaned': 'The Host restarted before the native session identity was established, so it cannot be resumed.',
 
   'row.delivery.started': 'Sent',
   'row.delivery.steered': 'Steered',
