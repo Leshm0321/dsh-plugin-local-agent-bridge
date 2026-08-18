@@ -754,6 +754,8 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
   const [addingWorkspace, setAddingWorkspace] = useState(false)
   const [completions, setCompletions] = useState<BridgeCompletionsResult>({ completions: [], pending: true })
   const [paletteIndex, setPaletteIndex] = useState(0)
+  const [historyIndex, setHistoryIndex] = useState(-1)
+  const timelineRef = useRef<HTMLDivElement>(null)
   const [nativeSessions, setNativeSessions] = useState<BridgeNativeSessionsResult>()
   const [nativeSessionsOpen, setNativeSessionsOpen] = useState(false)
   const [nativeSessionsBusy, setNativeSessionsBusy] = useState(false)
@@ -839,6 +841,31 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
   }, [open, remote, selectedId, sessionStatus])
 
   const rows = useMemo(() => timeline(snapshot?.events ?? [], t), [snapshot?.events, t])
+
+  /**
+   * What the operator has sent in this session, newest first — the list `↑`
+   * walks. Taken from the timeline rather than tracked separately, so it survives
+   * a page reload and a session switch the same way the transcript does.
+   */
+  const sentHistory = useMemo(
+    () => rows.filter(row => row.kind === 'user').map(row => row.text).reverse(),
+    [rows],
+  )
+
+  /**
+   * Follow the stream, but only from the bottom.
+   *
+   * A terminal always scrolls, because there is nowhere else to be. Here the
+   * operator can be reading earlier output while a turn streams, and yanking them
+   * back would make the panel unusable during a long answer — so this follows
+   * only when they were already at the end.
+   */
+  useEffect(() => {
+    const element = timelineRef.current
+    if (element === null) return
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
+    if (distanceFromBottom < 140) element.scrollTop = element.scrollHeight
+  }, [rows, snapshot?.pendingInteraction])
   const query = paletteQuery(draft)
   const paletteOpen = query !== null && selectedId !== undefined
   const paletteMatches = useMemo(
@@ -1057,46 +1084,102 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
   }
 
   /**
-   * Composer keys, while the palette is open.
+   * Composer keys, matching what the two products' own terminals do.
    *
-   * Arrow keys move the selection, Enter and Tab accept it, Escape closes the
-   * palette by clearing the trigger. Every one of these is a key the textarea
-   * would otherwise act on, so they are only intercepted while the palette is
-   * actually showing something.
+   * Enter sends and Shift+Enter inserts a newline. A textarea does the opposite
+   * by default, which meant every message needed a trip to the mouse — the single
+   * biggest departure from using either product in a shell.
+   *
+   * `↑` walks back through what has been sent, `Esc` interrupts a running turn,
+   * and while the palette is open the arrows and Enter belong to it instead.
    * @param event - the keydown on the composer.
    */
   const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (!paletteOpen || paletteMatches.length === 0) return
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    // An IME is mid-composition: Enter is accepting a candidate, not sending.
+    // Without this a Chinese or Japanese operator cannot type a single word
+    // without firing the message off half-written.
+    if (event.nativeEvent.isComposing) return
+
+    if (paletteOpen && paletteMatches.length > 0) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        const step = event.key === 'ArrowDown' ? 1 : -1
+        setPaletteIndex(current => (current + step + paletteMatches.length) % paletteMatches.length)
+        return
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        const chosen = paletteMatches[paletteIndex]
+        if (chosen === undefined) return
+        event.preventDefault()
+        pickCompletion(chosen)
+        return
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setDraft('')
+        return
+      }
+    }
+
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
-      const step = event.key === 'ArrowDown' ? 1 : -1
-      setPaletteIndex(current => (current + step + paletteMatches.length) % paletteMatches.length)
+      void submitDraft()
       return
     }
-    if (event.key === 'Enter' || event.key === 'Tab') {
-      const chosen = paletteMatches[paletteIndex]
-      if (chosen === undefined) return
-      event.preventDefault()
-      pickCompletion(chosen)
-      return
-    }
+
     if (event.key === 'Escape') {
+      // Esc means "stop what you are doing" in both terminals. With nothing
+      // running there is nothing to stop, so it clears the draft instead.
       event.preventDefault()
-      setDraft('')
+      if (snapshot !== undefined && BUSY_STATUSES.includes(snapshot.session.status)) {
+        void remote.sessionCancel({ bridgeSessionId: snapshot.session.bridgeSessionId })
+      } else {
+        setDraft('')
+        setHistoryIndex(-1)
+      }
+      return
+    }
+
+    // History only takes over an empty composer, or one already being walked —
+    // otherwise `↑` is ordinary cursor movement inside a multi-line draft.
+    if (event.key === 'ArrowUp' && sentHistory.length > 0 && (draft.length === 0 || historyIndex >= 0)) {
+      event.preventDefault()
+      const next = Math.min(historyIndex + 1, sentHistory.length - 1)
+      setHistoryIndex(next)
+      setDraft(sentHistory[next] ?? '')
+      return
+    }
+    if (event.key === 'ArrowDown' && historyIndex >= 0) {
+      event.preventDefault()
+      const next = historyIndex - 1
+      setHistoryIndex(next)
+      setDraft(next < 0 ? '' : sentHistory[next] ?? '')
     }
   }
 
-  const send = async (event: FormEvent): Promise<void> => {
-    event.preventDefault()
+  /**
+   * Send the draft, restoring it if the Host refused.
+   *
+   * Separate from the form handler so the Enter key and the button share one
+   * path; the draft is cleared optimistically because the round-trip is fast and
+   * a cleared box is what a terminal does.
+   */
+  const submitDraft = async (): Promise<void> => {
     if (selectedId === undefined || draft.trim().length === 0) return
     const text = draft
     setDraft('')
+    setHistoryIndex(-1)
     try {
       unwrap(await remote.sessionSend({ bridgeSessionId: selectedId, text }))
     } catch (cause) {
       setDraft(text)
       setError(cause instanceof Error ? cause.message : String(cause))
     }
+  }
+
+  const send = async (event: FormEvent): Promise<void> => {
+    event.preventDefault()
+    await submitDraft()
   }
 
   return (
@@ -1333,7 +1416,7 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                   )}
                 </div>
 
-                <div className="lab-timeline">
+                <div className="lab-timeline" ref={timelineRef}>
                   {error !== undefined && <div className="lab-error-banner">{error}</div>}
                   {snapshot?.pendingInteraction !== null && snapshot?.pendingInteraction !== undefined && (
                     <InteractionCard
@@ -1370,7 +1453,7 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                       value={draft}
                       placeholder={t('composer.placeholder')}
                       disabled={selectedId === undefined}
-                      onChange={event => { setDraft(event.target.value); setPaletteIndex(0) }}
+                      onChange={event => { setDraft(event.target.value); setPaletteIndex(0); setHistoryIndex(-1) }}
                       onKeyDown={onComposerKeyDown}
                     />
                     <ActionButton primary type="submit" disabled={selectedId === undefined || draft.trim().length === 0}>
@@ -1378,8 +1461,10 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                     </ActionButton>
                   </div>
                   <small className="lab-composer-hint">
-                    {completions.completions.length > 0 ? `${t('palette.hint')} · ${t('composer.hint')}` : t('composer.hint')}
+                    {t('composer.keys')}
+                    {completions.completions.length > 0 && ` · ${t('palette.hint')}`}
                   </small>
+                  <small className="lab-composer-hint" style={{ marginTop: 3 }}>{t('composer.hint')}</small>
                 </form>
               </main>
             </div>

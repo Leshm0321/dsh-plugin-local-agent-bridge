@@ -721,6 +721,128 @@ describe('LocalAgentPanel', () => {
     expect(screen.getByRole('button', { name: en['workspace.browse'] })).toBeTruthy()
   })
 
+  it('sends on Enter and inserts a newline on Shift+Enter', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    fireEvent.change(composer, { target: { value: 'run the tests' } })
+
+    // Shift+Enter is a newline, so the textarea keeps its default behaviour.
+    fireEvent.keyDown(composer, { key: 'Enter', shiftKey: true })
+    expect(fixture.sessionSend).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(composer, { key: 'Enter' })
+    await waitFor(() => {
+      expect(fixture.sessionSend).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', text: 'run the tests' })
+    })
+    // Cleared optimistically, the way a shell prompt does.
+    await waitFor(() => { expect(composer.value).toBe('') })
+  })
+
+  it('does not send while an input method is composing', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    fireEvent.change(composer, { target: { value: '中文' } })
+
+    // Enter during composition accepts a candidate. Sending here would fire the
+    // message off half-written on every word a Chinese or Japanese operator types.
+    fireEvent.keyDown(composer, { key: 'Enter', isComposing: true })
+    expect(fixture.sessionSend).not.toHaveBeenCalled()
+    expect(composer.value).toBe('中文')
+
+    // Composition finished: Enter sends.
+    fireEvent.keyDown(composer, { key: 'Enter' })
+    await waitFor(() => { expect(fixture.sessionSend).toHaveBeenCalledTimes(1) })
+  })
+
+  it('interrupts a running turn with Escape, and clears the draft when idle', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      session: { ...session, status: 'running' },
+      events: [],
+      latestSequence: 0,
+    }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    await waitFor(() => { expect(screen.getByText(en['status.running'])).toBeTruthy() })
+
+    fireEvent.keyDown(composer, { key: 'Escape' })
+    await waitFor(() => {
+      expect(fixture.sessionCancel).toHaveBeenCalledWith({ bridgeSessionId: 'session-1' })
+    })
+
+    // Idle: nothing to interrupt, so Escape clears instead of cancelling again.
+    cleanup()
+    const idle = new RemoteFixture()
+    idle.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    idle.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(idle.remote())
+    const idleComposer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    fireEvent.change(idleComposer, { target: { value: 'abandon this' } })
+    fireEvent.keyDown(idleComposer, { key: 'Escape' })
+    await waitFor(() => { expect(idleComposer.value).toBe('') })
+    expect(idle.sessionCancel).not.toHaveBeenCalled()
+  })
+
+  it('walks back through sent messages with the arrow keys', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      events: [
+        event(1, { type: 'bridge/user-message', data: { text: 'first thing', delivery: 'started' } }),
+        event(2, { type: 'bridge/user-message', data: { text: 'second thing', delivery: 'started' } }),
+      ],
+      latestSequence: 2,
+    }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    await screen.findByText('second thing')
+
+    // Newest first, like a shell.
+    fireEvent.keyDown(composer, { key: 'ArrowUp' })
+    await waitFor(() => { expect(composer.value).toBe('second thing') })
+    fireEvent.keyDown(composer, { key: 'ArrowUp' })
+    await waitFor(() => { expect(composer.value).toBe('first thing') })
+    // Clamped at the oldest rather than wrapping.
+    fireEvent.keyDown(composer, { key: 'ArrowUp' })
+    expect(composer.value).toBe('first thing')
+
+    fireEvent.keyDown(composer, { key: 'ArrowDown' })
+    await waitFor(() => { expect(composer.value).toBe('second thing') })
+    // Coming back past the newest leaves an empty composer, not the last entry.
+    fireEvent.keyDown(composer, { key: 'ArrowDown' })
+    await waitFor(() => { expect(composer.value).toBe('') })
+  })
+
+  it('leaves ArrowUp alone inside a draft the operator is editing', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      events: [event(1, { type: 'bridge/user-message', data: { text: 'earlier', delivery: 'started' } })],
+      latestSequence: 1,
+    }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    await screen.findByText('earlier')
+    fireEvent.change(composer, { target: { value: 'a draft\nspanning lines' } })
+
+    // In a non-empty draft, ArrowUp is cursor movement — replacing the text
+    // would destroy work in progress.
+    fireEvent.keyDown(composer, { key: 'ArrowUp' })
+    expect(composer.value).toBe('a draft\nspanning lines')
+  })
+
   it('opens the command palette on a leading slash and keeps it shut otherwise', async () => {
     const fixture = new RemoteFixture()
     fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })

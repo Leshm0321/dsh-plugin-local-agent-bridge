@@ -86,6 +86,7 @@ export const zh = {
   'composer.placeholder': '发送给本机上的原生 Agent…',
   'composer.send': '发送',
   'composer.hint': 'Codex 运行中的消息会即时插入当前轮；Claude 的消息排队等待当前轮结束。',
+  'composer.keys': 'Enter 发送 · Shift+Enter 换行 · ↑ 上一条 · Esc 中止',
 
   // Slash-command / skill / MCP palette, opened by typing "/".
   'palette.hint': '输入 / 唤起本机 Agent 的命令与 Skill',
@@ -235,6 +236,7 @@ export const en = {
   'composer.placeholder': 'Send to the native agent on the host…',
   'composer.send': 'Send',
   'composer.hint': 'Running Codex messages are steered; Claude messages queue until the active turn completes.',
+  'composer.keys': 'Enter to send · Shift+Enter for a newline · ↑ for the last message · Esc to interrupt',
 
   'palette.hint': 'Type / for this agent\u2019s commands and skills',
   'palette.commands': 'Commands and skills',
