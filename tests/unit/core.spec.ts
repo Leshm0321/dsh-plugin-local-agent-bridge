@@ -83,6 +83,7 @@ describe('provider health projection', () => {
     displayName: 'Codex',
     installed: true,
     version: '0.144.6',
+    supportedRange: '0.147.x',
     message: null,
     executablePath: '/host/path/codex',
     ...overrides,

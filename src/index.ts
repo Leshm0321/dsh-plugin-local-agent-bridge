@@ -108,9 +108,11 @@ export class LocalAgentBridgeService extends TypertRemoteService {
         displayName: 'Verification Fixture',
         installed: true,
         version: '1.0.0',
+        supportedRange: null,
         compatibility: 'supported',
         health: 'ready',
-        message: 'Enabled only for local verification.',
+        // The Client labels the fixture from its id; no Host sentence needed.
+        message: null,
       })
     }
     const persistence = await BridgePersistence.open(this.ctx.storageDomain)

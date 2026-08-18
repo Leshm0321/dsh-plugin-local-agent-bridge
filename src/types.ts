@@ -17,8 +17,23 @@ export interface NativeProviderView {
   readonly displayName: string
   readonly installed: boolean
   readonly version: string | null
+  /**
+   * The semver range this bridge admits for the product, so the browser can
+   * phrase a version rejection in the reader's own language instead of
+   * rendering a Host-composed English sentence. Null for the fixture provider,
+   * which has no external range.
+   */
+  readonly supportedRange: string | null
   readonly compatibility: ProviderCompatibility
   readonly health: ProviderHealth
+  /**
+   * Redacted Host diagnostic text for states the browser cannot phrase on its
+   * own — currently only `error`, where the product's own stderr is the only
+   * useful explanation. Every predictable state leaves this null and is
+   * described from `health`, `version`, and `supportedRange` in the Client's
+   * active locale. Never localized on the Host: the Host has no business
+   * knowing which language a browser reads.
+   */
   readonly message: string | null
 }
 

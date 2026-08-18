@@ -55,9 +55,12 @@ export async function discoverProvider(
       executablePath: null,
       installed: false,
       version: null,
+      supportedRange: VERSION_RANGES[id],
       compatibility: 'unknown',
       health: 'not-installed',
-      message: 'Executable not found on the host PATH.',
+      // Phrased by the Client: the browser knows which language to say
+      // "not on the Host PATH" in, and the Host does not.
+      message: null,
     }
   }
 
@@ -84,9 +87,12 @@ export async function discoverProvider(
       executablePath,
       installed: true,
       version: null,
+      supportedRange: VERSION_RANGES[id],
       compatibility: 'unknown',
       health: 'error',
-      message: redactText(stderr || 'Unable to read the product version.', 512),
+      // The product's own stderr is the only useful explanation here and the
+      // Client cannot reconstruct it, so this one state keeps Host text.
+      message: stderr.trim().length === 0 ? null : redactText(stderr, 512),
     }
   }
   const version = parseProductVersion(`${stdout}\n${stderr}`)
@@ -97,13 +103,12 @@ export async function discoverProvider(
     executablePath,
     installed: true,
     version,
+    supportedRange: VERSION_RANGES[id],
     compatibility,
     health: 'installed',
-    message: compatibility === 'unsupported'
-      ? `Supported version range: ${VERSION_RANGES[id]}.`
-      : compatibility === 'unknown'
-        ? 'Version could not be verified. Experimental compatibility is required.'
-        : null,
+    // A rejected or unverifiable version is fully described by `compatibility`,
+    // `version`, and `supportedRange`; the Client renders that in its locale.
+    message: null,
   }
 }
 
@@ -129,6 +134,7 @@ export function publicProvider(
     displayName: provider.displayName,
     installed: provider.installed,
     version: provider.version,
+    supportedRange: provider.supportedRange,
     compatibility: provider.compatibility,
     health: ready
       ? 'ready'

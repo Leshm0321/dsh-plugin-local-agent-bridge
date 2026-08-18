@@ -14,6 +14,7 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   IconStopFill16: () => null,
 }))
 
+import { en, zh } from '../../src/client/locales.ts'
 import {
   inject,
   LocalAgentPanel,
@@ -49,6 +50,7 @@ const catalog: BridgeCatalogResult = {
     displayName: 'Codex',
     installed: true,
     version: '0.147.0',
+    supportedRange: '0.147.x',
     compatibility: 'supported',
     health: 'ready',
     message: null,
@@ -147,10 +149,36 @@ class RemoteFixture {
   }
 }
 
-function renderPanel(remote: LocalAgentRemote): void {
-  const props = { wide: true, remote } as unknown as Parameters<typeof LocalAgentPanel>[0]
+/**
+ * A translate function with the same semantics as LocaleRuntime.bind: look the
+ * key up in the requested dictionary, substitute `{name}` placeholders, and
+ * return the key itself on a miss. Driving the panel with the real shipped
+ * dictionaries — rather than an identity stub — is what makes the assertions
+ * below evidence that the copy is wired up, and lets the same flow be replayed
+ * in Chinese.
+ * @param locale - which shipped dictionary to read.
+ * @returns the translate function the panel receives.
+ */
+function translator(locale: 'zh' | 'en') {
+  const dict: Record<string, string> = locale === 'zh' ? zh : en
+  return (key: string, params?: Record<string, unknown>): string => {
+    const template = dict[key] ?? key
+    if (params === undefined) return template
+    return template.replace(/\{(\w+)\}/g, (match, name: string) =>
+      name in params ? String(params[name]) : match)
+  }
+}
+
+interface RenderOptions {
+  readonly locale?: 'zh' | 'en'
+}
+
+function renderPanel(remote: LocalAgentRemote, options: RenderOptions = {}): void {
+  const locale = options.locale ?? 'en'
+  const t = translator(locale)
+  const props = { wide: true, remote, t } as unknown as Parameters<typeof LocalAgentPanel>[0]
   render(<LocalAgentPanel {...props} />)
-  fireEvent.click(screen.getByTitle('Local Agents'))
+  fireEvent.click(screen.getByTitle(t('panel.name')))
 }
 
 afterEach(() => {
@@ -184,7 +212,7 @@ describe('LocalAgentPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create session' }))
 
     await screen.findByText('fixture response')
-    fireEvent.change(screen.getByPlaceholderText('Send to the native agent on the host...'), {
+    fireEvent.change(screen.getByPlaceholderText(en['composer.placeholder']), {
       target: { value: 'next prompt' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Send' }))
@@ -247,6 +275,87 @@ describe('LocalAgentPanel', () => {
     expect(await screen.findByText('reconnected', {}, { timeout: 2_000 })).toBeTruthy()
     await waitFor(() => { expect(screen.queryByText('temporary disconnect')).toBeNull() })
     expect(fixture.sessionRead.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('renders the whole panel in Chinese without leaving English copy behind', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      session: { ...session, status: 'running' },
+      events: [
+        event(1, { type: 'bridge/user-message', data: { text: 'fixture prompt', delivery: 'queued' } }),
+        event(2, { type: 'bridge/tool-started', data: { itemId: 'tool-1', toolName: 'Write', summary: 'writing', status: 'running' } }),
+        event(3, { type: 'bridge/error', data: { code: 'USER_CANCELLED', message: 'The turn was cancelled.' } }),
+      ],
+      latestSequence: 3,
+    }))
+    renderPanel(fixture.remote(), { locale: 'zh' })
+
+    // Panel frame, form, and session status all read from the zh dictionary.
+    expect(await screen.findByText(zh['create.heading'])).toBeTruthy()
+    expect(screen.getByText(zh['panel.subtitle'])).toBeTruthy()
+    expect(screen.getByPlaceholderText(zh['composer.placeholder'])).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh['create.submit'] })).toBeTruthy()
+
+    // Host enumerations are phrased by the Client, not shipped as English.
+    expect(await screen.findByText(zh['row.delivery.queued'])).toBeTruthy()
+    expect(screen.getByText(zh['error.USER_CANCELLED'])).toBeTruthy()
+    // The vendor's own tool name survives translation; only the status word turns.
+    expect(screen.getByText(`Write · ${zh['row.toolStatus.running']}`)).toBeTruthy()
+
+    // No English label leaked through from a hardcoded string.
+    const rendered = document.documentElement.textContent ?? ''
+    for (const key of ['create.heading', 'create.submit', 'composer.send', 'sessions.heading'] as const) {
+      expect(rendered).not.toContain(en[key])
+    }
+  })
+
+  it('explains an unusable product instead of silently omitting it', async () => {
+    const fixture = new RemoteFixture()
+    fixture.catalog.mockResolvedValue({
+      ok: true,
+      value: {
+        providers: [
+          {
+            id: 'codex',
+            displayName: 'Codex',
+            installed: true,
+            version: '0.144.6',
+            supportedRange: '0.147.x',
+            compatibility: 'unsupported',
+            health: 'unsupported',
+            message: null,
+          },
+          {
+            id: 'claude',
+            displayName: 'Claude Code',
+            installed: false,
+            version: null,
+            supportedRange: '>=2.1.220 <2.2.0',
+            compatibility: 'unknown',
+            health: 'not-installed',
+            message: null,
+          },
+        ],
+        workspaces: catalog.workspaces,
+      },
+    })
+    renderPanel(fixture.remote())
+
+    expect(await screen.findByText(en['diagnostics.heading'])).toBeTruthy()
+    // The rejected version and the admitted range are both named.
+    expect(screen.getByText(/Codex 0\.144\.6 installed; this bridge admits 0\.147\.x/)).toBeTruthy()
+    // A missing product points at the PATH of the process that runs DSH, which
+    // is the actual cause when the product works in the operator's own shell.
+    expect(screen.getByText(/PATH of the process running DeepSeek Harness/)).toBeTruthy()
+    expect(screen.getByText(/Confirm `claude --version` runs in the shell/)).toBeTruthy()
+
+    // Both are listed in the picker but neither can be chosen.
+    const options = screen.getAllByRole('option') as HTMLOptionElement[]
+    const codex = options.find(option => option.value === 'codex')
+    expect(codex?.disabled).toBe(true)
+    expect(codex?.textContent).toContain(en['health.unsupported'])
+    expect((screen.getByRole('button', { name: en['create.submit'] }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('has no vendor login surface, vendor request, storage residue, or credential canary', async () => {

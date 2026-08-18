@@ -45,9 +45,23 @@ class MemoryStorage implements Storage {
   }
 }
 
+/** The globals this shim inspects, without asserting the DOM lib is loaded. */
+interface StorageHost {
+  document?: unknown
+  window?: object
+  localStorage?: Storage
+  sessionStorage?: Storage
+}
+
+const host = globalThis as StorageHost
+
 function install(name: 'localStorage' | 'sessionStorage'): void {
   const storage = new MemoryStorage()
-  for (const target of new Set<object>([globalThis, globalThis.window])) {
+  // jsdom's window and globalThis are the same object under vitest, but a
+  // future environment may separate them; a Set keeps one definition each.
+  const targets = new Set<object>([globalThis])
+  if (host.window !== undefined) targets.add(host.window)
+  for (const target of targets) {
     Object.defineProperty(target, name, {
       configurable: true,
       enumerable: true,
@@ -56,7 +70,7 @@ function install(name: 'localStorage' | 'sessionStorage'): void {
   }
 }
 
-if (typeof globalThis.document !== 'undefined') {
-  if (globalThis.localStorage === undefined) install('localStorage')
-  if (globalThis.sessionStorage === undefined) install('sessionStorage')
+if (host.document !== undefined) {
+  if (host.localStorage === undefined) install('localStorage')
+  if (host.sessionStorage === undefined) install('sessionStorage')
 }

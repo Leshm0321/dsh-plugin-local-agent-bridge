@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, CSSProperties, FormEvent, ReactNode } from 'react'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
+// Type-only: merges `locale` onto Context and declares the LocaleNamespaceMap
+// this module extends below.
+import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import {
   IconArchiveOutline20,
@@ -14,6 +17,7 @@ import {
 import type {
   InjectFace,
   PropsRuntime,
+  TranslateNS,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   RemoteResult,
@@ -22,17 +26,38 @@ import type {
 import remoteContribution from '../typert.remote-client.ts'
 import type {
   BridgeCatalogResult,
+  BridgeErrorCode,
   BridgeEvent,
   BridgeQuestion,
   BridgeSessionView,
   NativeProviderView,
   PendingInteractionView,
 } from '../types.ts'
+import { en, type LocalAgentBridgeKey, zh } from './locales.ts'
+
+export type { LocalAgentBridgeKey } from './locales.ts'
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    /** Every string this panel renders, plus the reader-facing phrasing of the Host's enumerations. */
+    'local-agent-bridge': LocalAgentBridgeKey
+  }
+}
+
+/** Dictionary namespace owned by this plugin. */
+const NS = 'local-agent-bridge'
+
+/**
+ * This panel's translate function, typed to its own key union. Named in full
+ * because `unwrap<T>` right below uses `T` as a generic parameter.
+ */
+type PanelTranslate = TranslateNS<'local-agent-bridge'>
 
 export type LocalAgentRemote = TypertRemoteNamespaceMap['localAgentBridge']
 
 interface LocalAgentPanelFace {
   readonly remote: LocalAgentRemote
+  readonly t: PanelTranslate
 }
 
 type LocalAgentPanelProps = PropsRuntime<'sidebar.footer.action'> & InjectFace<LocalAgentPanelFace>
@@ -170,12 +195,35 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
   })
 }
 
-function timeline(events: readonly BridgeEvent[]): TimelineRow[] {
+/**
+ * Localize one bridge error code, falling back to the Host's own sentence for
+ * a code this Client build does not know — a newer Host must still be able to
+ * say something, and an untranslated sentence beats a bare identifier.
+ * @param t - the panel's translate function.
+ * @param code - the code carried by the event.
+ * @param hostMessage - the Host's redacted sentence for the same failure.
+ * @returns reader-facing text.
+ */
+function errorText(t: PanelTranslate, code: BridgeErrorCode, hostMessage: string): string {
+  const key = `error.${code}` as LocalAgentBridgeKey
+  const translated = t(key)
+  return translated === key ? hostMessage : translated
+}
+
+/**
+ * Project the retained event stream into rendered rows, localizing every
+ * label the bridge itself produced while passing vendor text (tool names,
+ * summaries, model output) through untouched.
+ * @param events - retained events in sequence order.
+ * @param t - the panel's translate function.
+ * @returns rows in render order, streaming deltas already coalesced.
+ */
+function timeline(events: readonly BridgeEvent[], t: PanelTranslate): TimelineRow[] {
   const rows: TimelineRow[] = []
   for (const event of events) {
     const key = `${String(event.sequence)}-${event.type}`
     if (event.type === 'bridge/user-message') {
-      rows.push({ key, kind: 'user', title: event.data.delivery, text: event.data.text })
+      rows.push({ key, kind: 'user', title: t(`row.delivery.${event.data.delivery}`), text: event.data.text })
     } else if (event.type === 'bridge/text-delta' || event.type === 'bridge/reasoning-delta') {
       const kind = event.type === 'bridge/text-delta' ? 'assistant' : 'reasoning'
       const previous = rows.at(-1)
@@ -183,19 +231,53 @@ function timeline(events: readonly BridgeEvent[]): TimelineRow[] {
       if (previous?.key.endsWith(group)) {
         rows[rows.length - 1] = { ...previous, text: previous.text + event.data.text }
       } else {
-        rows.push({ key: `${key}:${group}`, kind, title: kind, text: event.data.text })
+        rows.push({ key: `${key}:${group}`, kind, title: t(`row.${kind}`), text: event.data.text })
       }
     } else if (event.type === 'bridge/tool-started' || event.type === 'bridge/tool-updated' || event.type === 'bridge/tool-completed') {
-      rows.push({ key, kind: 'tool', title: `${event.data.toolName} - ${event.data.status}`, text: event.data.summary })
+      rows.push({
+        key,
+        kind: 'tool',
+        // The tool name is the vendor's; only the status word is ours.
+        title: t('row.tool', { tool: event.data.toolName, status: t(`row.toolStatus.${event.data.status}`) }),
+        text: event.data.summary,
+      })
     } else if (event.type === 'bridge/file-change') {
-      rows.push({ key, kind: 'tool', title: 'File change', text: event.data.summary })
+      rows.push({ key, kind: 'tool', title: t('row.fileChange'), text: event.data.summary })
     } else if (event.type === 'bridge/error') {
-      rows.push({ key, kind: 'error', title: event.data.code, text: event.data.message })
+      rows.push({ key, kind: 'error', title: t(`status.failed`), text: errorText(t, event.data.code, event.data.message) })
     } else if (event.type === 'bridge/session-status') {
-      rows.push({ key, kind: 'status', title: event.data.status, text: event.data.message ?? '' })
+      rows.push({ key, kind: 'status', title: t(`status.${event.data.status}`), text: event.data.message ?? '' })
     }
   }
   return rows
+}
+
+/**
+ * Explain an unusable product in the reader's language, from the structured
+ * fields alone. `error` is the one state that keeps the Host's own redacted
+ * diagnostic, because the product's stderr is the only real explanation and
+ * the Client cannot reconstruct it.
+ * @param t - the panel's translate function.
+ * @param provider - the catalog entry to explain.
+ * @returns one sentence, or null when the product is usable.
+ */
+function healthDetail(t: PanelTranslate, provider: NativeProviderView): string | null {
+  const name = provider.displayName
+  if (provider.health === 'ready') return null
+  if (provider.health === 'not-installed') return t('health.detail.not-installed', { name })
+  if (provider.health === 'auth-required') return t('health.detail.auth-required', { name })
+  if (provider.health === 'error') {
+    const base = t('health.detail.error', { name })
+    return provider.message === null ? base : `${base} ${provider.message}`
+  }
+  if (provider.compatibility === 'unknown' || provider.version === null) {
+    return t('health.detail.unverified', { name })
+  }
+  return t('health.detail.unsupported', {
+    name,
+    version: provider.version,
+    range: provider.supportedRange ?? '',
+  })
 }
 
 function ActionButton({ children, primary, danger, ...props }: {
@@ -218,10 +300,12 @@ function QuestionInput({
   question,
   value,
   onChange,
+  t,
 }: {
   question: BridgeQuestion
   value: readonly string[]
   onChange: (value: string[]) => void
+  t: PanelTranslate
 }) {
   const toggle = (candidate: string): void => {
     if (!question.multiSelect) {
@@ -253,7 +337,7 @@ function QuestionInput({
           <input
             style={styles.input}
             type={question.secret ? 'password' : 'text'}
-            placeholder="Custom answer"
+            placeholder={t('interaction.freeText')}
             value={question.options.some(option => value.includes(option.value)) ? '' : value[0] ?? ''}
             onChange={event => { onChange(event.target.value.length === 0 ? [] : [event.target.value]) }}
           />
@@ -267,10 +351,12 @@ function InteractionCard({
   interaction,
   remote,
   onResolved,
+  t,
 }: {
   interaction: PendingInteractionView
   remote: LocalAgentRemote
   onResolved: () => void
+  t: PanelTranslate
 }) {
   const [answers, setAnswers] = useState<Record<string, string[]>>({})
   const [busy, setBusy] = useState(false)
@@ -297,7 +383,7 @@ function InteractionCard({
   return (
     <div style={{ ...styles.card, marginBottom: 12, borderColor: palette.warning }}>
       <div style={{ color: palette.warning, fontWeight: 800, marginBottom: 6 }}>
-        {interaction.kind === 'approval' ? 'Approval required' : 'Input required'}
+        {interaction.kind === 'approval' ? t('interaction.approval') : t('interaction.question')}
       </div>
       <div>{interaction.safeSummary}</div>
       {interaction.target !== null && <small style={styles.muted}>{interaction.target}</small>}
@@ -309,6 +395,7 @@ function InteractionCard({
               question={question}
               value={answers[question.id] ?? []}
               onChange={value => { setAnswers(current => ({ ...current, [question.id]: value })) }}
+              t={t}
             />
           ))}
         </div>
@@ -317,19 +404,19 @@ function InteractionCard({
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
         {interaction.kind === 'approval' ? (
           <>
-            <ActionButton primary disabled={busy} onClick={() => { void respond({ kind: 'approval', action: 'allow' }) }}>Allow once</ActionButton>
-            <ActionButton disabled={busy} onClick={() => { void respond({ kind: 'approval', action: 'deny' }) }}>Deny</ActionButton>
-            <ActionButton danger disabled={busy} onClick={() => { void respond({ kind: 'approval', action: 'cancel' }) }}>Cancel turn</ActionButton>
+            <ActionButton primary disabled={busy} onClick={() => { void respond({ kind: 'approval', action: 'allow' }) }}>{t('interaction.allowOnce')}</ActionButton>
+            <ActionButton disabled={busy} onClick={() => { void respond({ kind: 'approval', action: 'deny' }) }}>{t('interaction.deny')}</ActionButton>
+            <ActionButton danger disabled={busy} onClick={() => { void respond({ kind: 'approval', action: 'cancel' }) }}>{t('interaction.cancelTurn')}</ActionButton>
           </>
         ) : (
-          <ActionButton primary disabled={busy} onClick={() => { void respond({ kind: 'question', answers }) }}>Submit answers</ActionButton>
+          <ActionButton primary disabled={busy} onClick={() => { void respond({ kind: 'question', answers }) }}>{t('interaction.submit')}</ActionButton>
         )}
       </div>
     </div>
   )
 }
 
-export function LocalAgentPanel({ wide, remote }: LocalAgentPanelProps) {
+export function LocalAgentPanel({ wide, remote, t }: LocalAgentPanelProps) {
   const [open, setOpen] = useState(false)
   const [catalog, setCatalog] = useState<BridgeCatalogResult>()
   const [sessions, setSessions] = useState<BridgeSessionView[]>([])
@@ -398,8 +485,12 @@ export function LocalAgentPanel({ wide, remote }: LocalAgentPanelProps) {
     return () => { controller.abort() }
   }, [open, remote, selectedId])
 
-  const rows = useMemo(() => timeline(snapshot?.events ?? []), [snapshot?.events])
-  const readyProviders = catalog?.providers.filter(provider => provider.health === 'ready') ?? []
+  const rows = useMemo(() => timeline(snapshot?.events ?? [], t), [snapshot?.events, t])
+  const allProviders = catalog?.providers ?? []
+  // Every product the Host could not offer, with the reason it could not. The
+  // Host already computed an exact diagnosis; dropping these rows from the UI
+  // left the operator watching a product vanish with no explanation.
+  const blockedProviders = allProviders.filter(provider => provider.health !== 'ready')
   const readyWorkspaces = catalog?.workspaces.filter(workspace => workspace.status === 'ok') ?? []
 
   const createSession = async (): Promise<void> => {
@@ -432,45 +523,75 @@ export function LocalAgentPanel({ wide, remote }: LocalAgentPanelProps) {
   return (
     <>
       <style>{responsiveStyles}</style>
-      <button type="button" style={styles.trigger} title="Local Agents" onClick={() => { setOpen(true) }}>
-        <IconCodeOutline16 />{wide && <span>Local Agents</span>}
+      <button type="button" style={styles.trigger} title={t('panel.name')} onClick={() => { setOpen(true) }}>
+        <IconCodeOutline16 />{wide && <span>{t('panel.name')}</span>}
       </button>
       {open && (
-        <div className="local-agent-overlay" style={styles.overlay} role="dialog" aria-modal="true" aria-label="Local Agents">
+        <div className="local-agent-overlay" style={styles.overlay} role="dialog" aria-modal="true" aria-label={t('panel.name')}>
           <section className="local-agent-shell" style={styles.shell}>
             <header className="local-agent-header" style={styles.header}>
               <div>
-                <strong style={{ fontSize: 18 }}>Local Agents</strong>
-                <div style={{ ...styles.muted, fontSize: 12 }}>Claude Code and Codex sessions on this host</div>
+                <strong style={{ fontSize: 18 }}>{t('panel.name')}</strong>
+                <div style={{ ...styles.muted, fontSize: 12 }}>{t('panel.subtitle')}</div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <ActionButton aria-label="Refresh" title="Refresh" onClick={() => { void refresh() }}><IconRefreshOutline16 /></ActionButton>
-                <ActionButton aria-label="Close" title="Close" onClick={() => { setOpen(false) }}><IconCloseOutline16 /></ActionButton>
+                <ActionButton aria-label={t('panel.refresh')} title={t('panel.refresh')} onClick={() => { void refresh() }}><IconRefreshOutline16 /></ActionButton>
+                <ActionButton aria-label={t('panel.close')} title={t('panel.close')} onClick={() => { setOpen(false) }}><IconCloseOutline16 /></ActionButton>
               </div>
             </header>
             <div className="local-agent-body" style={styles.body}>
               <aside className="local-agent-sidebar" style={styles.sidebar}>
                 <div style={{ ...styles.card, marginBottom: 14 }}>
-                  <strong>New native session</strong>
+                  <strong>{t('create.heading')}</strong>
                   <div style={{ display: 'grid', gap: 9, marginTop: 10 }}>
-                    <label style={styles.label}>Provider
+                    <label style={styles.label}>{t('create.provider')}
                       <select style={styles.input} value={providerId ?? ''} onChange={event => { setProviderId(event.target.value) }}>
-                        <option value="" disabled>Select provider</option>
-                        {readyProviders.map(provider => <option key={provider.id} value={provider.id}>{provider.displayName} {provider.version ?? ''}</option>)}
+                        <option value="" disabled>{t('create.provider.placeholder')}</option>
+                        {/* Unusable products stay listed but unselectable: seeing
+                            "Codex — unsupported version" explains the absence
+                            that an omitted row silently created. */}
+                        {allProviders.map(provider => (
+                          <option key={provider.id} value={provider.id} disabled={provider.health !== 'ready'}>
+                            {[provider.displayName, provider.version, provider.health === 'ready' ? null : `— ${t(`health.${provider.health}`)}`]
+                              .filter(part => part !== null && part !== '')
+                              .join(' ')}
+                          </option>
+                        ))}
                       </select>
                     </label>
-                    <label style={styles.label}>Workspace
+                    <label style={styles.label}>{t('create.workspace')}
                       <select style={styles.input} value={workspaceId ?? ''} onChange={event => { setWorkspaceId(event.target.value) }}>
-                        <option value="" disabled>Select workspace</option>
+                        <option value="" disabled>{t('create.workspace.placeholder')}</option>
                         {readyWorkspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.title}</option>)}
                       </select>
                     </label>
                     <ActionButton primary disabled={busy || providerId === undefined || workspaceId === undefined} onClick={() => { void createSession() }}>
-                      Create session
+                      {busy ? t('create.busy') : t('create.submit')}
                     </ActionButton>
                   </div>
                 </div>
-                <div style={{ fontSize: 12, color: palette.muted, margin: '0 2px 8px' }}>SESSIONS</div>
+
+                {blockedProviders.length > 0 && (
+                  <div style={{ ...styles.card, marginBottom: 14, borderColor: palette.warning }}>
+                    <strong style={{ color: palette.warning }}>{t('diagnostics.heading')}</strong>
+                    <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                      {blockedProviders.map(provider => (
+                        <div key={provider.id}>
+                          <div style={{ fontSize: 12 }}>
+                            {provider.displayName} <span style={styles.badge}>{t(`health.${provider.health}`)}</span>
+                          </div>
+                          <small style={{ ...styles.muted, display: 'block', marginTop: 3 }}>{healthDetail(t, provider)}</small>
+                          {provider.health === 'not-installed' && (
+                            <small style={{ ...styles.muted, display: 'block', marginTop: 3, opacity: .8 }}>
+                              {t('diagnostics.path.hint', { command: provider.id })}
+                            </small>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: palette.muted, margin: '0 2px 8px', textTransform: 'uppercase', letterSpacing: '.06em' }}>{t('sessions.heading')}</div>
                 {sessions.map(session => (
                   <button
                     key={session.bridgeSessionId}
@@ -479,7 +600,7 @@ export function LocalAgentPanel({ wide, remote }: LocalAgentPanelProps) {
                     onClick={() => { setSelectedId(session.bridgeSessionId) }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                      <strong>{session.title}</strong><span style={styles.badge}>{session.status}</span>
+                      <strong>{session.title}</strong><span style={styles.badge}>{t(`status.${session.status}`)}</span>
                     </div>
                     <small style={styles.muted}>{session.workspaceTitle} - {session.providerId}</small>
                   </button>
@@ -488,28 +609,28 @@ export function LocalAgentPanel({ wide, remote }: LocalAgentPanelProps) {
               <main className="local-agent-main" style={styles.main}>
                 <div className="local-agent-toolbar" style={styles.toolbar}>
                   <div>
-                    <strong>{snapshot?.session.title ?? 'Select or create a session'}</strong>
-                    {snapshot !== undefined && <div style={{ ...styles.muted, fontSize: 12 }}>{snapshot.session.workspaceTitle} - {snapshot.session.status}</div>}
+                    <strong>{snapshot?.session.title ?? t('sessions.empty')}</strong>
+                    {snapshot !== undefined && <div style={{ ...styles.muted, fontSize: 12 }}>{snapshot.session.workspaceTitle} · {t(`status.${snapshot.session.status}`)}</div>}
                   </div>
                   {snapshot !== undefined && (
                     <div style={{ display: 'flex', gap: 8 }}>
                       <ActionButton danger disabled={!['running', 'awaiting-approval', 'awaiting-answer', 'cancelling'].includes(snapshot.session.status)} onClick={() => {
                         void remote.sessionCancel({ bridgeSessionId: snapshot.session.bridgeSessionId })
-                      }}><IconStopFill16 /> Cancel turn</ActionButton>
+                      }}><IconStopFill16 /> {t('session.cancel')}</ActionButton>
                       <ActionButton onClick={() => {
                         void remote.sessionArchive({ bridgeSessionId: snapshot.session.bridgeSessionId, archived: true })
                           .then(unwrap).then(() => {
                             setSessions(current => current.filter(item => item.bridgeSessionId !== snapshot.session.bridgeSessionId))
                             setSelectedId(undefined)
                           })
-                      }}><IconArchiveOutline20 size={16} /> Archive</ActionButton>
+                      }}><IconArchiveOutline20 size={16} /> {t('session.archive')}</ActionButton>
                     </div>
                   )}
                 </div>
                 <div className="local-agent-timeline" style={styles.timeline}>
                   {error !== undefined && <div style={{ ...styles.card, color: palette.danger, marginBottom: 12 }}>{error}</div>}
                   {snapshot?.pendingInteraction !== null && snapshot?.pendingInteraction !== undefined && (
-                    <InteractionCard interaction={snapshot.pendingInteraction} remote={remote} onResolved={() => { setError(undefined) }} />
+                    <InteractionCard interaction={snapshot.pendingInteraction} remote={remote} onResolved={() => { setError(undefined) }} t={t} />
                   )}
                   {rows.map(row => (
                     <article
@@ -531,13 +652,13 @@ export function LocalAgentPanel({ wide, remote }: LocalAgentPanelProps) {
                     <textarea
                       style={{ ...styles.input, minHeight: 58, resize: 'vertical' }}
                       value={draft}
-                      placeholder="Send to the native agent on the host..."
+                      placeholder={t('composer.placeholder')}
                       disabled={selectedId === undefined}
                       onChange={event => { setDraft(event.target.value) }}
                     />
-                    <button type="submit" style={{ ...styles.button, ...styles.primary }} disabled={selectedId === undefined || draft.trim().length === 0}><IconSendOutline16 /> Send</button>
+                    <button type="submit" style={{ ...styles.button, ...styles.primary }} disabled={selectedId === undefined || draft.trim().length === 0}><IconSendOutline16 /> {t('composer.send')}</button>
                   </div>
-                  <small style={styles.muted}>Running Codex messages are steered; Claude messages queue until the active turn completes.</small>
+                  <small style={styles.muted}>{t('composer.hint')}</small>
                 </form>
               </main>
             </div>
@@ -548,17 +669,27 @@ export function LocalAgentPanel({ wide, remote }: LocalAgentPanelProps) {
   )
 }
 
-export const inject = ['slots', 'remote']
+/**
+ * Required services (cordis fiber inject); `locale` carries the dictionaries.
+ */
+export const inject = ['slots', 'remote', 'locale']
 
 export function apply(ctx: ClientContext): void {
   ctx.effect(async () => {
     return ctx.remote.$mount(remoteContribution)
   }, 'local-agent-bridge: mount Remote')
+  // Both locales land in one typed call, so a dictionary that drifted out of
+  // key parity fails the build rather than falling back at runtime. The
+  // disposer releases the namespace on unload, leaving it free for a reload.
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'local-agent-bridge: dictionaries')
   ctx.inject(['slots', 'remote.localAgentBridge'], (scope) => {
     scope.slots.inject('sidebar.footer.action', () => scope.slots.register({
       name: 'sidebar.footer.action',
       id: 'local-agent-bridge',
-      inject: (): LocalAgentPanelFace => ({ remote: scope.remote.localAgentBridge }),
+      inject: (): LocalAgentPanelFace => ({
+        remote: scope.remote.localAgentBridge,
+        t: scope.locale.bind(NS),
+      }),
     }, LocalAgentPanel))
   })
 }

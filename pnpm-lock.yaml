@@ -36,6 +36,9 @@ importers:
       '@deepseek-ai/dsh-api-gateway':
         specifier: 0.1.0-rc.7
         version: 0.1.0-rc.7(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-client-connection@0.1.0-rc.7)(@deepseek-ai/dsh-invariants@0.1.0-rc.7(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-typert-registry@0.1.0-rc.7(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.7(@deepseek-ai/cordis@4.0.1)))
+      '@deepseek-ai/dsh-client-locale':
+        specifier: 0.1.0-rc.7
+        version: 0.1.0-rc.7(3447f2af9cf53dd6aae83d4a6a1079ca)
       '@deepseek-ai/dsh-client-runtime':
         specifier: 0.1.0-rc.7
         version: 0.1.0-rc.7(7133a2122a817e681dddcd8e011efc70)
