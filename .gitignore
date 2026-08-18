@@ -1,9 +1,69 @@
-node_modules/
+# Build output. `lib/` is published rather than committed: package.json ships it
+# through `files`, and `prepare` rebuilds it on install.
 lib/
+*.tgz
+
+# Test and coverage output. Written only when those runs are asked for, which is
+# why a clean checkout never shows them.
 coverage/
 test-results/
 playwright-report/
+
+# Dependencies.
+node_modules/
+
+# Local working directories for developing this plugin against a real Harness:
+# `.research/` holds a clone of the upstream repository, `.dsh-home/` an isolated
+# DSH install used for smoke runs. Both are one developer's scratch space.
 .research/
 .dsh-home/
-*.tgz
 
+# Files the composer's upload button receives. This repository is itself a
+# plausible working directory for an agent — it has been used as one while
+# developing the panel — so the ignore rule the README asks operators to add
+# belongs here too. Uploads are operator-supplied content, never source.
+.dsh-bridge-uploads/
+
+# Local CodeGraph index. A SQLite graph of this tree, rebuilt on demand and large
+# enough that committing it would be its own problem.
+.codegraph/
+
+# Package-manager failure logs, written into the repository root when an install
+# goes wrong.
+*-debug.log
+.pnpm-debug.log
+
+# Secrets, as a fence rather than as configuration: this plugin has no `.env` and
+# reads none. Everything it needs comes from the Profile's `cordis.patch.yml`, and
+# vendor authentication stays with the products on the Host. The rule exists so a
+# credential someone parks here locally cannot be committed by accident.
+.env
+.env.*
+
+# macOS. `.DS_Store` appears in any directory Finder has opened, and `._*`
+# AppleDouble files appear when a tree is copied onto a non-APFS volume or a
+# network share.
+.DS_Store
+.DS_Store?
+._*
+.AppleDouble
+.LSOverride
+
+# Windows, since the Host is supported there and a contributor may work there.
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Editors and IDEs.
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Deliberately NOT ignored, because the name invites it:
+#   generated/  - the pinned Codex App Server schema for the supported version.
+#                 It is a committed artifact, listed in package.json `files`, and
+#                 regenerated only by `pnpm run generate:codex` on a version bump.
