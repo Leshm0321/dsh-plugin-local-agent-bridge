@@ -1,6 +1,7 @@
 import type {
   BridgeCompletionsResult,
   BridgeContextUsage,
+  BridgePermissionMode,
   BridgeNativeSessionsResult,
   BridgeEvent,
   BridgeInteractionRespondRequest,
@@ -29,6 +30,15 @@ export interface ProviderTurnHooks {
   readonly bridgeTurnId: string
   readonly cwd: string
   readonly nativeSessionLocator: string | null
+  /**
+   * How much the agent may do without asking, as the operator set it.
+   *
+   * Delivered per turn because both products take it when a turn starts: Claude
+   * Code as `Options.permissionMode`, Codex as the turn's approval policy and
+   * collaboration mode. That is also why a change applies from the next turn
+   * rather than mid-flight.
+   */
+  readonly permissionMode: BridgePermissionMode
   readonly signal: AbortSignal
   emit(event: BridgeEventDraft): Promise<void>
   setNativeSessionLocator(locator: string): Promise<void>

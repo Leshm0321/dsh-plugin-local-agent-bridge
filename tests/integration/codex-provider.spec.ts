@@ -237,6 +237,7 @@ function createHooks(options: {
     bridgeTurnId: 'bridge-turn-1',
     cwd: process.cwd(),
     nativeSessionLocator: options.nativeSessionLocator ?? null,
+    permissionMode: 'auto',
     signal: controller.signal,
     emit: async event => { events.push(event) },
     setNativeSessionLocator: async locator => { locators.push(locator) },

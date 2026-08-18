@@ -11,6 +11,7 @@ import {
   IconCloseOutline16,
   IconCodeOutline16,
   IconFolderClose16,
+  IconPanelLeftOutline16,
   IconRefreshOutline16,
   IconSendOutline16,
   IconStopFill16,
@@ -33,6 +34,8 @@ import type {
   BridgeErrorCode,
   BridgeEvent,
   BridgeNativeSessionsResult,
+  BridgePermissionMode,
+  BridgePermissionModeView,
   BridgeQuestion,
   BridgeSessionStatus,
   BridgeSessionView,
@@ -462,6 +465,72 @@ function DirectoryBrowser({
 }
 
 /**
+ * Permission-mode picker.
+ *
+ * The wording follows the Claude desktop app so the vocabulary matches what
+ * operators already know. Only the modes the session's product can actually
+ * honour are listed — the Host reports that per product, so a mode on screen is
+ * always one the agent will obey rather than an approximation of it.
+ *
+ * A mode that stops the browser being asked to approve anything is marked on the
+ * trigger and warned about in the menu. It is still offered, because both
+ * products offer it; the panel's job is to say what it costs, not to overrule.
+ */
+function PermissionModePicker({
+  modes,
+  current,
+  disabled,
+  t,
+  onSelect,
+}: {
+  modes: readonly BridgePermissionModeView[]
+  current: BridgePermissionMode
+  disabled: boolean
+  t: PanelTranslate
+  onSelect: (mode: BridgePermissionMode) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const active = modes.find(entry => entry.mode === current)
+  if (modes.length === 0) return null
+  return (
+    <span className="lab-mode">
+      <button
+        type="button"
+        className={`lab-mode-trigger${active?.skipsApproval === true ? ' lab-mode-trigger--unguarded' : ''}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => { setOpen(current_ => !current_) }}
+      >
+        {t(`mode.${current}`)}
+      </button>
+      {open && (
+        <div className="lab-mode-menu" role="menu" aria-label={t('mode.label')}>
+          {modes.map(entry => (
+            <button
+              key={entry.mode}
+              type="button"
+              role="menuitemradio"
+              aria-checked={entry.mode === current}
+              className="lab-mode-option"
+              onClick={() => { setOpen(false); onSelect(entry.mode) }}
+            >
+              <span className="lab-mode-name">{t(`mode.${entry.mode}`)}</span>
+              {entry.mode === current && <span className="lab-mode-check">✓</span>}
+              <span className="lab-mode-hint">{t(`mode.${entry.mode}.hint`)}</span>
+            </button>
+          ))}
+          {active?.skipsApproval === true && (
+            <p className="lab-mode-warning">{t('mode.skipsApproval')}</p>
+          )}
+          <p className="lab-mode-footnote">{t('mode.nextTurn')}</p>
+        </div>
+      )}
+    </span>
+  )
+}
+
+/**
  * Context usage as a quiet meter beside the session title.
  *
  * Both products report the numbers differently and one of them may report no
@@ -802,6 +871,7 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
   const [completions, setCompletions] = useState<BridgeCompletionsResult>({ completions: [], pending: true })
   const [paletteIndex, setPaletteIndex] = useState(0)
   const [historyIndex, setHistoryIndex] = useState(-1)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const timelineRef = useRef<HTMLDivElement>(null)
   const [nativeSessions, setNativeSessions] = useState<BridgeNativeSessionsResult>()
   const [nativeSessionsOpen, setNativeSessionsOpen] = useState(false)
@@ -925,6 +995,9 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
   // left the operator watching a product vanish with no explanation.
   const blockedProviders = allProviders.filter(provider => provider.health !== 'ready')
   const allWorkspaces = catalog?.workspaces ?? []
+  const sessionModes = snapshot === undefined
+    ? []
+    : allProviders.find(provider => provider.id === snapshot.session.providerId)?.permissionModes ?? []
   const readyWorkspaces = allWorkspaces.filter(workspace => workspace.status === 'ok')
 
   /**
@@ -1205,6 +1278,26 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
   }
 
   /**
+   * Change the selected session's permission mode.
+   *
+   * Applied by the Host from the next turn, so the session view is replaced with
+   * what the Host confirms rather than an optimistic guess.
+   * @param mode - the requested mode.
+   */
+  const changePermissionMode = async (mode: BridgePermissionMode): Promise<void> => {
+    if (selectedId === undefined) return
+    setError(undefined)
+    try {
+      const updated = unwrap(await remote.sessionPermissionMode({ bridgeSessionId: selectedId, mode }))
+      setSessions(current => current.map(item =>
+        item.bridgeSessionId === updated.bridgeSessionId ? updated : item))
+      setSnapshot(current => current === undefined ? current : { ...current, session: updated })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  /**
    * Send the draft, restoring it if the Host refused.
    *
    * Separate from the form handler so the Enter key and the button share one
@@ -1249,6 +1342,14 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                 <p className="lab-subtitle">{t('panel.subtitle')}</p>
               </div>
               <div className="lab-titlebar-actions">
+                <ActionButton
+                  icon
+                  aria-label={sidebarCollapsed ? t('panel.expandSidebar') : t('panel.collapseSidebar')}
+                  title={sidebarCollapsed ? t('panel.expandSidebar') : t('panel.collapseSidebar')}
+                  onClick={() => { setSidebarCollapsed(current => !current) }}
+                >
+                  <IconPanelLeftOutline16 />
+                </ActionButton>
                 <ActionButton icon aria-label={t('panel.refresh')} title={t('panel.refresh')} onClick={() => { void refresh() }}>
                   <IconRefreshOutline16 />
                 </ActionButton>
@@ -1258,8 +1359,20 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
               </div>
             </header>
 
-            <div className="lab-body">
+            <div className={sidebarCollapsed ? 'lab-body lab-body--collapsed' : 'lab-body'}>
               <aside className="lab-aside">
+                {/* Shown only when collapsed: one control to bring the sidebar
+                    back, so the rail is never a dead end. */}
+                <div className="lab-rail">
+                  <ActionButton
+                    icon
+                    aria-label={t('panel.expandSidebar')}
+                    title={t('panel.expandSidebar')}
+                    onClick={() => { setSidebarCollapsed(false) }}
+                  >
+                    <IconPanelLeftOutline16 />
+                  </ActionButton>
+                </div>
                 <div className="lab-card">
                   <h3 className="lab-card-title">{t('create.heading')}</h3>
                   <div className="lab-stack" style={{ marginTop: 10 }}>
@@ -1452,6 +1565,13 @@ export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanel
                       {snapshot.session.contextUsage !== null && (
                         <ContextUsage usage={snapshot.session.contextUsage} t={t} />
                       )}
+                      <PermissionModePicker
+                        modes={sessionModes}
+                        current={snapshot.session.permissionMode}
+                        disabled={BUSY_STATUSES.includes(snapshot.session.status)}
+                        t={t}
+                        onSelect={mode => { void changePermissionMode(mode) }}
+                      />
                       <ActionButton
                         danger
                         disabled={!BUSY_STATUSES.includes(snapshot.session.status)}

@@ -35,6 +35,11 @@ export interface NativeProviderView {
    * knowing which language a browser reads.
    */
   readonly message: string | null
+  /**
+   * Permission modes this product can actually honour, in display order. Empty
+   * for a product that exposes no such control.
+   */
+  readonly permissionModes: readonly BridgePermissionModeView[]
 }
 
 export interface BridgeWorkspaceView {
@@ -124,6 +129,31 @@ export type BridgeErrorCode =
  * carried: Claude Code's includes memory-file paths, which are Host filesystem
  * detail with no business in a browser.
  */
+/**
+ * How much the agent may do without asking, named after the modes the Claude
+ * desktop app presents so the vocabulary matches what operators already know.
+ *
+ * The two products express this with different primitives, and neither can
+ * express all five: the Host maps each mode onto the product's own settings and
+ * reports only what that product can actually honour, rather than offering a mode
+ * that would silently do something else.
+ *
+ * `bypass` genuinely disables the browser approval prompt — the protection this
+ * bridge exists to provide. It is offered because the products offer it, and it
+ * is marked so the panel can say what it costs.
+ */
+export type BridgePermissionMode = 'auto' | 'manual' | 'acceptEdits' | 'plan' | 'bypass'
+
+export interface BridgePermissionModeView {
+  readonly mode: BridgePermissionMode
+  /**
+   * True when this mode stops the browser from being asked to approve tools.
+   * The panel warns before selecting one; the bridge does not refuse it, because
+   * the products themselves offer it.
+   */
+  readonly skipsApproval: boolean
+}
+
 export interface BridgeContextUsage {
   readonly usedTokens: number
   /** The model's context window, or null when the product did not report one. */
@@ -151,6 +181,11 @@ export interface BridgeSessionView {
    * arrives with every read the browser already makes.
    */
   readonly contextUsage: BridgeContextUsage | null
+  /**
+   * The session's permission mode. Applies from the next turn, because both
+   * products take it when a turn starts.
+   */
+  readonly permissionMode: BridgePermissionMode
 }
 
 export interface BridgeTurnView {
@@ -371,10 +406,16 @@ export interface BridgeSessionCreateRequest {
    * Host restart.
    */
   readonly resumeLocator?: string
+  /** Initial permission mode; defaults to `auto`. */
+  readonly permissionMode?: BridgePermissionMode
 }
 
 export interface BridgeSessionIdRequest {
   readonly bridgeSessionId: string
+}
+
+export interface BridgePermissionModeRequest extends BridgeSessionIdRequest {
+  readonly mode: BridgePermissionMode
 }
 
 export interface BridgeSessionArchiveRequest extends BridgeSessionIdRequest {

@@ -30,6 +30,7 @@ const ICON_STUBS = vi.hoisted(() => [
   'IconCloseOutline16',
   'IconCodeOutline16',
   'IconFolderClose16',
+  'IconPanelLeftOutline16',
   'IconRefreshOutline16',
   'IconSendOutline16',
   'IconStopFill16',
@@ -70,6 +71,7 @@ const session: BridgeSessionView = {
   archived: false,
   persistenceVersion: 1,
   contextUsage: null,
+  permissionMode: 'auto',
 }
 
 const catalog: BridgeCatalogResult = {
@@ -79,6 +81,7 @@ const catalog: BridgeCatalogResult = {
     installed: true,
     version: '0.147.0',
     supportedRange: '0.147.x',
+    permissionModes: [],
     compatibility: 'supported',
     health: 'ready',
     message: null,
@@ -166,6 +169,10 @@ class RemoteFixture {
   readonly directoryRemove = vi.fn(async (_request: { directoryId: string }) => ({
     ok: true as const,
     value: undefined,
+  }))
+  readonly sessionPermissionMode = vi.fn(async (request: { bridgeSessionId: string; mode: string }) => ({
+    ok: true as const,
+    value: { ...session, permissionMode: request.mode as BridgeSessionView['permissionMode'] },
   }))
   readonly directoryPublish = vi.fn(async (request: { directoryId: string; published: boolean }) => ({
     ok: true as const,
@@ -486,6 +493,7 @@ describe('LocalAgentPanel', () => {
             installed: true,
             version: '0.144.6',
             supportedRange: '0.147.x',
+            permissionModes: [],
             compatibility: 'unsupported',
             health: 'unsupported',
             message: null,
@@ -496,6 +504,7 @@ describe('LocalAgentPanel', () => {
             installed: false,
             version: null,
             supportedRange: '>=2.1.220 <2.2.0',
+            permissionModes: [],
             compatibility: 'unknown',
             health: 'not-installed',
             message: null,
@@ -720,6 +729,95 @@ describe('LocalAgentPanel', () => {
     expect(fixture.directoryAdd).not.toHaveBeenCalled()
     // Dismissing returns to the offer rather than hiding it.
     expect(screen.getByRole('button', { name: en['workspace.browse'] })).toBeTruthy()
+  })
+
+  it('offers only the permission modes the session\u2019s product can honour', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.catalog.mockResolvedValue({
+      ok: true,
+      value: {
+        workspaces: catalog.workspaces,
+        providers: [{
+          ...catalog.providers[0]!,
+          // Codex reports three, not five: it has no accept-edits policy and its
+          // plan mode would override the operator's model configuration.
+          permissionModes: [
+            { mode: 'auto', skipsApproval: false },
+            { mode: 'manual', skipsApproval: false },
+            { mode: 'bypass', skipsApproval: true },
+          ],
+        }],
+      },
+    })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    fireEvent.click(await screen.findByRole('button', { name: en['mode.auto'] }))
+    const menu = await screen.findByRole('menu', { name: en['mode.label'] })
+    const offered = within(menu).getAllByRole('menuitemradio').map(item => item.textContent)
+    expect(offered.some(text => text?.includes(en['mode.manual']))).toBe(true)
+    expect(offered.some(text => text?.includes(en['mode.bypass']))).toBe(true)
+    // Absent because this product cannot obey them.
+    expect(offered.some(text => text?.includes(en['mode.acceptEdits']))).toBe(false)
+    expect(offered.some(text => text?.includes(en['mode.plan']))).toBe(false)
+    // And the change is honest about when it takes effect.
+    expect(within(menu).getByText(en['mode.nextTurn'])).toBeTruthy()
+  })
+
+  it('warns when a mode stops the browser being asked to approve anything', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.catalog.mockResolvedValue({
+      ok: true,
+      value: {
+        workspaces: catalog.workspaces,
+        providers: [{
+          ...catalog.providers[0]!,
+          permissionModes: [
+            { mode: 'auto', skipsApproval: false },
+            { mode: 'bypass', skipsApproval: true },
+          ],
+        }],
+      },
+    })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    fireEvent.click(await screen.findByRole('button', { name: en['mode.auto'] }))
+    // No warning while the guarded mode is active.
+    expect(screen.queryByText(en['mode.skipsApproval'])).toBeNull()
+
+    fireEvent.click(within(await screen.findByRole('menu')).getByText(en['mode.bypass']))
+    await waitFor(() => {
+      expect(fixture.sessionPermissionMode).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', mode: 'bypass' })
+    })
+    // The trigger now reads as the unguarded mode, and says so when reopened.
+    fireEvent.click(await screen.findByRole('button', { name: en['mode.bypass'] }))
+    expect(await screen.findByText(en['mode.skipsApproval'])).toBeTruthy()
+  })
+
+  it('collapses the sidebar to a rail and gives the width back to the transcript', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    await screen.findByText(en['create.heading'])
+    const body = document.querySelector('.lab-body') as HTMLElement
+    expect(body.classList.contains('lab-body--collapsed')).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: en['panel.collapseSidebar'] }))
+
+    // The layout is driven by one class, so the main column takes back exactly
+    // what the sidebar gave up.
+    await waitFor(() => { expect(body.classList.contains('lab-body--collapsed')).toBe(true) })
+    // The rail keeps a way back, so collapsing is never a dead end.
+    expect(screen.getAllByRole('button', { name: en['panel.expandSidebar'] }).length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getAllByRole('button', { name: en['panel.expandSidebar'] })[0]!)
+    await waitFor(() => { expect(body.classList.contains('lab-body--collapsed')).toBe(false) })
+    expect(screen.getByText(en['create.heading'])).toBeTruthy()
   })
 
   it('shows context usage, and degrades to a raw count without a window', async () => {

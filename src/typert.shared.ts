@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type {
   BridgeCompletion,
   BridgeContextUsage,
+  BridgePermissionModeView,
   BridgeNativeSession,
   BridgeSessionView,
   BridgeWorkspaceView,
@@ -21,12 +22,24 @@ import type {
  */
 type Exact<A, B> = [A] extends [B] ? [B] extends [A] ? true : never : never
 
+const permissionModeSchema = z.enum(['auto', 'manual', 'acceptEdits', 'plan', 'bypass'])
+
+const permissionModeViewSchema = z.object({
+  mode: permissionModeSchema,
+  skipsApproval: z.boolean(),
+}).strict()
+
+const _permissionModeViewIsExact: Exact<z.infer<typeof permissionModeViewSchema>, BridgePermissionModeView> = true
+
 const providerSchema = z.object({
   id: z.enum(['codex', 'claude', 'fake']),
   displayName: z.string(),
   installed: z.boolean(),
   version: z.string().nullable(),
   supportedRange: z.string().nullable(),
+  // `.readonly()` so the inferred type matches the view's readonly array and the
+  // exact-shape assertion below stays a real check in both directions.
+  permissionModes: z.array(permissionModeViewSchema).readonly(),
   compatibility: z.enum(['supported', 'unsupported', 'unknown']),
   health: z.enum(['not-installed', 'installed', 'unsupported', 'ready', 'auth-required', 'error']),
   message: z.string().nullable(),
@@ -77,6 +90,7 @@ const sessionSchema = z.object({
   archived: z.boolean(),
   persistenceVersion: z.number(),
   contextUsage: contextUsageSchema.nullable(),
+  permissionMode: permissionModeSchema,
 }).strict()
 
 const _sessionShapeIsExact: Exact<z.infer<typeof sessionSchema>, BridgeSessionView> = true
@@ -149,6 +163,11 @@ const nativeSessionsResultSchema = z.object({
   unavailable: z.boolean(),
 }).strict()
 
+const permissionModeRequestSchema = z.object({
+  bridgeSessionId: z.string(),
+  mode: permissionModeSchema,
+}).strict()
+
 const nativeSessionsRequestSchema = z.object({
   providerId: z.enum(['codex', 'claude', 'fake']),
   workspaceId: z.string(),
@@ -164,6 +183,7 @@ const createRequestSchema = z.object({
   workspaceId: z.string(),
   title: z.string().optional(),
   resumeLocator: z.string().optional(),
+  permissionMode: permissionModeSchema.optional(),
 }).strict()
 
 const sessionIdRequestSchema = z.object({ bridgeSessionId: z.string() }).strict()
@@ -245,4 +265,5 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('directoryAdd', [parameter('request', directoryAddRequestSchema)], workspaceSchema),
   invocation('directoryRemove', [parameter('request', directoryRequestSchema)], z.undefined()),
   invocation('directoryPublish', [parameter('request', directoryPublishRequestSchema)], workspaceSchema),
+  invocation('sessionPermissionMode', [parameter('request', permissionModeRequestSchema)], sessionSchema),
 ] as const

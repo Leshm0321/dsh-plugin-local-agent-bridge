@@ -85,6 +85,7 @@ describe('provider health projection', () => {
     installed: true,
     version: '0.144.6',
     supportedRange: '0.147.x',
+    permissionModes: [],
     message: null,
     executablePath: '/host/path/codex',
     ...overrides,
@@ -177,6 +178,7 @@ describe('Typert descriptors', () => {
       'directoryAdd',
       'directoryRemove',
       'directoryPublish',
+      'sessionPermissionMode',
     ])
     expect(LOCAL_AGENT_BRIDGE_INVOCATIONS.every(item => item.invocation.kind === 'direct')).toBe(true)
     expect(LOCAL_AGENT_BRIDGE_INVOCATIONS.filter(item => 'cancellation' in item).map(item => item.method)).toEqual([

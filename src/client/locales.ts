@@ -81,6 +81,26 @@ export const zh = {
   'usage.ofWindow': '{used} / {max}（{percent}%）',
   'usage.title': '上下文用量',
 
+  // Permission modes, worded after the Claude desktop app so the vocabulary
+  // matches what operators already know.
+  'mode.label': '模式',
+  'mode.auto': '自动',
+  'mode.auto.hint': 'Agent 自行决定权限',
+  'mode.manual': '手动',
+  'mode.manual.hint': '每次改动前都询问',
+  'mode.acceptEdits': '接受编辑',
+  'mode.acceptEdits.hint': '自动接受所有文件编辑',
+  'mode.plan': '计划',
+  'mode.plan.hint': '先制定计划再改动',
+  'mode.bypass': '跳过权限',
+  'mode.bypass.hint': '接受所有权限请求',
+  'mode.skipsApproval': '此模式下浏览器不会再收到授权请求',
+  'mode.nextTurn': '下一轮生效',
+
+  // Collapsible sidebar.
+  'panel.collapseSidebar': '收起侧栏',
+  'panel.expandSidebar': '展开侧栏',
+
   // Session list and toolbar.
   'sessions.heading': '会话',
   'sessions.empty': '选择或新建一个会话',
@@ -236,6 +256,23 @@ export const en = {
   'usage.tokens': '{used} tokens',
   'usage.ofWindow': '{used} / {max} ({percent}%)',
   'usage.title': 'Context used',
+
+  'mode.label': 'Mode',
+  'mode.auto': 'Auto',
+  'mode.auto.hint': 'The agent handles permission decisions',
+  'mode.manual': 'Manual',
+  'mode.manual.hint': 'Always ask before making changes',
+  'mode.acceptEdits': 'Accept edits',
+  'mode.acceptEdits.hint': 'Automatically accept all file edits',
+  'mode.plan': 'Plan',
+  'mode.plan.hint': 'Create a plan before making changes',
+  'mode.bypass': 'Bypass permissions',
+  'mode.bypass.hint': 'Accepts all permissions',
+  'mode.skipsApproval': 'The browser is no longer asked to approve anything in this mode',
+  'mode.nextTurn': 'Applies from the next turn',
+
+  'panel.collapseSidebar': 'Collapse sidebar',
+  'panel.expandSidebar': 'Expand sidebar',
 
   'sessions.heading': 'Sessions',
   'sessions.empty': 'Select or create a session',

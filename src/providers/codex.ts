@@ -26,6 +26,7 @@ import { redactText, redactValue } from '../core/redaction.ts'
 import type {
   BridgeCompletion,
   BridgeCompletionsResult,
+  BridgePermissionMode,
   BridgeNativeSession,
   BridgeNativeSessionsResult,
   BridgeQuestion,
@@ -158,6 +159,29 @@ const CODEX_EXECUTABLE_ENV = 'DSH_LOCAL_AGENT_CODEX_EXECUTABLE'
 
 /** How many native threads to offer for resumption; see the Claude adapter's note. */
 const NATIVE_SESSION_LIMIT = 30
+
+/**
+ * Bridge permission mode to Codex's approval policy.
+ *
+ * Only the three modes Codex can honour through this one setting. Two are
+ * deliberately absent rather than approximated:
+ *
+ * `acceptEdits` has no equivalent — Codex has no "auto-accept file edits but
+ * still ask before commands" policy, and mapping it to anything else would obey
+ * a different rule than the operator chose.
+ *
+ * `plan` exists in Codex only as a collaboration mode, whose payload requires a
+ * model and, per the protocol, takes precedence over the model, reasoning effort
+ * and developer instructions the operator configured on the Host. Silently
+ * overriding all three to set a permission mode is not a trade worth making.
+ *
+ * `never` genuinely stops Codex asking, so the browser is never prompted.
+ */
+const CODEX_APPROVAL_POLICIES: Partial<Record<BridgePermissionMode, 'untrusted' | 'on-request' | 'never'>> = {
+  auto: 'on-request',
+  manual: 'untrusted',
+  bypass: 'never',
+}
 
 /**
  * The argv that starts the Codex App Server over stdio.
@@ -465,9 +489,14 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
     const completion = Promise.withResolvers<CodexTurn>()
     state.completion = completion
     try {
+      const approvalPolicy = CODEX_APPROVAL_POLICIES[hooks.permissionMode]
       const response = object(await connection.transport.request('turn/start', {
         threadId: state.threadId as string,
         input: [{ type: 'text', text, text_elements: [] }],
+        // Omitted entirely for a mode Codex cannot express, so the product keeps
+        // whatever the operator configured on the Host rather than being handed
+        // an approximation.
+        ...approvalPolicy === undefined ? {} : { approvalPolicy },
       }, hooks.signal), 'turn/start response')
       const turn = object(response.turn, 'turn/start turn') as unknown as CodexTurn
       const turnId = string(turn.id, 'turn/start turn id')

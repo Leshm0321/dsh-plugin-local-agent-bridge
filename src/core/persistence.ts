@@ -8,6 +8,7 @@ import {
 } from '@deepseek-ai/dsh-storage-domain'
 import type {
   BridgeContextUsage,
+  BridgePermissionMode,
   BridgeEvent,
   BridgeSessionStatus,
   PendingInteractionView,
@@ -35,6 +36,8 @@ export interface PersistedBridgeSession {
    * version deliberately does not move for that.
    */
   contextUsage?: BridgeContextUsage | null
+  /** Permission mode; absent on records written before it existed. */
+  permissionMode?: BridgePermissionMode
   nextSequence: number
   events: BridgeEvent[]
   pendingInteraction: PendingInteractionView | null

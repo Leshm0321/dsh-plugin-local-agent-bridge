@@ -12,6 +12,7 @@ import type {
   BridgeInteractionRespondRequest,
   BridgeNativeSessionsRequest,
   BridgeNativeSessionsResult,
+  BridgePermissionModeRequest,
   BridgeInteractionRespondResult,
   BridgeSendResult,
   BridgeSessionArchiveRequest,
@@ -46,6 +47,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     directoryAdd: (request: BridgeDirectoryAddRequest) => Promise<RemoteResult<BridgeWorkspaceView>>
     directoryRemove: (request: BridgeDirectoryRequest) => Promise<RemoteResult<void>>
     directoryPublish: (request: BridgeDirectoryPublishRequest) => Promise<RemoteResult<BridgeWorkspaceView>>
+    sessionPermissionMode: (request: BridgePermissionModeRequest) => Promise<RemoteResult<BridgeSessionView>>
   }
 
   interface TypertRemoteMap {
@@ -81,6 +83,9 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'localAgentBridge/directoryPublish': (
       request: BridgeDirectoryPublishRequest,
     ) => Promise<RemoteResult<BridgeWorkspaceView>>
+    'localAgentBridge/sessionPermissionMode': (
+      request: BridgePermissionModeRequest,
+    ) => Promise<RemoteResult<BridgeSessionView>>
   }
 
   interface TypertRemoteNamespaceMap {

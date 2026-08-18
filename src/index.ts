@@ -9,7 +9,7 @@ import type { NativeProviderAdapter } from './core/provider.ts'
 import { BridgePersistence, type PersistedBridgeDirectory } from './core/persistence.ts'
 import { BridgeSessionEngine } from './core/session-engine.ts'
 import { BridgeError } from './core/errors.ts'
-import { discoverProvider, isAdmissible, publicProvider } from './core/version.ts'
+import { discoverProvider, isAdmissible, permissionModesFor, publicProvider } from './core/version.ts'
 import { redactText } from './core/redaction.ts'
 import { ClaudeProviderAdapter } from './providers/claude.ts'
 import { CodexProviderAdapter } from './providers/codex.ts'
@@ -23,6 +23,7 @@ import type {
   BridgeCompletionsResult,
   BridgeNativeSessionsRequest,
   BridgeNativeSessionsResult,
+  BridgePermissionModeRequest,
   BridgeInteractionRespondRequest,
   BridgeInteractionRespondResult,
   BridgeSendResult,
@@ -158,6 +159,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
         installed: true,
         version: '1.0.0',
         supportedRange: null,
+        permissionModes: permissionModesFor('fake'),
         compatibility: 'supported',
         health: 'ready',
         // The Client labels the fixture from its id; no Host sentence needed.
@@ -282,6 +284,12 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     const provider = this.providerViews.find(candidate => candidate.id === request.providerId)
     if (provider === undefined || !provider.installed) throw new BridgeError('EXECUTABLE_NOT_FOUND')
     if (provider.health !== 'ready') throw new BridgeError('UNSUPPORTED_VERSION')
+    if (
+      request.permissionMode !== undefined
+      && !permissionModesFor(request.providerId).some(entry => entry.mode === request.permissionMode)
+    ) {
+      throw new BridgeError('INVALID_REQUEST')
+    }
     return await this.requireEngine().createSession(request)
   }
 
@@ -319,6 +327,20 @@ export class LocalAgentBridgeService extends TypertRemoteService {
       return { sessions: [], unavailable: true }
     }
     return await this.requireEngine().listNativeSessions(request.providerId, request.workspaceId)
+  }
+
+  @Remote('sessionPermissionMode')
+  async sessionPermissionMode(request: BridgePermissionModeRequest): Promise<BridgeSessionView> {
+    const engine = this.requireEngine()
+    const session = engine.list(true).find(item => item.bridgeSessionId === request.bridgeSessionId)
+    if (session === undefined) throw new BridgeError('SESSION_NOT_FOUND')
+    // Refused rather than approximated: the panel only offers modes the product
+    // can honour, so a request for another one means something is out of step,
+    // and quietly storing it would show a mode the agent is not obeying.
+    if (!permissionModesFor(session.providerId).some(entry => entry.mode === request.mode)) {
+      throw new BridgeError('INVALID_REQUEST')
+    }
+    return await engine.setPermissionMode(request.bridgeSessionId, request.mode)
   }
 
   @Remote('interactionRespond')

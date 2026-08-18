@@ -183,8 +183,23 @@ export const PANEL_STYLES = `
 .lab-body {
   min-height: 0;
   display: grid;
-  grid-template-columns: 288px minmax(0, 1fr);
+  /* One variable drives the whole layout: the main column is 1fr, so it takes
+     back exactly what the sidebar gives up and nothing has to be told twice. */
+  grid-template-columns: var(--lab-aside-width, 288px) minmax(0, 1fr);
+  transition: grid-template-columns var(--lab-slow) var(--lab-ease);
 }
+@media (prefers-reduced-motion: reduce) {
+  .lab-body { transition: none }
+}
+/* Collapsed: an icon rail. Narrow enough to be a rail, wide enough for a 32px
+   control plus its breathing room. */
+.lab-body--collapsed { --lab-aside-width: 52px; }
+.lab-body--collapsed .lab-aside { padding: 10px 9px; align-items: center; }
+/* Everything except the rail's own buttons is out, not merely hidden, so the
+   collapsed rail cannot scroll or catch focus. */
+.lab-body--collapsed .lab-aside > *:not(.lab-rail) { display: none; }
+.lab-rail { display: none; }
+.lab-body--collapsed .lab-rail { display: grid; gap: 6px; }
 .lab-aside {
   min-height: 0;
   overflow-y: auto;
@@ -721,6 +736,77 @@ export const PANEL_STYLES = `
   transition: background var(--lab-fast) var(--lab-ease), color var(--lab-fast) var(--lab-ease);
 }
 .lab-icon-btn:hover { background: var(--lab-hover); color: var(--lab-danger); }
+
+/* --------------------------------------------------------- permission mode */
+
+.lab-mode { position: relative; flex: none; }
+.lab-mode-trigger {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  color: var(--lab-text-2);
+  background: var(--lab-fill);
+  border: 0;
+  border-radius: var(--lab-r-chip);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-mode-trigger:hover { background: var(--lab-fill-strong); }
+.lab-mode-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--lab-accent) 16%, transparent);
+}
+/* A mode that stops the browser being asked is worth seeing at a glance. */
+.lab-mode-trigger--unguarded { color: var(--lab-warn); background: color-mix(in srgb, var(--lab-warn) 12%, transparent); }
+
+.lab-mode-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 260px;
+  padding: 6px;
+  background: var(--lab-surface);
+  border: var(--lab-hairline) solid var(--lab-line-strong);
+  border-radius: var(--lab-r-card);
+  box-shadow: 0 8px 28px -10px rgba(0, 0, 0, .28);
+  animation: lab-palette-in var(--lab-fast) var(--lab-ease);
+}
+.lab-mode-option {
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px 10px;
+  padding: 7px 9px;
+  color: var(--lab-text);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-mode-option:hover { background: var(--lab-hover); }
+.lab-mode-name { font-size: 13px; }
+.lab-mode-hint { grid-column: 1; font-size: 11px; color: var(--lab-text-3); }
+.lab-mode-check { color: var(--lab-accent); font-size: 12px; }
+.lab-mode-warning {
+  margin: 4px 4px 2px;
+  padding: 7px 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--lab-warn);
+  background: color-mix(in srgb, var(--lab-warn) 10%, transparent);
+  border-radius: 7px;
+}
+.lab-mode-footnote { margin: 2px 9px 4px; font-size: 11px; color: var(--lab-text-3); }
 
 /* ---------------------------------------------------------- session picker */
 

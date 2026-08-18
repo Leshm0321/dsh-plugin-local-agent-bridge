@@ -5,6 +5,7 @@ import {
   type ElicitationRequest,
   type ElicitationResult,
   type Options,
+  type PermissionMode,
   type PermissionResult,
   type Query,
   type SDKMessage,
@@ -28,6 +29,7 @@ import { redactText, redactValue } from '../core/redaction.ts'
 import type {
   BridgeCompletion,
   BridgeCompletionsResult,
+  BridgePermissionMode,
   BridgeNativeSessionsResult,
   BridgeQuestion,
 } from '../types.ts'
@@ -39,6 +41,22 @@ import { claudeSpawnSpec, ManagedClaudeProcess } from './claude-process.ts'
  * operator-authored text that has to cross to the browser.
  */
 const NATIVE_SESSION_LIMIT = 30
+
+/**
+ * Bridge permission mode to the SDK's own.
+ *
+ * One-to-one: Claude Code has a native mode for each of the five the panel
+ * offers, which is why the panel's vocabulary was taken from this product in the
+ * first place. `bypass` really does disable the approval callback — the browser
+ * is not asked, because there is nothing to ask.
+ */
+const CLAUDE_PERMISSION_MODES: Record<BridgePermissionMode, PermissionMode> = {
+  auto: 'auto',
+  manual: 'default',
+  acceptEdits: 'acceptEdits',
+  plan: 'plan',
+  bypass: 'bypassPermissions',
+}
 
 interface ActiveClaudeTurn {
   readonly controller: AbortController
@@ -433,6 +451,7 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
       pathToClaudeCodeExecutable: this.executable,
       env: scrubbedParentEnv(),
       includePartialMessages: true,
+      permissionMode: CLAUDE_PERMISSION_MODES[hooks.permissionMode],
       canUseTool: permissionCallback(hooks),
       onElicitation: request => onElicitation(hooks, request),
       ...hooks.nativeSessionLocator === null ? {} : { resume: hooks.nativeSessionLocator },

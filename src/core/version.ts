@@ -1,7 +1,12 @@
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { satisfies, valid } from 'semver'
 import { type NativeCommand, nativeCommand } from './platform.ts'
-import type { NativeProviderView, ProviderCompatibility, ProviderId } from '../types.ts'
+import type {
+  BridgePermissionModeView,
+  NativeProviderView,
+  ProviderCompatibility,
+  ProviderId,
+} from '../types.ts'
 import { BridgeError } from './errors.ts'
 import { redactText } from './redaction.ts'
 
@@ -60,6 +65,7 @@ export async function discoverProvider(
       installed: false,
       version: null,
       supportedRange: VERSION_RANGES[id],
+      permissionModes: permissionModesFor(id),
       compatibility: 'unknown',
       health: 'not-installed',
       // Phrased by the Client: the browser knows which language to say
@@ -92,6 +98,7 @@ export async function discoverProvider(
       installed: true,
       version: null,
       supportedRange: VERSION_RANGES[id],
+      permissionModes: permissionModesFor(id),
       compatibility: 'unknown',
       health: 'error',
       // The product's own stderr is the only useful explanation here and the
@@ -108,12 +115,54 @@ export async function discoverProvider(
     installed: true,
     version,
     supportedRange: VERSION_RANGES[id],
+    permissionModes: permissionModesFor(id),
     compatibility,
     health: 'installed',
     // A rejected or unverifiable version is fully described by `compatibility`,
     // `version`, and `supportedRange`; the Client renders that in its locale.
     message: null,
   }
+}
+
+/**
+ * The permission modes each product can actually honour.
+ *
+ * Claude Code has a native mode for each of the five, which is why the panel took
+ * its vocabulary from that product. Codex expresses permission as an approval
+ * policy and can honour three of them; the other two are omitted rather than
+ * approximated, so a mode the panel offers is always the mode the agent obeys.
+ *
+ * `skipsApproval` marks the modes that stop the browser being asked at all — the
+ * protection this bridge exists to provide. They are offered because both
+ * products offer them, and flagged so the panel can say so.
+ */
+const PERMISSION_MODES: Record<ProviderId, readonly BridgePermissionModeView[]> = {
+  claude: [
+    { mode: 'auto', skipsApproval: false },
+    { mode: 'manual', skipsApproval: false },
+    { mode: 'acceptEdits', skipsApproval: true },
+    { mode: 'plan', skipsApproval: false },
+    { mode: 'bypass', skipsApproval: true },
+  ],
+  // Three, not five. Codex has no accept-edits policy, and its plan mode is only
+  // reachable through a collaboration payload that would override the model and
+  // reasoning effort the operator configured — see the adapter's note.
+  codex: [
+    { mode: 'auto', skipsApproval: false },
+    { mode: 'manual', skipsApproval: false },
+    { mode: 'bypass', skipsApproval: true },
+  ],
+  // The verification fixture has no permission surface to control.
+  fake: [],
+}
+
+/**
+ * Modes a product supports, for the browser's picker.
+ * @param id - the product.
+ * @returns the modes in display order.
+ */
+export function permissionModesFor(id: ProviderId): readonly BridgePermissionModeView[] {
+  return PERMISSION_MODES[id]
 }
 
 /**
@@ -139,6 +188,7 @@ export function publicProvider(
     installed: provider.installed,
     version: provider.version,
     supportedRange: provider.supportedRange,
+    permissionModes: permissionModesFor(provider.id),
     compatibility: provider.compatibility,
     health: ready
       ? 'ready'

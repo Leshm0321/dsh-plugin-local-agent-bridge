@@ -9,6 +9,7 @@ import type {
   BridgeSessionReadResult,
   BridgeCompletionsResult,
   BridgeNativeSessionsResult,
+  BridgePermissionMode,
   BridgeSessionStatus,
   BridgeSessionView,
   BridgeStatusNote,
@@ -77,6 +78,9 @@ function sessionView(record: PersistedBridgeSession): BridgeSessionView {
     archived: record.archived,
     persistenceVersion: record.persistenceVersion,
     contextUsage: record.contextUsage ?? null,
+    // `auto` is the default both products ship with, and the mode a record
+    // written before this field existed was effectively running under.
+    permissionMode: record.permissionMode ?? 'auto',
   }
 }
 
@@ -169,6 +173,7 @@ export class BridgeSessionEngine {
       // through either adapter. The bridge never inspects it — an unknown or
       // expired locator ends up `orphaned`, the same as one that stopped
       // resolving across a Host restart.
+      permissionMode: request.permissionMode ?? 'auto',
       nativeSessionLocator: request.resumeLocator === undefined
         ? null
         : redactText(request.resumeLocator, 512),
@@ -345,6 +350,27 @@ export class BridgeSessionEngine {
     }
   }
 
+  /**
+   * Set the session's permission mode, effective from its next turn.
+   *
+   * Not applied to a turn already running: both products take the setting when a
+   * turn starts, and pretending otherwise would show the operator a mode the
+   * agent is not actually obeying.
+   * @param bridgeSessionId - the session to change.
+   * @param mode - the requested mode.
+   * @returns the updated session view.
+   */
+  async setPermissionMode(
+    bridgeSessionId: string,
+    mode: BridgePermissionMode,
+  ): Promise<BridgeSessionView> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    runtime.record.permissionMode = mode
+    await this.touch(runtime)
+    return sessionView(runtime.record)
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return
     this.disposed = true
@@ -456,6 +482,7 @@ export class BridgeSessionEngine {
           bridgeTurnId: turn.bridgeTurnId,
           cwd: (await this.requireWorkspace(runtime.record.workspaceId)).cwd,
           nativeSessionLocator: runtime.record.nativeSessionLocator,
+          permissionMode: runtime.record.permissionMode ?? 'auto',
           signal: controller.signal,
           emit: event => this.append(runtime, turn.bridgeTurnId, event),
           reportContextUsage: async (usage) => {
