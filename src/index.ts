@@ -11,6 +11,7 @@ import { BridgeSessionEngine } from './core/session-engine.ts'
 import { BridgeError } from './core/errors.ts'
 import { discoverProvider, isAdmissible, permissionModesFor, publicProvider } from './core/version.ts'
 import { redactText } from './core/redaction.ts'
+import { readRepository } from './core/repository.ts'
 import { ClaudeProviderAdapter } from './providers/claude.ts'
 import { CodexProviderAdapter } from './providers/codex.ts'
 import { FakeProviderAdapter } from './providers/fake.ts'
@@ -34,6 +35,7 @@ import type {
   BridgeSessionArchiveRequest,
   BridgeSessionCreateRequest,
   BridgeSessionIdRequest,
+  BridgeRepository,
   BridgeUploadRequest,
   BridgeUploadResult,
   BridgeSessionReadRequest,
@@ -81,6 +83,13 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/**
+ * How long a repository read is reused. Long enough that polling costs nothing,
+ * short enough that a commit made in a terminal shows up while the operator is
+ * still looking at the panel.
+ */
+const REPOSITORY_CACHE_MS = 2_000
+
 export class LocalAgentBridgeService extends TypertRemoteService {
   static inject = ['subprocess', 'storageDomain', 'workspaceRegistry']
 
@@ -100,6 +109,13 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   private readonly config: ResolvedConfig
   private engine: BridgeSessionEngine | null = null
+  /**
+   * Recently read repository state per working directory.
+   *
+   * Held on the service rather than in the engine because it is a property of the
+   * Host's filesystem, shared by every session pointed at the same directory.
+   */
+  private readonly repositories = new Map<string, { at: number; status: BridgeRepository | null }>()
   private providerViews: NativeProviderView[] = []
   /**
    * Adapters handed to the engine, by the same Map reference the engine holds:
@@ -208,6 +224,17 @@ export class LocalAgentBridgeService extends TypertRemoteService {
           cwd: workspace.path,
           status: await workspace.status(),
         }
+      },
+      // Cached briefly, because the panel polls it and running two git commands
+      // per poll on a large repository is real Host work for a status line that
+      // cannot change meaningfully in that window.
+      readRepository: async (cwd) => {
+        const held = this.repositories.get(cwd)
+        const now = Date.now()
+        if (held !== undefined && now - held.at < REPOSITORY_CACHE_MS) return held.status
+        const status = await readRepository(this.ctx.subprocess, cwd)
+        this.repositories.set(cwd, { at: now, status })
+        return status
       },
     })
     yield async () => {
@@ -372,6 +399,11 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   @Remote('sessionFiles')
   async sessionFiles(request: BridgeFileSearchRequest): Promise<BridgeFileSearchResult> {
     return await this.requireEngine().searchFiles(request.bridgeSessionId, request.query)
+  }
+
+  @Remote('sessionRepository')
+  async sessionRepository(request: BridgeSessionIdRequest): Promise<BridgeRepository | null> {
+    return await this.requireEngine().describeRepository(request.bridgeSessionId)
   }
 
   @Remote('sessionUpload')

@@ -26,6 +26,7 @@ import type {
   BridgeSessionReadResult,
   BridgeSessionSendRequest,
   BridgeSessionView,
+  BridgeRepository,
   BridgeUploadRequest,
   BridgeUploadResult,
 } from './types.ts'
@@ -58,6 +59,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     sessionModels: (request: BridgeSessionIdRequest) => Promise<RemoteResult<BridgeModelsResult>>
     sessionModel: (request: BridgeModelRequest) => Promise<RemoteResult<BridgeSessionView>>
     sessionUpload: (request: BridgeUploadRequest) => Promise<RemoteResult<BridgeUploadResult>>
+    sessionRepository: (request: BridgeSessionIdRequest) => Promise<RemoteResult<BridgeRepository | null>>
   }
 
   interface TypertRemoteMap {
@@ -108,6 +110,9 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'localAgentBridge/sessionUpload': (
       request: BridgeUploadRequest,
     ) => Promise<RemoteResult<BridgeUploadResult>>
+    'localAgentBridge/sessionRepository': (
+      request: BridgeSessionIdRequest,
+    ) => Promise<RemoteResult<BridgeRepository | null>>
   }
 
   interface TypertRemoteNamespaceMap {

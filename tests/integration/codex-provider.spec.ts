@@ -11,7 +11,7 @@ import type {
   SubprocessRuntime,
   SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
-import type { BridgeContextUsage, BridgeRateLimit } from '../../src/types.ts'
+import type { BridgeContextUsage, BridgeRateLimit, BridgeTokenUsage } from '../../src/types.ts'
 import { describe, expect, it } from 'vitest'
 import { CodexProviderAdapter } from '../../src/providers/codex.ts'
 
@@ -233,6 +233,7 @@ function createHooks(options: {
   const locators: string[] = []
   const usages: BridgeContextUsage[] = []
   const limits: BridgeRateLimit[] = []
+  const tokens: BridgeTokenUsage[] = []
   const interactions: ProviderInteractionRequest[] = []
   const controller = new AbortController()
   const hooks: ProviderTurnHooks = {
@@ -248,6 +249,7 @@ function createHooks(options: {
     setNativeSessionLocator: async locator => { locators.push(locator) },
     reportContextUsage: async usage => { usages.push(usage) },
     reportRateLimit: async limit => { limits.push(limit) },
+    reportTokenUsage: async usage => { tokens.push(usage) },
     requestInteraction: async request => {
       interactions.push(request)
       return options.resolveInteraction?.(request)
@@ -256,7 +258,7 @@ function createHooks(options: {
           : { kind: 'question', answers: { mode: ['Fast'] } })
     },
   }
-  return { controller, events, hooks, interactions, limits, locators, usages }
+  return { controller, events, hooks, interactions, limits, locators, tokens, usages }
 }
 
 async function nextTask(): Promise<void> {

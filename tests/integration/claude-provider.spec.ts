@@ -17,7 +17,7 @@ import type {
   SubprocessRuntime,
   SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
-import type { BridgeContextUsage, BridgeRateLimit } from '../../src/types.ts'
+import type { BridgeContextUsage, BridgeRateLimit, BridgeTokenUsage } from '../../src/types.ts'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const sdk = vi.hoisted(() => ({ query: vi.fn() }))
@@ -81,6 +81,7 @@ function createHooks(options: {
   const locators: string[] = []
   const usages: BridgeContextUsage[] = []
   const limits: BridgeRateLimit[] = []
+  const tokens: BridgeTokenUsage[] = []
   const controller = new AbortController()
   const hooks: ProviderTurnHooks = {
     bridgeSessionId: 'bridge-session-claude',
@@ -95,6 +96,7 @@ function createHooks(options: {
     setNativeSessionLocator: async locator => { locators.push(locator) },
     reportContextUsage: async usage => { usages.push(usage) },
     reportRateLimit: async limit => { limits.push(limit) },
+    reportTokenUsage: async usage => { tokens.push(usage) },
     requestInteraction: async request => {
       interactions.push(request)
       return options.resolveInteraction?.(request)
@@ -103,7 +105,7 @@ function createHooks(options: {
           : { kind: 'question', answers: Object.fromEntries(request.questions.map(question => [question.id, ['Fast']])) })
     },
   }
-  return { controller, events, hooks, interactions, limits, locators, usages }
+  return { controller, events, hooks, interactions, limits, locators, tokens, usages }
 }
 
 function message(value: unknown): SDKMessage {

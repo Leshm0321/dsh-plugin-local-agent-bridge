@@ -7,6 +7,8 @@ import type {
   BridgeNativeSession,
   BridgePermissionModeView,
   BridgeRateLimit,
+  BridgeRepository,
+  BridgeTokenUsage,
   BridgeSessionView,
   BridgeWorkspaceView,
   NativeProviderView,
@@ -99,6 +101,28 @@ const rateLimitSchema = z.object({
 
 const _rateLimitShapeIsExact: Exact<z.infer<typeof rateLimitSchema>, BridgeRateLimit> = true
 
+const tokenUsageSchema = z.object({
+  input: z.number(),
+  output: z.number(),
+  cacheRead: z.number(),
+  cacheWrite: z.number(),
+  total: z.number(),
+}).strict()
+
+const _tokenUsageShapeIsExact: Exact<z.infer<typeof tokenUsageSchema>, BridgeTokenUsage> = true
+
+const repositorySchema = z.object({
+  branch: z.string().nullable(),
+  detached: z.boolean(),
+  upstream: z.string().nullable(),
+  ahead: z.number(),
+  behind: z.number(),
+  added: z.number(),
+  removed: z.number(),
+}).strict()
+
+const _repositoryShapeIsExact: Exact<z.infer<typeof repositorySchema>, BridgeRepository> = true
+
 const sessionStatusSchema = z.enum([
   'creating', 'idle', 'running', 'awaiting-approval', 'awaiting-answer',
   'cancelling', 'disconnected', 'auth-required', 'failed', 'orphaned',
@@ -122,6 +146,7 @@ const sessionSchema = z.object({
   model: z.string().nullable(),
   effort: z.string().nullable(),
   rateLimits: z.array(rateLimitSchema).readonly(),
+  tokenUsage: tokenUsageSchema.nullable(),
 }).strict()
 
 const _sessionShapeIsExact: Exact<z.infer<typeof sessionSchema>, BridgeSessionView> = true
@@ -338,4 +363,5 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('sessionModels', [parameter('request', sessionIdRequestSchema)], modelsResultSchema),
   invocation('sessionModel', [parameter('request', modelRequestSchema)], sessionSchema),
   invocation('sessionUpload', [parameter('request', uploadRequestSchema)], uploadResultSchema),
+  invocation('sessionRepository', [parameter('request', sessionIdRequestSchema)], repositorySchema.nullable()),
 ] as const

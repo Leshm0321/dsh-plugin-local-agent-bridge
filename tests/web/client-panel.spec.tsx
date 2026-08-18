@@ -27,6 +27,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
  */
 const ICON_STUBS = vi.hoisted(() => [
   'IconArchiveOutline20',
+  'IconBranchOutline16',
   'IconCloseOutline16',
   'IconCodeOutline16',
   'IconDataOutline16',
@@ -106,6 +107,7 @@ const session: BridgeSessionView = {
   model: null,
   effort: null,
   rateLimits: [],
+  tokenUsage: null,
 }
 
 const catalog: BridgeCatalogResult = {
@@ -208,6 +210,10 @@ class RemoteFixture {
   readonly sessionFiles = vi.fn(async (_request: { bridgeSessionId: string; query: string }) => ({
     ok: true as const,
     value: { matches: [] as { path: string; name: string; directory: boolean }[], partial: false },
+  }))
+  readonly sessionRepository = vi.fn(async (_request: { bridgeSessionId: string }) => ({
+    ok: true as const,
+    value: null as { branch: string | null; detached: boolean; upstream: string | null; ahead: number; behind: number; added: number; removed: number } | null,
   }))
   readonly sessionUpload = vi.fn(async (_request: {
     bridgeSessionId: string
@@ -1800,5 +1806,57 @@ describe('LocalAgentPanel', () => {
     fireEvent.change(input)
 
     expect(await screen.findByText(en['attach.rejected'].replace('{count}', '2'))).toBeTruthy()
+  })
+
+  it('shows the branch, the change size, and that a branch tracks nothing', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.sessionRepository.mockResolvedValue({
+      ok: true,
+      value: { branch: 'master', detached: false, upstream: null, ahead: 0, behind: 0, added: 1754, removed: 87 },
+    })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    expect(await screen.findByText('master')).toBeTruthy()
+    // Compacted the way a status line has to be, so the width stops moving.
+    expect(screen.getByText('+1.8k')).toBeTruthy()
+    expect(screen.getByText('−87')).toBeTruthy()
+    // Said out loud rather than left blank: pushing from an untracked branch is a
+    // different act, and finding out afterwards is the wrong time.
+    expect(screen.getByText(en['repo.noUpstream'])).toBeTruthy()
+  })
+
+  it('shows nothing about a directory that is not a repository', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    await waitFor(() => { expect(fixture.sessionRepository).toHaveBeenCalled() })
+    // No invented branch, and no empty chrome where one would go.
+    expect(screen.queryByText(en['repo.noUpstream'])).toBeNull()
+  })
+
+  it('shows the session’s token total, with the breakdown on hover', async () => {
+    const spent: BridgeSessionView = {
+      ...session,
+      tokenUsage: { input: 3_300, output: 1_600_000, cacheRead: 758_700_000, cacheWrite: 12_000, total: 760_300_000 },
+    }
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [spent] })
+    fixture.pushRead(snapshot({ session: spent, events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const total = await screen.findByText(en['spend.total'].replace('{count}', '760.3M'))
+    // One figure on screen, because that is the one an operator watches; the split
+    // is what explains it and belongs in the tooltip rather than competing with the
+    // context meter beside it.
+    const title = total.getAttribute('title') ?? ''
+    expect(title).toContain(en['spend.input'].replace('{count}', '3.3k'))
+    expect(title).toContain(en['spend.cacheRead'].replace('{count}', '758.7M'))
+    // Cache reads and writes stay apart: they price differently in both products.
+    expect(title).toContain(en['spend.cacheWrite'].replace('{count}', '12k'))
   })
 })

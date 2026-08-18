@@ -159,10 +159,24 @@ The controls around the box follow each product's own composer:
 
 | Position | Shows |
 | --- | --- |
-| Above, left | The working directory the agent runs in |
-| Above, right | Context consumed, as the product reports it |
+| Above, left | Working directory, branch, and lines changed |
+| Above, right | Tokens spent, and how full the context is |
 | Below, left | Permission mode, a file button, and dictation |
 | Below, right | Usage allowance, model, and send |
+
+**The status line above the box** answers what a terminal answers at a glance.
+Branch and change size come from `git status --porcelain=v2` and `git diff
+--numstat HEAD`, run on the Host with no inherited environment and with terminal
+prompts and index locks disabled, so a status read can neither block on a
+credential nor fight your own terminal. A directory that is not a repository, or a
+Host without git, simply shows nothing. A detached HEAD names its commit and says
+so; a branch tracking nothing says that too, because finding out after a push is
+the wrong time.
+
+Tokens spent is the running total for the session, with input, output, cache reads
+and cache writes on hover. It is a different question from the context meter beside
+it — one only grows, the other moves both ways as the session compacts — which is
+why both are there.
 
 **The file button** offers both machines, because the browser is not always on the
 Host:

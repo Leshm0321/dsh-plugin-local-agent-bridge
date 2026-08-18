@@ -928,6 +928,22 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
         // Codex reports the model on the thread, not here.
         model: null,
       })
+      // The same notification carries the running total, which is a different
+      // fact from how full the window is: one only grows, the other moves both
+      // ways as the thread compacts.
+      const count = (key: string): number => {
+        const value = readProperty(total, key)
+        return typeof value === 'number' && value > 0 ? value : 0
+      }
+      await hooks.reportTokenUsage({
+        input: count('inputTokens'),
+        output: count('outputTokens'),
+        cacheRead: count('cachedInputTokens'),
+        cacheWrite: count('cacheWriteInputTokens'),
+        // The product's own total, not a sum of the parts: Codex counts reasoning
+        // output separately and adding the fields would double it.
+        total: used,
+      })
       return
     }
     if (method === 'item/agentMessage/delta') {

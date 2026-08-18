@@ -134,6 +134,18 @@ export const zh = {
   'dictate.stop': '停止语音输入',
   'dictate.note': '由浏览器完成识别；Chrome 会将音频上传到它自己的服务转写。',
 
+  // Working directory's repository, and what the session has spent — the two
+  // facts a terminal status line shows without being asked.
+  'repo.noUpstream': '无上游分支',
+  'repo.detached': '游离 HEAD（不在任何分支上）',
+  'repo.tracking': '跟踪 {upstream}',
+  'spend.title': '本会话累计消耗',
+  'spend.total': '合计 {count}',
+  'spend.input': '输入 {count}',
+  'spend.output': '输出 {count}',
+  'spend.cacheRead': '缓存读取 {count}',
+  'spend.cacheWrite': '缓存写入 {count}',
+
   // Collapsible sidebar.
   'panel.collapseSidebar': '收起侧栏',
   'panel.expandSidebar': '展开侧栏',
@@ -354,6 +366,16 @@ export const en = {
   'dictate.start': 'Dictate',
   'dictate.stop': 'Stop dictating',
   'dictate.note': 'Transcribed by the browser; Chrome uploads the audio to its own service.',
+
+  'repo.noUpstream': 'no upstream',
+  'repo.detached': 'Detached HEAD — not on a branch',
+  'repo.tracking': 'tracking {upstream}',
+  'spend.title': 'Spent in this session',
+  'spend.total': '{count} total',
+  'spend.input': '{count} input',
+  'spend.output': '{count} output',
+  'spend.cacheRead': '{count} cache read',
+  'spend.cacheWrite': '{count} cache write',
 
   'panel.collapseSidebar': 'Collapse sidebar',
   'panel.expandSidebar': 'Expand sidebar',

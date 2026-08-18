@@ -3,6 +3,7 @@ import type {
   BridgeContextUsage,
   BridgeModelsResult,
   BridgeRateLimit,
+  BridgeTokenUsage,
   BridgePermissionMode,
   BridgeNativeSessionsResult,
   BridgeEvent,
@@ -75,6 +76,16 @@ export interface ProviderTurnHooks {
    * @param limit - one allowance, as the product reported it.
    */
   reportRateLimit(limit: BridgeRateLimit): Promise<void>
+  /**
+   * Record the session's accumulated token spend.
+   *
+   * Separate from `reportContextUsage` because the two are different facts from
+   * different places: Claude Code reports spend on the turn's result message and
+   * context on a control request, while Codex pushes both in one notification but
+   * distinguishes the window from the running total.
+   * @param usage - totals as the product counts them.
+   */
+  reportTokenUsage(usage: BridgeTokenUsage): Promise<void>
   requestInteraction(request: ProviderInteractionRequest): Promise<ProviderInteractionResolution>
 }
 

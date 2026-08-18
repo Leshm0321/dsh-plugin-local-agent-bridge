@@ -12,6 +12,7 @@ import type {
   BridgePermissionMode,
   BridgeRateLimit,
   BridgeSessionStatus,
+  BridgeTokenUsage,
   PendingInteractionView,
   ProviderId,
 } from '../types.ts'
@@ -52,6 +53,8 @@ export interface PersistedBridgeSession {
    * it as the last thing the product said, not as live truth.
    */
   rateLimits?: BridgeRateLimit[]
+  /** Accumulated token spend; absent on records written before it existed. */
+  tokenUsage?: BridgeTokenUsage | null
   nextSequence: number
   events: BridgeEvent[]
   pendingInteraction: PendingInteractionView | null

@@ -8,6 +8,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import {
   IconArchiveOutline20,
+  IconBranchOutline16,
   IconCloseOutline16,
   IconCodeOutline16,
   IconDataOutline16,
@@ -46,6 +47,8 @@ import type {
   BridgePermissionModeView,
   BridgeQuestion,
   BridgeRateLimit,
+  BridgeRepository,
+  BridgeTokenUsage,
   BridgeSessionStatus,
   BridgeSessionView,
   BridgeStatusNote,
@@ -86,6 +89,14 @@ const BUSY_STATUSES: readonly BridgeSessionStatus[] = [
  * authority — this is a courtesy, not a control.
  */
 const UPLOAD_FILE_LIMIT = 8 * 1024 * 1024
+
+/**
+ * How often the repository status is re-read.
+ *
+ * Slow enough that it is invisible work, fast enough that a commit made in a
+ * terminal shows up while the operator is still looking at the panel.
+ */
+const REPOSITORY_POLL_MS = 10_000
 
 
 /**
@@ -654,6 +665,78 @@ function ContextUsage({ usage, t }: { usage: BridgeContextUsage; t: PanelTransla
           />
         </span>
       )}
+    </span>
+  )
+}
+
+/**
+ * The working directory's branch and how much has changed in it.
+ *
+ * The thing a terminal shows without being asked, and the thing a browser panel
+ * otherwise cannot: an agent editing a repository, with no indication of where
+ * those edits are landing. Absent entirely when the directory is not a repository,
+ * because inventing a branch would be worse than showing none.
+ *
+ * A detached HEAD says so rather than displaying a commit as though it were a
+ * branch, and a branch tracking nothing says that too — pushing from a detached
+ * HEAD or an untracked branch is a different act, and finding out afterwards is
+ * the wrong time.
+ */
+function Repository({ repository, t }: { repository: BridgeRepository; t: PanelTranslate }) {
+  const { branch, detached, upstream, ahead, behind, added, removed } = repository
+  if (branch === null) return null
+  const divergence = upstream === null
+    ? t('repo.noUpstream')
+    : [
+      ahead > 0 ? `↑${ahead}` : null,
+      behind > 0 ? `↓${behind}` : null,
+    ].filter(part => part !== null).join(' ')
+  return (
+    <span
+      className={`lab-repo${detached ? ' lab-repo--detached' : ''}`}
+      title={[
+        detached ? t('repo.detached') : branch,
+        upstream === null ? t('repo.noUpstream') : t('repo.tracking', { upstream }),
+      ].join(' · ')}
+    >
+      <IconBranchOutline16 size={13} />
+      <span className="lab-repo-branch">{branch}</span>
+      {(added > 0 || removed > 0) && (
+        <span className="lab-repo-diff">
+          <span className="lab-repo-added">+{formatTokens(added)}</span>
+          <span className="lab-repo-removed">−{formatTokens(removed)}</span>
+        </span>
+      )}
+      {divergence.length > 0 && <span className="lab-repo-track">{divergence}</span>}
+    </span>
+  )
+}
+
+/**
+ * What the session has spent, as a total with the breakdown on hover.
+ *
+ * One number on screen because that is the one an operator watches; the split
+ * between fresh input, output, and cache is what explains it, and it earns a
+ * tooltip rather than four more figures competing with the context meter beside it.
+ *
+ * Cache reads are kept separate from cache writes because they price differently in
+ * both products — folding them together would hide the thing that makes a long
+ * session affordable.
+ */
+function TokenSpend({ usage, t }: { usage: BridgeTokenUsage; t: PanelTranslate }) {
+  if (usage.total === 0) return null
+  return (
+    <span
+      className="lab-spend"
+      title={[
+        t('spend.title'),
+        t('spend.input', { count: formatTokens(usage.input) }),
+        t('spend.output', { count: formatTokens(usage.output) }),
+        t('spend.cacheRead', { count: formatTokens(usage.cacheRead) }),
+        t('spend.cacheWrite', { count: formatTokens(usage.cacheWrite) }),
+      ].join('\n')}
+    >
+      {t('spend.total', { count: formatTokens(usage.total) })}
     </span>
   )
 }
@@ -1480,6 +1563,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
   const [attachBusy, setAttachBusy] = useState(false)
   const [attachFiles, setAttachFiles] = useState<BridgeFileSearchResult>({ matches: [], partial: false })
   const attachRoot = useRef<HTMLSpanElement>(null)
+  const [repository, setRepository] = useState<BridgeRepository | null>(null)
   const [attachSource, setAttachSource] = useState<AttachSource>('workspace')
   const [uploading, setUploading] = useState(false)
   const [uploadRejected, setUploadRejected] = useState(0)
@@ -1620,6 +1704,31 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
     setAttachSource('workspace')
     setUploadRejected(0)
   }, [selectedId])
+
+  /**
+   * Poll the working directory's repository state.
+   *
+   * On a timer rather than with the transcript, because it changes for reasons the
+   * bridge never sees — a commit made in a terminal, a branch switched by hand —
+   * and folding it into the long-poll would tie a filesystem read to a request
+   * that deliberately waits. The Host caches briefly, so the interval costs little.
+   */
+  useEffect(() => {
+    if (!open || selectedId === undefined) {
+      setRepository(null)
+      return
+    }
+    let cancelled = false
+    const read = (): void => {
+      void remote.sessionRepository({ bridgeSessionId: selectedId })
+        .then(unwrap)
+        .then(next => { if (!cancelled) setRepository(next) })
+        .catch(() => { if (!cancelled) setRepository(null) })
+    }
+    read()
+    const timer = setInterval(read, REPOSITORY_POLL_MS)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [open, remote, selectedId])
 
   const draftTrigger = completionTrigger(draft)
 
@@ -2057,7 +2166,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
     setUploading(true)
     try {
       const files: { path: string; contentBase64: string }[] = []
-      for (const file of [...picked]) {
+      for (const file of picked) {
         if (file.size > UPLOAD_FILE_LIMIT) continue
         const encoded = await new Promise<string | null>((resolve) => {
           const reader = new FileReader()
@@ -2440,15 +2549,23 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                       its context is gone — the two facts that frame everything
                       typed below them. */}
                   <div className="lab-composer-head">
-                    {snapshot !== undefined && (
-                      <span className="lab-cwd" title={t('cwd.label')}>
-                        <IconFolderOpenOutline16 size={14} />
-                        <span className="lab-cwd-name">{snapshot.session.workspaceTitle}</span>
-                      </span>
-                    )}
-                    {snapshot?.session.contextUsage !== null && snapshot !== undefined && (
-                      <ContextUsage usage={snapshot.session.contextUsage} t={t} />
-                    )}
+                    <span className="lab-composer-where">
+                      {snapshot !== undefined && (
+                        <span className="lab-cwd" title={t('cwd.label')}>
+                          <IconFolderOpenOutline16 size={14} />
+                          <span className="lab-cwd-name">{snapshot.session.workspaceTitle}</span>
+                        </span>
+                      )}
+                      {repository !== null && <Repository repository={repository} t={t} />}
+                    </span>
+                    <span className="lab-composer-cost">
+                      {snapshot?.session.tokenUsage !== null && snapshot !== undefined && (
+                        <TokenSpend usage={snapshot.session.tokenUsage} t={t} />
+                      )}
+                      {snapshot?.session.contextUsage !== null && snapshot !== undefined && (
+                        <ContextUsage usage={snapshot.session.contextUsage} t={t} />
+                      )}
+                    </span>
                   </div>
                   <textarea
                     className="lab-textarea"

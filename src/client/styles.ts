@@ -710,6 +710,31 @@ export const PANEL_STYLES = `
   margin-bottom: 7px;
   min-width: 0;
 }
+/* Two clusters that each shrink before the row wraps: where the work is on the
+   left, what it has cost on the right. */
+.lab-composer-where { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.lab-composer-cost { display: flex; align-items: center; gap: 10px; flex: none; }
+
+.lab-repo {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  font-size: 11px;
+  font-family: var(--lab-mono);
+  color: var(--lab-text-3);
+  white-space: nowrap;
+}
+/* A detached HEAD is worth noticing before committing to it. */
+.lab-repo--detached { color: var(--lab-warn); }
+.lab-repo-branch { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.lab-repo-diff { display: inline-flex; gap: 4px; }
+.lab-repo-added { color: var(--lab-success); }
+.lab-repo-removed { color: var(--lab-danger); }
+.lab-repo-track { opacity: .75; }
+
+.lab-spend { font-size: 11px; font-family: var(--lab-mono); color: var(--lab-text-3); white-space: nowrap; }
+
 .lab-cwd {
   display: inline-flex;
   align-items: center;

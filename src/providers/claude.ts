@@ -6,6 +6,7 @@ import {
   type ElicitationResult,
   type EffortLevel,
   type ModelInfo,
+  type ModelUsage,
   type Options,
   type PermissionMode,
   type PermissionResult,
@@ -390,6 +391,9 @@ async function projectMessage(
   }
   if (message.type !== 'result') return
   projection.sawResult = true
+  // Reported before the error branches below, because a turn that failed still
+  // spent tokens and the operator should see them.
+  await reportSpend(message.modelUsage, hooks)
   if (message.subtype !== 'success' || message.is_error) {
     const detail = message.subtype === 'success' ? message.result : message.errors.join('; ')
     throw /auth|oauth|login/i.test(detail)
@@ -428,6 +432,43 @@ async function reportUsage(query: Query, hooks: ProviderTurnHooks): Promise<void
     usedTokens: usage.totalTokens,
     maxTokens: usage.maxTokens > 0 ? usage.maxTokens : null,
     model: usage.model.length === 0 ? null : usage.model,
+  })
+}
+
+/**
+ * Report what the turn cost, summed across every model it used.
+ *
+ * Summed rather than reported per model: a turn can involve a subagent on a
+ * different model, and the operator's question is what the session has spent, not
+ * how it was distributed. `modelUsage` is used rather than the flat `usage` field
+ * because it names cache reads and cache writes separately, which is the
+ * distinction that makes a long session's cost legible.
+ *
+ * The SDK gives no running total for the session, so the sum of the parts is the
+ * total here — unlike Codex, which counts reasoning output separately and reports
+ * its own.
+ * @param usage - the result message's per-model usage.
+ * @param hooks - the turn's hooks, for reporting back.
+ */
+async function reportSpend(
+  usage: Record<string, ModelUsage> | undefined,
+  hooks: ProviderTurnHooks,
+): Promise<void> {
+  if (usage === undefined) return
+  const entries = Object.values(usage)
+  if (entries.length === 0) return
+  const sum = (read: (entry: ModelUsage) => number): number =>
+    entries.reduce((carry, entry) => carry + Math.max(0, read(entry)), 0)
+  const input = sum(entry => entry.inputTokens)
+  const output = sum(entry => entry.outputTokens)
+  const cacheRead = sum(entry => entry.cacheReadInputTokens)
+  const cacheWrite = sum(entry => entry.cacheCreationInputTokens)
+  await hooks.reportTokenUsage({
+    input,
+    output,
+    cacheRead,
+    cacheWrite,
+    total: input + output + cacheRead + cacheWrite,
   })
 }
 

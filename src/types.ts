@@ -255,6 +255,53 @@ export interface BridgeRateLimit {
   readonly resetsAt: number | null
 }
 
+/**
+ * Accumulated token spend the product has reported for the session.
+ *
+ * Distinct from `BridgeContextUsage`, which is how full the current window is.
+ * This is what the session has cost since it started, and it only goes up — the
+ * two answer different questions and a reader wants both.
+ *
+ * Cache reads and writes are kept apart because they price differently in both
+ * products, and folding them into one number would hide the thing that makes a
+ * long session affordable.
+ */
+export interface BridgeTokenUsage {
+  readonly input: number
+  readonly output: number
+  readonly cacheRead: number
+  readonly cacheWrite: number
+  /**
+   * The product's own total where it reports one, else the sum of the parts. Kept
+   * as a field rather than computed in the browser so a product that counts
+   * differently — Codex tracks reasoning output separately — is reported as it
+   * counts rather than re-added incorrectly.
+   */
+  readonly total: number
+}
+
+/**
+ * Version-control state of the session's working directory.
+ *
+ * The question a terminal answers at a glance and a browser panel otherwise
+ * cannot: which branch this is, and how much has changed. Read by running `git`,
+ * so a directory that is not a repository or a Host without git simply reports
+ * nothing.
+ */
+export interface BridgeRepository {
+  /** Branch name, or the short commit for a detached HEAD, or null for an unborn branch. */
+  readonly branch: string | null
+  /** True when HEAD is not on a branch. */
+  readonly detached: boolean
+  /** Upstream branch as git names it, or null when the branch tracks nothing. */
+  readonly upstream: string | null
+  readonly ahead: number
+  readonly behind: number
+  /** Lines added since HEAD, staged and unstaged together. */
+  readonly added: number
+  readonly removed: number
+}
+
 export interface BridgeSessionView {
   readonly bridgeSessionId: string
   readonly providerId: ProviderId
@@ -293,6 +340,12 @@ export interface BridgeSessionView {
    * subscription.
    */
   readonly rateLimits: readonly BridgeRateLimit[]
+  /**
+   * Tokens the session has consumed in total, or null before the product has
+   * reported any. Carried on the session for the same reason as the context
+   * figure: it arrives with every read the browser already makes.
+   */
+  readonly tokenUsage: BridgeTokenUsage | null
 }
 
 export interface BridgeTurnView {

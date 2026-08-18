@@ -13,6 +13,7 @@ import type {
   BridgeNativeSessionsResult,
   BridgePermissionMode,
   BridgeRateLimit,
+  BridgeRepository,
   BridgeUploadInput,
   BridgeUploadResult,
   BridgeSessionStatus,
@@ -52,6 +53,13 @@ export interface SessionEngineOptions {
   readonly resolveWorkspace: (workspaceId: string) => Promise<ResolvedBridgeWorkspace | undefined>
   readonly eventRetention?: number
   readonly longPollMaxMs?: number
+  /**
+   * Reads a working directory's version-control state, when the composition can.
+   *
+   * Optional so a Profile without a process runtime — or a test — simply reports no
+   * repository rather than the engine depending on one.
+   */
+  readonly readRepository?: (cwd: string) => Promise<BridgeRepository | null>
 }
 
 interface PendingResolution {
@@ -91,6 +99,7 @@ function sessionView(record: PersistedBridgeSession): BridgeSessionView {
     model: record.model ?? null,
     effort: record.effort ?? null,
     rateLimits: record.rateLimits ?? [],
+    tokenUsage: record.tokenUsage ?? null,
   }
 }
 
@@ -148,6 +157,7 @@ export class BridgeSessionEngine {
   private readonly persistence: BridgePersistence
   private readonly providers: ReadonlyMap<ProviderId, NativeProviderAdapter>
   private readonly resolveWorkspace: SessionEngineOptions['resolveWorkspace']
+  private readonly readRepository: SessionEngineOptions['readRepository']
   private readonly eventRetention: number
   private readonly longPollMaxMs: number
   private readonly sessions = new Map<string, RuntimeSession>()
@@ -157,6 +167,7 @@ export class BridgeSessionEngine {
     this.persistence = options.persistence
     this.providers = options.providers
     this.resolveWorkspace = options.resolveWorkspace
+    this.readRepository = options.readRepository
     this.eventRetention = options.eventRetention ?? DEFAULT_EVENT_RETENTION
     this.longPollMaxMs = options.longPollMaxMs ?? DEFAULT_LONG_POLL_MAX_MS
   }
@@ -214,6 +225,7 @@ export class BridgeSessionEngine {
       model: null,
       effort: null,
       rateLimits: [],
+      tokenUsage: null,
       nativeSessionLocator: request.resumeLocator === undefined
         ? null
         : redactText(request.resumeLocator, 512),
@@ -503,6 +515,28 @@ export class BridgeSessionEngine {
     return await receiveUploads(workspace.cwd, files)
   }
 
+  /**
+   * Version-control state of the session's working directory.
+   *
+   * Injected rather than run here, the same way workspace resolution is: the
+   * engine has no process runtime and should not grow one for a status line, and
+   * a test can then describe a repository without needing git on the machine.
+   * @param bridgeSessionId - the session whose directory to read.
+   * @returns the repository state, or null when there is none to report.
+   */
+  async describeRepository(bridgeSessionId: string): Promise<BridgeRepository | null> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    if (this.readRepository === undefined) return null
+    const workspace = await this.requireWorkspace(runtime.record.workspaceId)
+    try {
+      return await this.readRepository(workspace.cwd)
+    } catch {
+      // A status line is not worth an error banner.
+      return null
+    }
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return
     this.disposed = true
@@ -624,6 +658,17 @@ export class BridgeSessionEngine {
               usedTokens: Math.max(0, Math.trunc(usage.usedTokens)),
               maxTokens: usage.maxTokens === null ? null : Math.max(0, Math.trunc(usage.maxTokens)),
               model: usage.model === null ? null : redactText(usage.model, 128),
+            }
+            await this.touch(runtime)
+          },
+          reportTokenUsage: async (usage) => {
+            const whole = (value: number): number => Math.max(0, Math.trunc(value))
+            runtime.record.tokenUsage = {
+              input: whole(usage.input),
+              output: whole(usage.output),
+              cacheRead: whole(usage.cacheRead),
+              cacheWrite: whole(usage.cacheWrite),
+              total: whole(usage.total),
             }
             await this.touch(runtime)
           },
