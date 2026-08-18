@@ -35,6 +35,16 @@ export const zh = {
   'create.submit': '创建会话',
   'create.busy': '正在创建…',
 
+  // Workspace registration, performed inside this panel.
+  'workspace.add': '添加工作区',
+  'workspace.add.hint': '注册主机上一个已存在的目录，Agent 将在其中运行。',
+  'workspace.path.placeholder': '主机上的绝对路径',
+  'workspace.add.submit': '添加',
+  'workspace.add.busy': '正在添加…',
+  'workspace.browse': '浏览…',
+  'workspace.empty': '尚未注册任何工作区。添加一个即可创建会话。',
+  'workspace.missingDir': '目录已不存在',
+
   // Session list and toolbar.
   'sessions.heading': '会话',
   'sessions.empty': '选择或新建一个会话',
@@ -131,6 +141,15 @@ export const en = {
   'create.workspace.placeholder': 'Select workspace',
   'create.submit': 'Create session',
   'create.busy': 'Creating…',
+
+  'workspace.add': 'Add workspace',
+  'workspace.add.hint': 'Register an existing directory on the Host for the agent to work in.',
+  'workspace.path.placeholder': 'Absolute path on the Host',
+  'workspace.add.submit': 'Add',
+  'workspace.add.busy': 'Adding…',
+  'workspace.browse': 'Browse…',
+  'workspace.empty': 'No workspace registered yet. Add one to create a session.',
+  'workspace.missingDir': 'Directory is gone',
 
   'sessions.heading': 'Sessions',
   'sessions.empty': 'Select or create a session',

@@ -55,9 +55,27 @@ type PanelTranslate = TranslateNS<'local-agent-bridge'>
 
 export type LocalAgentRemote = TypertRemoteNamespaceMap['localAgentBridge']
 
+/**
+ * Registering a Workspace is a DSH-core capability, not a bridge one: the
+ * bridge only ever consumes the registry the Host already owns. The panel
+ * reaches it through this seam so it can offer the step in place, instead of
+ * sending the operator to the sidebar and back.
+ */
+interface WorkspaceRegistrar {
+  /** Register an existing Host path; resolves once the registry has it. */
+  create(path: string): Promise<void>
+  /**
+   * Open whichever directory chooser the active Profile composed, or return
+   * null when the operator cancelled. Absent when the Profile composed no
+   * picker at all, in which case the panel offers only the path field.
+   */
+  pick?: () => Promise<string | null>
+}
+
 interface LocalAgentPanelFace {
   readonly remote: LocalAgentRemote
   readonly t: PanelTranslate
+  readonly workspaces: WorkspaceRegistrar
 }
 
 type LocalAgentPanelProps = PropsRuntime<'sidebar.footer.action'> & InjectFace<LocalAgentPanelFace>
@@ -416,7 +434,7 @@ function InteractionCard({
   )
 }
 
-export function LocalAgentPanel({ wide, remote, t }: LocalAgentPanelProps) {
+export function LocalAgentPanel({ wide, remote, t, workspaces }: LocalAgentPanelProps) {
   const [open, setOpen] = useState(false)
   const [catalog, setCatalog] = useState<BridgeCatalogResult>()
   const [sessions, setSessions] = useState<BridgeSessionView[]>([])
@@ -427,6 +445,8 @@ export function LocalAgentPanel({ wide, remote, t }: LocalAgentPanelProps) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  const [workspacePath, setWorkspacePath] = useState('')
+  const [addingWorkspace, setAddingWorkspace] = useState(false)
   const sequence = useRef(0)
 
   const refresh = async (): Promise<void> => {
@@ -491,7 +511,49 @@ export function LocalAgentPanel({ wide, remote, t }: LocalAgentPanelProps) {
   // Host already computed an exact diagnosis; dropping these rows from the UI
   // left the operator watching a product vanish with no explanation.
   const blockedProviders = allProviders.filter(provider => provider.health !== 'ready')
-  const readyWorkspaces = catalog?.workspaces.filter(workspace => workspace.status === 'ok') ?? []
+  const allWorkspaces = catalog?.workspaces ?? []
+  const readyWorkspaces = allWorkspaces.filter(workspace => workspace.status === 'ok')
+
+  /**
+   * Register a Host directory as a Workspace and select it, so the operator can
+   * go from an empty registry to a running session without leaving the panel.
+   * The path is resolved and validated on the Host; the browser only carries
+   * the string the operator typed or the picker returned.
+   * @param path - absolute Host path; blank input is ignored.
+   */
+  const addWorkspace = async (path: string): Promise<void> => {
+    const target = path.trim()
+    if (target.length === 0) return
+    setAddingWorkspace(true)
+    setError(undefined)
+    try {
+      await workspaces.create(target)
+      // The bridge reads the registry through its own catalog, so the new
+      // Workspace only exists for this panel once the catalog is re-read.
+      const nextCatalog = unwrap(await remote.catalog())
+      setCatalog(nextCatalog)
+      const added = nextCatalog.workspaces.find(workspace => workspace.title === target.split(/[\\/]/).filter(Boolean).at(-1))
+        ?? nextCatalog.workspaces.at(-1)
+      if (added !== undefined && added.status === 'ok') setWorkspaceId(added.id)
+      setWorkspacePath('')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setAddingWorkspace(false)
+    }
+  }
+
+  /** Open the Profile's directory chooser, then register whatever it returned. */
+  const browseWorkspace = async (): Promise<void> => {
+    if (workspaces.pick === undefined) return
+    setError(undefined)
+    try {
+      const picked = await workspaces.pick()
+      if (picked !== null) await addWorkspace(picked)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
 
   const createSession = async (): Promise<void> => {
     if (providerId === undefined || workspaceId === undefined) return
@@ -562,13 +624,51 @@ export function LocalAgentPanel({ wide, remote, t }: LocalAgentPanelProps) {
                     <label style={styles.label}>{t('create.workspace')}
                       <select style={styles.input} value={workspaceId ?? ''} onChange={event => { setWorkspaceId(event.target.value) }}>
                         <option value="" disabled>{t('create.workspace.placeholder')}</option>
-                        {readyWorkspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.title}</option>)}
+                        {allWorkspaces.map(workspace => (
+                          <option key={workspace.id} value={workspace.id} disabled={workspace.status !== 'ok'}>
+                            {workspace.status === 'ok' ? workspace.title : `${workspace.title} — ${t('workspace.missingDir')}`}
+                          </option>
+                        ))}
                       </select>
                     </label>
                     <ActionButton primary disabled={busy || providerId === undefined || workspaceId === undefined} onClick={() => { void createSession() }}>
                       {busy ? t('create.busy') : t('create.submit')}
                     </ActionButton>
                   </div>
+                </div>
+
+                <div style={{ ...styles.card, marginBottom: 14 }}>
+                  <strong>{t('workspace.add')}</strong>
+                  <small style={{ ...styles.muted, display: 'block', margin: '5px 0 9px' }}>
+                    {readyWorkspaces.length === 0 ? t('workspace.empty') : t('workspace.add.hint')}
+                  </small>
+                  <form
+                    style={{ display: 'grid', gap: 8 }}
+                    onSubmit={event => { event.preventDefault(); void addWorkspace(workspacePath) }}
+                  >
+                    <input
+                      style={styles.input}
+                      value={workspacePath}
+                      placeholder={t('workspace.path.placeholder')}
+                      aria-label={t('workspace.path.placeholder')}
+                      disabled={addingWorkspace}
+                      onChange={event => { setWorkspacePath(event.target.value) }}
+                    />
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        type="submit"
+                        style={{ ...styles.button, ...styles.primary, flex: 1 }}
+                        disabled={addingWorkspace || workspacePath.trim().length === 0}
+                      >
+                        {addingWorkspace ? t('workspace.add.busy') : t('workspace.add.submit')}
+                      </button>
+                      {workspaces.pick !== undefined && (
+                        <ActionButton disabled={addingWorkspace} onClick={() => { void browseWorkspace() }}>
+                          {t('workspace.browse')}
+                        </ActionButton>
+                      )}
+                    </div>
+                  </form>
                 </div>
 
                 {blockedProviders.length > 0 && (
@@ -670,9 +770,11 @@ export function LocalAgentPanel({ wide, remote, t }: LocalAgentPanelProps) {
 }
 
 /**
- * Required services (cordis fiber inject); `locale` carries the dictionaries.
+ * Required services (cordis fiber inject). `locale` carries the dictionaries,
+ * and `workspaces` is DSH core's registry service — the panel registers a
+ * directory through it rather than reimplementing a Host capability.
  */
-export const inject = ['slots', 'remote', 'locale']
+export const inject = ['slots', 'remote', 'locale', 'workspaces']
 
 export function apply(ctx: ClientContext): void {
   ctx.effect(async () => {
@@ -689,6 +791,16 @@ export function apply(ctx: ClientContext): void {
       inject: (): LocalAgentPanelFace => ({
         remote: scope.remote.localAgentBridge,
         t: scope.locale.bind(NS),
+        workspaces: {
+          create: async (path) => { await scope.workspaces.create({ path }) },
+          // Only offered when the composed Profile actually has a chooser: the
+          // auto backend resolves to a Host-native dialog nobody can operate
+          // from a remote browser, and a Profile may compose none at all. The
+          // path field alone always works, so the button is the extra.
+          ...typeof scope.workspaces.pickDirectory === 'function'
+            ? { pick: () => scope.workspaces.pickDirectory() }
+            : {},
+        },
       }),
     }, LocalAgentPanel))
   })

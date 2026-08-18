@@ -171,12 +171,22 @@ function translator(locale: 'zh' | 'en') {
 
 interface RenderOptions {
   readonly locale?: 'zh' | 'en'
+  readonly createWorkspace?: (path: string) => Promise<void>
+  readonly pickDirectory?: () => Promise<string | null>
 }
 
 function renderPanel(remote: LocalAgentRemote, options: RenderOptions = {}): void {
   const locale = options.locale ?? 'en'
   const t = translator(locale)
-  const props = { wide: true, remote, t } as unknown as Parameters<typeof LocalAgentPanel>[0]
+  const props = {
+    wide: true,
+    remote,
+    t,
+    workspaces: {
+      create: options.createWorkspace ?? (async () => {}),
+      ...options.pickDirectory === undefined ? {} : { pick: options.pickDirectory },
+    },
+  } as unknown as Parameters<typeof LocalAgentPanel>[0]
   render(<LocalAgentPanel {...props} />)
   fireEvent.click(screen.getByTitle(t('panel.name')))
 }
@@ -356,6 +366,71 @@ describe('LocalAgentPanel', () => {
     expect(codex?.disabled).toBe(true)
     expect(codex?.textContent).toContain(en['health.unsupported'])
     expect((screen.getByRole('button', { name: en['create.submit'] }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('registers a Host directory as a workspace from inside the panel', async () => {
+    const fixture = new RemoteFixture()
+    fixture.catalog.mockResolvedValueOnce({
+      ok: true,
+      value: { providers: catalog.providers, workspaces: [] },
+    })
+    const created: string[] = []
+    renderPanel(fixture.remote(), {
+      createWorkspace: async (path) => { created.push(path) },
+    })
+
+    // An empty registry says so, and Create session stays unavailable.
+    expect(await screen.findByText(en['workspace.empty'])).toBeTruthy()
+    expect((screen.getByRole('button', { name: en['create.submit'] }) as HTMLButtonElement).disabled).toBe(true)
+
+    // The next catalog read reflects the registration the Host just accepted.
+    fixture.catalog.mockResolvedValue({
+      ok: true,
+      value: {
+        providers: catalog.providers,
+        workspaces: [{ id: 'workspace-1', title: 'Fixture workspace', status: 'ok' }],
+      },
+    })
+    fireEvent.change(screen.getByPlaceholderText(en['workspace.path.placeholder']), {
+      target: { value: '  /host/projects/Fixture workspace  ' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: en['workspace.add.submit'] }))
+
+    // Surrounding whitespace is trimmed before the path reaches the Host.
+    await waitFor(() => { expect(created).toEqual(['/host/projects/Fixture workspace']) })
+    // The new workspace is selected, so the operator can create a session next.
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: en['create.submit'] }) as HTMLButtonElement).disabled).toBe(false)
+    })
+  })
+
+  it('offers the directory chooser only when the Profile composed one', async () => {
+    const withoutPicker = new RemoteFixture()
+    renderPanel(withoutPicker.remote())
+    expect(await screen.findByText(en['workspace.add'])).toBeTruthy()
+    expect(screen.queryByRole('button', { name: en['workspace.browse'] })).toBeNull()
+    cleanup()
+
+    const withPicker = new RemoteFixture()
+    const created: string[] = []
+    renderPanel(withPicker.remote(), {
+      pickDirectory: async () => '/host/picked',
+      createWorkspace: async (path) => { created.push(path) },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: en['workspace.browse'] }))
+    await waitFor(() => { expect(created).toEqual(['/host/picked']) })
+  })
+
+  it('leaves the registry untouched when the chooser is cancelled', async () => {
+    const fixture = new RemoteFixture()
+    const created: string[] = []
+    renderPanel(fixture.remote(), {
+      pickDirectory: async () => null,
+      createWorkspace: async (path) => { created.push(path) },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: en['workspace.browse'] }))
+    await waitFor(() => { expect(fixture.catalog.mock.calls.length).toBeGreaterThan(0) })
+    expect(created).toEqual([])
   })
 
   it('has no vendor login surface, vendor request, storage residue, or credential canary', async () => {
