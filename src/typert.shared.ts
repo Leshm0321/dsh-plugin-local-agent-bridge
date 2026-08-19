@@ -7,6 +7,8 @@ import type {
   BridgeNativeSession,
   BridgePermissionModeView,
   BridgeRateLimit,
+  BridgeHostEntry,
+  BridgeHostListing,
   BridgeRepository,
   BridgeTokenUsage,
   BridgeSessionView,
@@ -266,9 +268,33 @@ const nativeSessionsRequestSchema = z.object({
   workspaceId: z.string(),
 }).strict()
 
+const hostEntrySchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  directory: z.boolean(),
+  hidden: z.boolean(),
+}).strict()
+
+const _hostEntryShapeIsExact: Exact<z.infer<typeof hostEntrySchema>, BridgeHostEntry> = true
+
+const hostListingSchema = z.object({
+  path: z.string(),
+  home: z.string(),
+  crumbs: z.array(z.object({ name: z.string(), path: z.string() }).strict()).readonly(),
+  entries: z.array(hostEntrySchema).readonly(),
+  truncated: z.boolean(),
+}).strict()
+
+const _hostListingShapeIsExact: Exact<z.infer<typeof hostListingSchema>, BridgeHostListing> = true
+
+const hostListRequestSchema = z.object({
+  path: z.string().optional(),
+}).strict()
+
 const catalogSchema = z.object({
   providers: z.array(providerSchema),
   workspaces: z.array(workspaceSchema),
+  hostBrowsing: z.boolean(),
 }).strict()
 
 const createRequestSchema = z.object({
@@ -364,4 +390,5 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('sessionModel', [parameter('request', modelRequestSchema)], sessionSchema),
   invocation('sessionUpload', [parameter('request', uploadRequestSchema)], uploadResultSchema),
   invocation('sessionRepository', [parameter('request', sessionIdRequestSchema)], repositorySchema.nullable()),
+  invocation('hostList', [parameter('request', hostListRequestSchema)], hostListingSchema),
 ] as const

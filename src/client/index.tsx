@@ -41,6 +41,7 @@ import type {
   BridgeEvent,
   BridgeFileMatch,
   BridgeFileSearchResult,
+  BridgeHostListing,
   BridgeModelsResult,
   BridgeNativeSessionsResult,
   BridgePermissionMode,
@@ -107,8 +108,10 @@ const REPOSITORY_POLL_MS = 10_000
  * render unstyled. This table makes the set exhaustive at compile time.
  */
 const ROW_MODIFIER: Record<TimelineRow['kind'], string> = {
-  // The plain card is the assistant's own answer; it needs no modifier.
-  assistant: '',
+  // The agent's answer is the plain card, but it carries a modifier so its edge can
+  // be told from the operator's tinted message. It used to be the unmarked default,
+  // which left the two nearly identical.
+  assistant: 'lab-row-card--assistant',
   user: 'lab-row-card--user',
   reasoning: 'lab-row-card--reasoning',
   tool: 'lab-row-card--tool',
@@ -1162,8 +1165,8 @@ function RateLimits({ limits, t }: { limits: readonly BridgeRateLimit[]; t: Pane
   )
 }
 
-/** Which machine the plus button is looking at. */
-type AttachSource = 'workspace' | 'local'
+/** Where the plus button is looking. */
+type AttachSource = 'workspace' | 'local' | 'host'
 
 /**
  * Give the agent a file, from either machine.
@@ -1187,11 +1190,18 @@ function AttachPicker({
   source,
   uploading,
   rejected,
+  hostBrowsing,
+  hostListing,
+  hostBusy,
+  hostHidden,
   t,
   onSource,
   onQuery,
   onPick,
   onUpload,
+  onHostNavigate,
+  onHostPick,
+  onHostHidden,
 }: {
   result: BridgeFileSearchResult
   query: string
@@ -1199,11 +1209,18 @@ function AttachPicker({
   source: AttachSource
   uploading: boolean
   rejected: number
+  hostBrowsing: boolean
+  hostListing: BridgeHostListing | undefined
+  hostBusy: boolean
+  hostHidden: boolean
   t: PanelTranslate
   onSource: (next: AttachSource) => void
   onQuery: (next: string) => void
   onPick: (match: BridgeFileMatch) => void
   onUpload: (files: FileList | null) => void
+  onHostNavigate: (path: string) => void
+  onHostPick: (path: string, directory: boolean) => void
+  onHostHidden: (next: boolean) => void
 }) {
   const input = useRef<HTMLInputElement>(null)
   const filePick = useRef<HTMLInputElement>(null)
@@ -1238,6 +1255,19 @@ function AttachPicker({
         >
           {t('attach.fromBrowser')}
         </button>
+        {/* Absent, not disabled, when the Profile does not serve it: a route that
+            cannot work should not be offered. */}
+        {hostBrowsing && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={source === 'host'}
+            className={source === 'host' ? 'lab-attach-tab lab-attach-tab--on' : 'lab-attach-tab'}
+            onClick={() => { onSource('host') }}
+          >
+            {t('attach.fromHost')}
+          </button>
+        )}
       </div>
 
       {source === 'workspace' && (
@@ -1308,6 +1338,69 @@ function AttachPicker({
             className="lab-offscreen"
             onChange={event => { onUpload(event.target.files); event.target.value = '' }}
           />
+        </div>
+      )}
+
+      {source === 'host' && (
+        <div className="lab-attach-host">
+          <nav className="lab-crumbs" aria-label={t('attach.fromHost')}>
+            {(hostListing?.crumbs ?? []).map((crumb, index) => (
+              <span key={crumb.path}>
+                {index > 0 && <span className="lab-crumb-sep">/</span>}
+                <button
+                  type="button"
+                  className="lab-crumb"
+                  title={crumb.path}
+                  onClick={() => { onHostNavigate(crumb.path) }}
+                >
+                  {crumb.path === hostListing?.home ? t('browse.home') : crumb.name}
+                </button>
+              </span>
+            ))}
+          </nav>
+          <div className="lab-attach-list">
+            {hostBusy && <p className="lab-browse-note">{t('browse.loading')}</p>}
+            {!hostBusy && (hostListing?.entries ?? []).filter(entry => hostHidden || !entry.hidden).length === 0 && (
+              <p className="lab-browse-note">{t('attach.empty')}</p>
+            )}
+            {(hostListing?.entries ?? [])
+              .filter(entry => hostHidden || !entry.hidden)
+              .map(entry => (
+                <button
+                  key={entry.path}
+                  type="button"
+                  className={entry.hidden ? 'lab-attach-row lab-browse-row--hidden' : 'lab-attach-row'}
+                  title={entry.path}
+                  // A directory opens; a file is what you came for. Referencing a
+                  // directory is the explicit button below, so one click never has
+                  // to mean two things.
+                  onClick={() => {
+                    if (entry.directory) onHostNavigate(entry.path)
+                    else onHostPick(entry.path, false)
+                  }}
+                >
+                  {entry.directory ? <IconFolderClose16 /> : <IconCodeOutline16 />}
+                  <span className="lab-attach-name">{entry.name}{entry.directory ? '/' : ''}</span>
+                </button>
+              ))}
+            {hostListing?.truncated === true && <p className="lab-browse-note">{t('browse.truncated')}</p>}
+          </div>
+          <label className="lab-browse-toggle">
+            <input
+              type="checkbox"
+              checked={hostHidden}
+              onChange={event => { onHostHidden(event.target.checked) }}
+            />
+            {t('browse.showHidden')}
+          </label>
+          {hostListing !== undefined && (
+            <ActionButton
+              className="lab-grow"
+              onClick={() => { onHostPick(hostListing.path, true) }}
+            >
+              {t('attach.useDirectory')}
+            </ActionButton>
+          )}
         </div>
       )}
     </div>
@@ -1644,6 +1737,9 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
   const [attachQuery, setAttachQuery] = useState('')
   const [attachBusy, setAttachBusy] = useState(false)
   const [attachFiles, setAttachFiles] = useState<BridgeFileSearchResult>({ matches: [], partial: false })
+  const [hostListing, setHostListing] = useState<BridgeHostListing>()
+  const [hostBusy, setHostBusy] = useState(false)
+  const [hostHidden, setHostHidden] = useState(false)
   const attachRoot = useRef<HTMLSpanElement>(null)
   const [repository, setRepository] = useState<BridgeRepository | null>(null)
   const [attachSource, setAttachSource] = useState<AttachSource>('workspace')
@@ -1776,6 +1872,16 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
     }, 120)
     return () => { cancelled = true; clearTimeout(timer) }
   }, [attachOpen, attachQuery, attachSource, remote, selectedId])
+
+  // Read the first level when the host tab opens, and not before: this is the
+  // widest read the panel makes, and it should not happen for an operator who never
+  // asks for it.
+  useEffect(() => {
+    if (!attachOpen || attachSource !== 'host' || hostListing !== undefined) return
+    void browseHost()
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- browseHost is recreated
+  // every render; the effect is keyed to the tab opening, not to its identity.
+  }, [attachOpen, attachSource, hostListing])
 
   // The picker belongs to the session it searched, so switching sessions closes
   // it rather than leaving another directory's files on screen.
@@ -2292,6 +2398,45 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
   }
 
   /**
+   * Read one level of the Host filesystem for the composer's host browser.
+   *
+   * The panel's widest read, so it happens only while that tab is open and only
+   * when the Profile serves it. Failure leaves the previous level on screen rather
+   * than emptying it, because a directory that cannot be read says nothing about the
+   * one already shown.
+   * @param path - absolute directory; omitted starts at the Host home directory.
+   */
+  const browseHost = async (path?: string): Promise<void> => {
+    setHostBusy(true)
+    setError(undefined)
+    try {
+      setHostListing(unwrap(await remote.hostList(path === undefined ? {} : { path })))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setHostBusy(false)
+    }
+  }
+
+  /**
+   * Reference a Host path the operator picked outside the working directory.
+   *
+   * Absolute, because that is what it is — there is no working directory to be
+   * relative to. Both products read an absolute path, subject to the session's
+   * permission mode, so the agent still asks before touching it unless the operator
+   * has said otherwise.
+   * @param path - absolute Host path.
+   * @param directory - whether to mark it as a directory with a trailing slash.
+   */
+  const referenceHostPath = (path: string, directory: boolean): void => {
+    const reference = `@${path}${directory && !path.endsWith('/') ? '/' : ''}`
+    setDraft(current => current.length === 0 || current.endsWith(' ')
+      ? `${current}${reference} `
+      : `${current} ${reference} `)
+    setAttachOpen(false)
+  }
+
+  /**
    * Add a transcript to the draft.
    *
    * Appended with a space rather than replacing, so dictation can extend a typed
@@ -2713,11 +2858,18 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                             source={attachSource}
                             uploading={uploading}
                             rejected={uploadRejected}
+                            hostBrowsing={catalog?.hostBrowsing === true}
+                            hostListing={hostListing}
+                            hostBusy={hostBusy}
+                            hostHidden={hostHidden}
                             t={t}
                             onSource={setAttachSource}
                             onQuery={setAttachQuery}
                             onPick={insertReference}
                             onUpload={files => { void uploadFiles(files) }}
+                            onHostNavigate={path => { void browseHost(path) }}
+                            onHostPick={referenceHostPath}
+                            onHostHidden={setHostHidden}
                           />
                         )}
                       </span>

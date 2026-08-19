@@ -180,19 +180,22 @@ and cache writes on hover. It is a different question from the context meter bes
 it — one only grows, the other moves both ways as the session compacts — which is
 why both are there.
 
-**The file button** offers both machines, because the browser is not always on the
-Host:
+**The file button** offers three routes, because a file can be in three places:
 
 - **Working directory** is `@` without the syntax — the same Host search, listing
   files and folders, appending the reference to the draft. Nothing is copied. A
   folder keeps its trailing slash, which is how both products tell one from a file.
-  It is not a Host file dialog: browsing the whole Host filesystem from a browser is
-  what this bridge does not do, and a path outside the working directory is not
-  something the agent could read anyway.
 - **This computer** sends files from the machine the browser is running on, which is
   the only way those bytes can arrive when the Harness is somewhere else. They land
   in `.dsh-bridge-uploads/` inside the working directory — add it to `.gitignore` —
   and are referenced identically, so the products read one shape either way.
+- **Host filesystem** browses the machine the Harness runs on, beyond the working
+  directory, and references what you pick by absolute path. Directories open on
+  click; a directory is referenced through its own button, so one click never means
+  two things. Dot-prefixed entries stay hidden until you ask.
+
+Browsing the Host is the panel's widest read, and it can be turned off — see
+[Security boundary](#security-boundary) for what it does and does not grant.
 
 Uploads are the only path in the bridge that writes Host files, so they are narrow
 by design: one destination the browser cannot name, file names rebuilt from an
@@ -381,6 +384,7 @@ config block, so keep every key when changing one — see
 | Key | Default | Meaning |
 | --- | ---: | --- |
 | `allowExperimentalVersions` | `false` | Permit product versions classified `unknown`. |
+| `allowHostBrowsing` | `true` | Let the composer's file button browse the Host beyond the working directory. Off omits the route entirely. |
 | `enableFakeProvider` | `false` | Expose the local verification fixture. Leave off; it shows up in the product picker. |
 | `eventRetention` | `2000` | Maximum retained bridge events per session. |
 | `longPollMaxMs` | `25000` | Maximum Client long-poll duration. |
@@ -393,7 +397,30 @@ servers, and process execution. The browser receives redacted bridge events and
 sends prompts, one-time approvals, question answers, cancellations, and opaque
 bridge IDs.
 
-The one exception to that direction is the composer's upload, which exists so a
+Two deliberate widenings of that, both reachable only from the composer's file
+button, both recorded here rather than left implied.
+
+**Browsing the Host filesystem.** The `Host filesystem` route lists any directory on
+the machine the Harness runs on and returns absolute paths to the browser. Three
+things make that a reasonable default rather than a hole:
+
+- The Harness's own workspace picker already enumerates Host directories and returns
+  absolute paths to the browser. This adds *files* to that view — the Harness's
+  picker returns directories only — rather than opening a door the platform had
+  closed.
+- The agent could already read those paths. Both products take an absolute path and
+  read it, under the session's permission mode. Browsing saves the operator typing a
+  path they already know; it grants the agent nothing new.
+- It is bounded: one level per request, 500 entries, names and kinds only. It never
+  returns file contents — reading a file is still the agent's act, and still subject
+  to approval.
+
+It is nevertheless a read the browser could not make before, so set
+`allowHostBrowsing: false` in the Profile for a deployment where the browser is
+further away than a loopback address. The panel then omits the route rather than
+offering one that fails, and the Host refuses the call.
+
+**Files the browser sends to the Host.** The composer's upload which exists so a
 browser on another machine can hand the agent a file at all. It writes only into
 `.dsh-bridge-uploads/` under the session's working directory, resolved on the Host;
 the browser supplies bytes and a name, never a destination. Names are rebuilt from

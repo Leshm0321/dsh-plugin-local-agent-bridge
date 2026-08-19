@@ -11,6 +11,7 @@ import { BridgeSessionEngine } from './core/session-engine.ts'
 import { BridgeError } from './core/errors.ts'
 import { discoverProvider, isAdmissible, permissionModesFor, publicProvider } from './core/version.ts'
 import { redactText } from './core/redaction.ts'
+import { listHostDirectory } from './core/host-browse.ts'
 import { readRepository } from './core/repository.ts'
 import { ClaudeProviderAdapter } from './providers/claude.ts'
 import { CodexProviderAdapter } from './providers/codex.ts'
@@ -35,6 +36,8 @@ import type {
   BridgeSessionArchiveRequest,
   BridgeSessionCreateRequest,
   BridgeSessionIdRequest,
+  BridgeHostListRequest,
+  BridgeHostListing,
   BridgeRepository,
   BridgeUploadRequest,
   BridgeUploadResult,
@@ -50,6 +53,16 @@ export type * from './types.ts'
 
 export interface Config {
   allowExperimentalVersions?: boolean
+  /**
+   * Whether the composer may browse the Host outside the session's working
+   * directory.
+   *
+   * On by default, because the Harness is a loopback tool on the operator's own
+   * machine and this is a read they asked for. Turn it off for a deployment where
+   * the browser reaches the Host across a network: it is the panel's widest read,
+   * and a Profile serving remote clients should decide about it explicitly.
+   */
+  allowHostBrowsing?: boolean
   enableFakeProvider?: boolean
   eventRetention?: number
   longPollMaxMs?: number
@@ -58,6 +71,7 @@ export interface Config {
 
 interface ResolvedConfig {
   readonly allowExperimentalVersions: boolean
+  readonly allowHostBrowsing: boolean
   readonly enableFakeProvider: boolean
   readonly eventRetention: number
   readonly longPollMaxMs: number
@@ -95,12 +109,14 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   static Config: z<Config> = z.object({
     allowExperimentalVersions: z.boolean().default(false),
+    allowHostBrowsing: z.boolean().default(true),
     enableFakeProvider: z.boolean().default(false),
     eventRetention: z.number().min(100).max(10_000).default(2_000),
     longPollMaxMs: z.number().min(1_000).max(30_000).default(25_000),
     processGraceMs: z.number().min(500).max(30_000).default(3_000),
   }).default({
     allowExperimentalVersions: false,
+    allowHostBrowsing: true,
     enableFakeProvider: false,
     eventRetention: 2_000,
     longPollMaxMs: 25_000,
@@ -134,6 +150,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     super(ctx, 'localAgentBridge')
     this.config = {
       allowExperimentalVersions: config.allowExperimentalVersions ?? false,
+      allowHostBrowsing: config.allowHostBrowsing ?? true,
       enableFakeProvider: config.enableFakeProvider ?? false,
       eventRetention: config.eventRetention ?? 2_000,
       longPollMaxMs: config.longPollMaxMs ?? 25_000,
@@ -248,7 +265,11 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   @Remote('catalog')
   async catalog(): Promise<BridgeCatalogResult> {
     await this.discoverProviders()
-    return { providers: this.providerViews, workspaces: await this.listDirectories() }
+    return {
+      providers: this.providerViews,
+      workspaces: await this.listDirectories(),
+      hostBrowsing: this.config.allowHostBrowsing,
+    }
   }
 
   @Remote('directoryAdd')
@@ -404,6 +425,15 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   @Remote('sessionRepository')
   async sessionRepository(request: BridgeSessionIdRequest): Promise<BridgeRepository | null> {
     return await this.requireEngine().describeRepository(request.bridgeSessionId)
+  }
+
+  @Remote('hostList')
+  async hostList(request: BridgeHostListRequest): Promise<BridgeHostListing> {
+    // Refused rather than answered emptily: the panel hides the route when the
+    // catalog says the Profile does not serve it, so reaching here means something
+    // is out of step and an empty listing would look like an empty disk.
+    if (!this.config.allowHostBrowsing) throw new BridgeError('INVALID_REQUEST')
+    return await listHostDirectory(request.path)
   }
 
   @Remote('sessionUpload')

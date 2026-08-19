@@ -76,6 +76,38 @@ text.
 A native session locator is opaque to the bridge. It is passed to the product's
 own resume path and is never parsed, joined onto a path, or used to open a file.
 
+## Browsing the Host filesystem
+
+The composer's file button can list any directory on the machine the Harness runs
+on, and returns absolute paths to the browser. It is the panel's widest read, and it
+is on by default because three things hold:
+
+- **The platform already does this.** `workspaces.listDirectory` — the Harness's own
+  workspace picker — enumerates Host directories and returns absolute paths to the
+  browser. This adds files to that view, because that picker returns directories
+  only. It is implemented in `src/core/host-browse.ts` rather than delegated for the
+  same reason, and because `listDirectory` depends on a `browse` capability a
+  composed Profile may not serve.
+- **The agent could already read those paths.** Both products take an absolute path
+  and read it, under the session's permission mode. Browsing saves the operator
+  typing a path they already know; it grants the agent nothing it lacked, and an
+  agent reading a file outside the working directory still requests approval unless
+  the mode says otherwise.
+- **It is bounded.** One level per request, 500 entries, absolute path and kind only.
+  It never returns file contents, never recurses, and refuses a relative path rather
+  than resolving it against whatever directory the Host process happens to be in.
+
+It remains a read the browser could not previously make. Set `allowHostBrowsing:
+false` in the Profile config for any deployment where the browser is further away
+than a loopback address: the panel then omits the route rather than offering one
+that fails, and the Host refuses the call outright.
+
+Note the distinction from the redaction rule elsewhere in this document. An absolute
+path appearing inside a *product's reply* is still dropped where the reply is parsed
+— that is the Host leaking its own layout into vendor text. A path the operator
+navigated to and clicked is the opposite: it is what they chose, and it is the only
+useful thing to return.
+
 ## Files the browser sends to the Host
 
 Every other path in this bridge carries data outward. The composer's upload

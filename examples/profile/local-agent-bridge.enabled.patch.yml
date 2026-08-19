@@ -3,6 +3,7 @@
 - id: local-agent-bridge
   config:
     allowExperimentalVersions: false
+    allowHostBrowsing: true
     enableFakeProvider: false
     eventRetention: 2000
     longPollMaxMs: 25000

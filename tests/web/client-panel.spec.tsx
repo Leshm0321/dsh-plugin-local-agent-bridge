@@ -124,6 +124,7 @@ const catalog: BridgeCatalogResult = {
     message: null,
   }],
   workspaces: [{ id: 'workspace-1', title: 'Fixture workspace', status: 'ok', published: false }],
+  hostBrowsing: true,
 }
 
 function event(
@@ -210,6 +211,24 @@ class RemoteFixture {
   readonly sessionFiles = vi.fn(async (_request: { bridgeSessionId: string; query: string }) => ({
     ok: true as const,
     value: { matches: [] as { path: string; name: string; directory: boolean }[], partial: false },
+  }))
+  readonly hostList = vi.fn(async (request: { path?: string }) => ({
+    ok: true as const,
+    value: {
+      path: request.path ?? '/Users/operator',
+      home: '/Users/operator',
+      crumbs: [
+        { name: '/', path: '/' },
+        { name: 'Users', path: '/Users' },
+        { name: 'operator', path: '/Users/operator' },
+      ] as readonly { name: string; path: string }[],
+      entries: [
+        { name: 'Documents', path: '/Users/operator/Documents', directory: true, hidden: false },
+        { name: '.ssh', path: '/Users/operator/.ssh', directory: true, hidden: true },
+        { name: 'diagram.png', path: '/Users/operator/diagram.png', directory: false, hidden: false },
+      ] as readonly { name: string; path: string; directory: boolean; hidden: boolean }[],
+      truncated: false,
+    },
   }))
   readonly sessionRepository = vi.fn(async (_request: { bridgeSessionId: string }) => ({
     ok: true as const,
@@ -559,6 +578,7 @@ describe('LocalAgentPanel', () => {
     fixture.catalog.mockResolvedValue({
       ok: true,
       value: {
+        ...catalog,
         providers: [
           {
             id: 'codex',
@@ -610,7 +630,7 @@ describe('LocalAgentPanel', () => {
     const fixture = new RemoteFixture()
     fixture.catalog.mockResolvedValueOnce({
       ok: true,
-      value: { providers: catalog.providers, workspaces: [] },
+      value: { ...catalog, providers: catalog.providers, workspaces: [] },
     })
     renderPanel(fixture.remote())
 
@@ -622,6 +642,7 @@ describe('LocalAgentPanel', () => {
     fixture.catalog.mockResolvedValue({
       ok: true,
       value: {
+        ...catalog,
         providers: catalog.providers,
         workspaces: [{ id: 'workspace-1', title: 'Fixture workspace', status: 'ok', published: false }],
       },
@@ -677,6 +698,7 @@ describe('LocalAgentPanel', () => {
     fixture.catalog.mockResolvedValue({
       ok: true,
       value: {
+        ...catalog,
         providers: catalog.providers,
         workspaces: [{ id: 'workspace-1', title: 'Fixture workspace', status: 'ok', published: true }],
       },
@@ -693,6 +715,7 @@ describe('LocalAgentPanel', () => {
     fixture.catalog.mockResolvedValue({
       ok: true,
       value: {
+        ...catalog,
         providers: catalog.providers,
         workspaces: [{ id: 'workspace-1', title: 'Fixture workspace', status: 'ok', published: false }],
       },
@@ -713,7 +736,7 @@ describe('LocalAgentPanel', () => {
 
     fixture.catalog.mockResolvedValue({
       ok: true,
-      value: { providers: catalog.providers, workspaces: [] },
+      value: { ...catalog, providers: catalog.providers, workspaces: [] },
     })
     fireEvent.click(screen.getByRole('button', { name: new RegExp(en['workspace.remove']) }))
 
@@ -945,6 +968,7 @@ describe('LocalAgentPanel', () => {
     fixture.catalog.mockResolvedValue({
       ok: true,
       value: {
+        ...catalog,
         workspaces: catalog.workspaces,
         providers: [{
           ...catalog.providers[0]!,
@@ -979,6 +1003,7 @@ describe('LocalAgentPanel', () => {
     fixture.catalog.mockResolvedValue({
       ok: true,
       value: {
+        ...catalog,
         workspaces: catalog.workspaces,
         providers: [{
           ...catalog.providers[0]!,
@@ -1900,5 +1925,70 @@ describe('LocalAgentPanel', () => {
     // Truncation is stated rather than leaving the reader to assume the beginning
     // of the conversation simply did not exist.
     expect(await screen.findByText(en['history.truncated'].replace('{count}', '240'))).toBeTruthy()
+  })
+
+  it('references a file from anywhere on the Host, by browsing it', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    fireEvent.click(screen.getByLabelText(en['attach.open']))
+    fireEvent.click(await screen.findByRole('tab', { name: en['attach.fromHost'] }))
+
+    // The first level is read only once the tab is opened — this is the panel's
+    // widest read of the Host, and an operator who never asks should not trigger it.
+    await waitFor(() => { expect(fixture.hostList).toHaveBeenCalledWith({}) })
+
+    // Dot-prefixed entries stay hidden until asked for. `.ssh` is exactly the kind
+    // of directory that should not be one stray click away.
+    expect(screen.queryByText('.ssh/')).toBeNull()
+    fireEvent.click(screen.getByLabelText(en['browse.showHidden']))
+    expect(await screen.findByText('.ssh/')).toBeTruthy()
+
+    // A directory opens rather than being referenced, so one click never means two
+    // things.
+    fireEvent.click(screen.getByText('Documents/'))
+    await waitFor(() => {
+      expect(fixture.hostList).toHaveBeenLastCalledWith({ path: '/Users/operator/Documents' })
+    })
+
+    // A file is what the operator came for, and it is referenced absolutely —
+    // there is no working directory for it to be relative to.
+    fireEvent.click(screen.getByText('diagram.png'))
+    await waitFor(() => { expect(composer.value).toBe('@/Users/operator/diagram.png ') })
+  })
+
+  it('references a whole Host directory through its own button', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    fireEvent.click(screen.getByLabelText(en['attach.open']))
+    fireEvent.click(await screen.findByRole('tab', { name: en['attach.fromHost'] }))
+    await waitFor(() => { expect(fixture.hostList).toHaveBeenCalled() })
+
+    fireEvent.click(screen.getByRole('button', { name: en['attach.useDirectory'] }))
+    // The trailing slash is how both products tell a directory from a file.
+    await waitFor(() => { expect(composer.value).toBe('@/Users/operator/ ') })
+  })
+
+  it('omits the Host route entirely when the Profile does not serve it', async () => {
+    const fixture = new RemoteFixture()
+    fixture.catalog.mockResolvedValue({ ok: true, value: { ...catalog, hostBrowsing: false } })
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['attach.open']))
+    // Absent rather than disabled, and never read: a route that cannot work should
+    // not be offered, and the widest read must not happen behind a dead tab.
+    expect(await screen.findByRole('tab', { name: en['attach.fromWorkspace'] })).toBeTruthy()
+    expect(screen.queryByRole('tab', { name: en['attach.fromHost'] })).toBeNull()
+    expect(fixture.hostList).not.toHaveBeenCalled()
   })
 })

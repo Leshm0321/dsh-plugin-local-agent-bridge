@@ -61,9 +61,35 @@ export const PANEL_STYLES = `
   --lab-success: var(--dsw-alias-state-success-primary, #22c55e);
 
   /* Apple's system font stack, then the Harness family as a fallback. */
-  --lab-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue',
-    'Segoe UI', system-ui, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  --lab-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  /* Platform UI faces first, in platform order, then the CJK faces each platform
+     ships. Two things were wrong for Windows readers:
+
+     Helvetica Neue sat ahead of Segoe UI. Plenty of Windows machines have it —
+     Adobe installers put it there — so Latin text was rendered in a face designed
+     for print and for macOS grayscale antialiasing, while the Chinese in the same
+     sentence fell through to YaHei. Mismatched pairing, and Helvetica renders
+     poorly under ClearType. It is gone: -apple-system already covers every Apple
+     platform, which is the only place it was reaching for.
+
+     And the newer faces were missing. Windows 11 ships Segoe UI Variable, and
+     Microsoft YaHei UI is the interface cut of YaHei — lighter and better spaced
+     at UI sizes than the document cut this asked for. */
+  --lab-font:
+    -apple-system, BlinkMacSystemFont,
+    'Segoe UI Variable Text', 'Segoe UI',
+    system-ui, Roboto, 'Noto Sans',
+    'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei UI', 'Microsoft YaHei',
+    'Noto Sans CJK SC', 'Source Han Sans SC',
+    sans-serif;
+  /* Cascadia Mono and Consolas are what Windows actually has; without them the
+     mono stack fell straight through to the generic monospace keyword, which on
+     Windows means Courier New. */
+  --lab-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo,
+    'Cascadia Mono', Consolas,
+    'JetBrains Mono', 'Fira Code',
+    monospace;
 
   /* HIG-ish radii: containers rounder than controls, controls rounder than chips. */
   --lab-r-window: 14px;
@@ -78,8 +104,13 @@ export const PANEL_STYLES = `
 
   font-family: var(--lab-font);
   color: var(--lab-text);
+  /* macOS only, and deliberately kept: it is what makes text there match the rest
+     of the system. Windows ignores it and uses ClearType, which is also correct for
+     that platform — the fix for Windows was the font stack above, not this. */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Alternate glyph sets in Inter and SF. Ignored by faces that do not have them,
+     which is every Windows face, so this costs nothing there. */
   font-feature-settings: 'cv11', 'ss01';
 }
 
@@ -520,13 +551,20 @@ export const PANEL_STYLES = `
   color: var(--lab-text-3);
 }
 
-/* The operator's own message is the one thing that should read as "mine". */
+/* The operator's own message reads as "mine" three ways at once, because one was
+   not enough: at 92% width the right alignment was invisible, and a 5% tint against
+   a white card is a difference you have to look for. Narrower, darker, and with the
+   label in the stronger ink. */
 .lab-row-card--user {
   margin-left: auto;
-  max-width: 92%;
-  background: var(--lab-fill);
+  max-width: 78%;
+  background: color-mix(in srgb, var(--lab-text) 10%, transparent);
   border-color: transparent;
 }
+.lab-row-card--user .lab-row-label { color: var(--lab-text-2); }
+/* And the agent's own answer keeps the plain card, but with a visible edge rather
+   than a hairline that disappears against the panel. */
+.lab-row-card--assistant { border-color: var(--lab-line-strong); }
 .lab-row-card--reasoning { background: transparent; border-style: dashed; color: var(--lab-text-2); }
 .lab-row-card--status { background: transparent; border-color: transparent; padding: 2px 13px; color: var(--lab-text-3); font-size: 12px; }
 .lab-row-card--status .lab-row-label { margin-bottom: 0; display: inline; margin-right: 8px; }
@@ -1242,6 +1280,9 @@ export const PANEL_STYLES = `
 
 .lab-attach-search { margin-bottom: 4px; }
 .lab-attach-upload { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 2px 2px 4px; }
+/* The host browser reuses the crumb trail and row styling the workspace picker
+   already has; only the stacking is its own. */
+.lab-attach-host { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .lab-attach-warning {
   margin: 0;
   padding: 7px 8px;

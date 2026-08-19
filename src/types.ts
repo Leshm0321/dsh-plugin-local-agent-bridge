@@ -632,9 +632,46 @@ export interface BridgeFileSearchRequest extends BridgeSessionIdRequest {
   readonly query: string
 }
 
+/** One entry in a Host directory the composer's host browser is showing. */
+export interface BridgeHostEntry {
+  readonly name: string
+  /**
+   * Absolute Host path.
+   *
+   * The one place this bridge sends Host paths to the browser, and it is the point:
+   * the operator is navigating their own machine to pick a file, and the path is
+   * what they picked. Distinct from a path appearing inside a product's reply, which
+   * is still dropped where it is parsed — that would be the Host leaking its layout,
+   * while this is the operator reading it deliberately.
+   */
+  readonly path: string
+  readonly directory: boolean
+  /** Dot-prefixed, so the panel can hide these until asked. */
+  readonly hidden: boolean
+}
+
+export interface BridgeHostListing {
+  readonly path: string
+  readonly home: string
+  readonly crumbs: readonly { readonly name: string; readonly path: string }[]
+  readonly entries: readonly BridgeHostEntry[]
+  readonly truncated: boolean
+}
+
+export interface BridgeHostListRequest {
+  /** Absolute directory to list; omitted lists the Host home directory. */
+  readonly path?: string
+}
+
 export interface BridgeCatalogResult {
   readonly providers: readonly NativeProviderView[]
   readonly workspaces: readonly BridgeWorkspaceView[]
+  /**
+   * Whether this Profile lets the panel browse the Host beyond the working
+   * directory. Off makes the composer omit that route entirely rather than offering
+   * one that fails — see `allowHostBrowsing` in the Profile config.
+   */
+  readonly hostBrowsing: boolean
 }
 
 export interface BridgeSessionCreateRequest {
