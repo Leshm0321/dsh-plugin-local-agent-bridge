@@ -650,7 +650,86 @@ export const PANEL_STYLES = `
   color: var(--lab-text-3);
 }
 
+/* --------------------------------------------------------------- markdown */
+
+/* Blocks inside a transcript card, so the vertical rhythm is the card's rather than
+   a document's: first and last lose their outer margin. */
+.lab-md-p { margin: 0 0 8px; line-height: 1.6; }
+.lab-md-p:last-child { margin-bottom: 0; }
+
+/* Headings are weights, not an outline: a message is a card in a transcript, and
+   promoting its sections to real headings would claim page structure it does not
+   have. */
+.lab-md-heading { margin: 12px 0 6px; font-weight: 600; line-height: 1.4; }
+.lab-md-heading:first-child { margin-top: 0; }
+.lab-md-heading--1 { font-size: 15px; }
+.lab-md-heading--2 { font-size: 14px; }
+.lab-md-heading--3 { font-size: 13px; }
+.lab-md-heading--4,
+.lab-md-heading--5,
+.lab-md-heading--6 { font-size: 13px; color: var(--lab-text-2); }
+
+.lab-md-list { margin: 0 0 8px; padding-left: 20px; line-height: 1.6; }
+.lab-md-list:last-child { margin-bottom: 0; }
+.lab-md-list li { margin: 2px 0; }
+
+.lab-md-code {
+  font-family: var(--lab-mono);
+  font-size: .92em;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--lab-fill-strong);
+}
+
+.lab-md-pre {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: var(--lab-r-control);
+  background: var(--lab-fill-strong);
+  font-family: var(--lab-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  /* Scrolls itself rather than widening the card: a long command line must not
+     make the whole transcript scroll sideways. */
+  overflow-x: auto;
+  white-space: pre;
+}
+.lab-md-pre:last-child { margin-bottom: 0; }
+
+/* Same rule for tables, which are the other thing that can be wider than the card. */
+.lab-md-table-wrap { margin: 0 0 8px; overflow-x: auto; }
+.lab-md-table-wrap:last-child { margin-bottom: 0; }
+.lab-md-table { border-collapse: collapse; font-size: 12px; }
+.lab-md-table th,
+.lab-md-table td {
+  padding: 5px 10px;
+  text-align: left;
+  vertical-align: top;
+  border: var(--lab-hairline) solid var(--lab-line);
+}
+.lab-md-table th { font-weight: 600; background: var(--lab-fill); white-space: nowrap; }
+
+/* A link's target is shown but not clickable — see the note in markdown.tsx. */
+.lab-md-url { color: var(--lab-text-3); word-break: break-all; }
+
 /* --------------------------------------------------------------- timeline */
+
+/* The main grid's middle row: tabs on top, then whichever view is showing. Nested
+   rather than flattened into the parent, so the parent stays three rows and cannot
+   be thrown out by adding a view. */
+.lab-content {
+  min-width: 0;
+  min-height: 0;
+  /* Flex, not grid rows: the tab strip is absent until a session is selected, and a
+     row template has to know how many children there are. A column makes the view
+     take whatever is left however many siblings it has. */
+  display: flex;
+  flex-direction: column;
+}
+.lab-content > .lab-views { flex: none; }
+/* min-height: 0 is what lets the scroll container actually scroll inside a flex
+   column rather than growing past it. */
+.lab-content > .lab-timeline { flex: 1 1 auto; min-height: 0; }
 
 .lab-timeline {
   min-height: 0;

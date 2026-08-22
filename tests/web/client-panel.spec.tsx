@@ -1503,7 +1503,10 @@ describe('LocalAgentPanel', () => {
     }))
     renderPanel(fixture.remote())
 
-    await screen.findByText(/\[REDACTED\]/)
+    // findAllByText, because the agent's message is rendered as markdown and a
+    // multi-line one becomes several elements. The assertion is that the redaction
+    // marker is present and the canary is not, which follows below.
+    await screen.findAllByText(/\[REDACTED\]/)
     const storageSnapshot = JSON.stringify({
       local: Object.fromEntries(Array.from({ length: localStorage.length }, (_, index) => {
         const key = localStorage.key(index) ?? ''

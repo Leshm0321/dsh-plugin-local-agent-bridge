@@ -360,6 +360,32 @@ sessions it created itself.
 Session transcript paths stay on the Host. An unknown or expired locator makes the
 session `orphaned`, the same as one that stopped resolving after a Host restart.
 
+## Markdown
+
+Both products answer in markdown, and the panel renders it: headings, tables, lists,
+fenced code, bold, inline code. Only what the agent wrote — the operator's own
+message stays exactly as they typed it, and a tool's output stays in its code block,
+where markdown would corrupt it.
+
+The renderer is written into the plugin rather than pulled in, for two reasons.
+
+**It cannot inject.** Every node it produces is a React element, and React escapes
+text children; there is no `dangerouslySetInnerHTML` and no markdown-to-HTML step for
+a sanitizer to have to keep up with. That matters here specifically: an agent's
+output is not trusted input — it can be shaped by whatever the agent just read — and
+this panel renders it inside a Harness holding the operator's session.
+
+**It degrades instead of failing.** The streaming reveal hands it text mid-token, so
+a paragraph is routinely an unclosed bold run or half a table. Anything
+unterminated or unrecognised renders as the characters that were typed, which is what
+the panel did before markdown existed — so the worst case is no worse than the old
+behaviour.
+
+Raw HTML, images, blockquotes, footnotes and nested lists are not supported and
+appear as their source text. Links show their label and their target but are not
+clickable: a clickable destination composed by a model that just read an untrusted
+file is an attack surface this view does not need.
+
 ## The trace view
 
 `Trace` sits beside `Conversation` and answers a different question: not what was

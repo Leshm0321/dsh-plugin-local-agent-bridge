@@ -58,6 +58,7 @@ import type {
   PendingInteractionView,
 } from '../types.ts'
 import { en, type LocalAgentBridgeKey, zh } from './locales.ts'
+import { Markdown } from './markdown.tsx'
 import { buildTrace } from './trace.ts'
 import { TraceView } from './trace-view.tsx'
 import { PANEL_STYLES } from './styles.ts'
@@ -628,7 +629,12 @@ const TimelineEntry = memo(function TimelineEntry({
     return (
       <article className={`lab-row-card ${ROW_MODIFIER[row.kind]}`}>
         <small className="lab-row-label">{row.title}</small>
-        {text}
+        {/* Only what the agent wrote. The operator's own message is shown as they
+            typed it — reformatting someone's input misrepresents it — and a tool's
+            output is already in a pre block, where markdown would corrupt it. */}
+        {row.kind === 'assistant' || row.kind === 'reasoning'
+          ? <Markdown text={text} />
+          : text}
       </article>
     )
   }
@@ -2860,6 +2866,11 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                   )}
                 </div>
 
+                {/* One child of the main grid, which is three rows exactly — a
+                    toolbar, a body, a composer. The tabs and the two views live
+                    inside it rather than beside it: added as extra grid children they
+                    landed in the same row and drew on top of each other. */}
+                <div className="lab-content">
                 {snapshot !== undefined && (
                   <div className="lab-views" role="tablist" aria-label={t('view.chat')}>
                     {(['chat', 'trace'] as const).map(candidate => (
@@ -2918,6 +2929,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                       />
                     ))}
                   </div>
+                </div>
                 </div>
 
                 <form className="lab-composer" onSubmit={send}>
