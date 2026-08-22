@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, CSSProperties, FormEvent, KeyboardEvent, ReactNode } from 'react'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
@@ -531,16 +531,88 @@ function DirectoryBrowser({
 }
 
 /**
+ * Reveal streamed text at a steady rate, whatever rate it arrived at.
+ *
+ * Both products stream token by token, and the Host relays each delta the moment it
+ * lands — but the browser reads through a long poll, so what it actually receives is
+ * "everything that accumulated during one round trip". Measured on a real Codex
+ * turn, that was 11 characters, then 346 at once. Correct, and it does not look like
+ * streaming.
+ *
+ * So arrival and display are separated: text is revealed on a frame timer, and the
+ * stride grows with the backlog. A big batch is caught up in a few frames rather
+ * than appearing whole, and the reveal can never fall permanently behind — which a
+ * fixed rate would, on a fast turn.
+ *
+ * Only for text still being written. A finished answer, or a row from a resumed
+ * transcript, is shown complete: animating history would be a lie about when it
+ * happened.
+ * @param text - the full text known so far.
+ * @param streaming - whether more is still expected.
+ * @returns the prefix to render this frame.
+ */
+function useTypewriter(text: string, streaming: boolean): string {
+  const [shown, setShown] = useState(streaming ? 0 : text.length)
+  // Read inside the frame callback rather than captured, so the loop always sees
+  // the latest text without being torn down and rebuilt for every delta.
+  const target = useRef(text)
+  target.current = text
+
+  useEffect(() => {
+    if (!streaming) {
+      setShown(text.length)
+      return
+    }
+    let frame = 0
+    const step = (): void => {
+      let running = true
+      setShown((current) => {
+        const total = target.current.length
+        if (current >= total) {
+          running = false
+          return current
+        }
+        // A twelfth of the backlog per frame, at least two characters: fast enough
+        // that a 346-character batch resolves in well under a second, slow enough
+        // to read as typing rather than as a paste.
+        return Math.min(total, current + Math.max(2, Math.ceil((total - current) / 12)))
+      })
+      if (running) frame = requestAnimationFrame(step)
+    }
+    frame = requestAnimationFrame(step)
+    return () => { cancelAnimationFrame(frame) }
+  }, [streaming, text.length])
+
+  // Clamped, because a session switch can shorten the text under a stale count.
+  return streaming ? text.slice(0, Math.min(shown, text.length)) : text
+}
+
+/**
  * One timeline row.
  *
  * A tool row the product described beyond its summary becomes expandable — the
  * detail a terminal prints inline. Collapsed by default because a transcript is
  * read for its shape first: a wall of tool output would bury the conversation the
  * operator is actually following.
+ *
+ * Memoized because every delta re-renders the panel, and a resumed session's
+ * timeline is hundreds of rows: without this, one token of output repainted the
+ * entire transcript, which lengthened the round trip and made the next batch bigger
+ * still. The rows are rebuilt as fresh objects each time but their contents are
+ * equal, so a shallow comparison keeps all but the changed row from re-rendering.
  */
-function TimelineEntry({ row, t }: { row: TimelineRow; t: PanelTranslate }) {
+const TimelineEntry = memo(function TimelineEntry({
+  row,
+  streaming,
+  t,
+}: {
+  row: TimelineRow
+  streaming: boolean
+  t: PanelTranslate
+}) {
   const [open, setOpen] = useState(false)
   const detail = row.detail
+  const text = useTypewriter(row.text, streaming)
   if (row.kind === 'history') {
     // A rule with a caption, not a card: it describes the transcript rather than
     // being part of it, and a card would read as one more thing that was said.
@@ -554,7 +626,7 @@ function TimelineEntry({ row, t }: { row: TimelineRow; t: PanelTranslate }) {
     return (
       <article className={`lab-row-card ${ROW_MODIFIER[row.kind]}`}>
         <small className="lab-row-label">{row.title}</small>
-        {row.text}
+        {text}
       </article>
     )
   }
@@ -569,7 +641,7 @@ function TimelineEntry({ row, t }: { row: TimelineRow; t: PanelTranslate }) {
         <span className="lab-row-label" style={{ margin: 0 }}>{row.title}</span>
         <span className="lab-tool-toggle-hint">{open ? t('tool.collapse') : t('tool.expand')}</span>
       </button>
-      {row.text}
+      {text}
       {open && (
         <div className="lab-tool-detail">
           {detail.input !== null && (
@@ -589,7 +661,7 @@ function TimelineEntry({ row, t }: { row: TimelineRow; t: PanelTranslate }) {
       )}
     </article>
   )
-}
+})
 
 /**
  * Permission-mode picker.
@@ -1944,6 +2016,11 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
   }, [fileQuery, remote, selectedId])
 
   const rows = useMemo(() => timeline(snapshot?.events ?? [], t), [snapshot?.events, t])
+  /**
+   * Whether the newest row may still grow. Drives the typewriter reveal, which must
+   * not animate a finished answer or a row restored from a transcript.
+   */
+  const streamingRow = snapshot !== undefined && BUSY_STATUSES.includes(snapshot.session.status)
 
   /**
    * What the operator has sent in this session, newest first — the list `↑`
@@ -2772,7 +2849,21 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                     />
                   )}
                   <div className="lab-stream">
-                    {rows.map(row => <TimelineEntry key={row.key} row={row} t={t} />)}
+                    {rows.map((row, index) => (
+                      <TimelineEntry
+                        key={row.key}
+                        row={row}
+                        // Only the row still being written: the last one, while the
+                        // session has a turn in flight, and only for text the model
+                        // is producing.
+                        streaming={
+                          streamingRow
+                          && index === rows.length - 1
+                          && (row.kind === 'assistant' || row.kind === 'reasoning')
+                        }
+                        t={t}
+                      />
+                    ))}
                   </div>
                 </div>
 

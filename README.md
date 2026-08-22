@@ -360,6 +360,23 @@ sessions it created itself.
 Session transcript paths stay on the Host. An unknown or expired locator makes the
 session `orphaned`, the same as one that stopped resolving after a Host restart.
 
+## Streaming
+
+Both products stream token by token, and the Host relays each delta the moment it
+arrives. The browser reads through a long poll, though, so what it receives is
+everything that accumulated during one round trip — measured on a real Codex turn,
+11 characters and then 346 at once. Correct, and it did not look like streaming.
+
+Arrival and display are therefore separate: text is revealed on a frame timer whose
+stride grows with the backlog, so a large batch catches up in a few frames instead
+of appearing whole, and the reveal can never fall permanently behind a fast turn. A
+finished answer and a transcript restored from a resumed session are shown complete
+— animating those would misrepresent when they happened.
+
+Timeline rows are memoized, which is the other half: without it every delta
+repainted a resumed session's several hundred rows, which lengthened the round trip
+and made the next batch bigger still.
+
 ## Runtime behavior
 
 - Codex uses one managed App Server process for several mapped threads

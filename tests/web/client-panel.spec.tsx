@@ -1991,4 +1991,57 @@ describe('LocalAgentPanel', () => {
     expect(screen.queryByRole('tab', { name: en['attach.fromHost'] })).toBeNull()
     expect(fixture.hostList).not.toHaveBeenCalled()
   })
+
+  it('reveals streamed text gradually, and shows a finished answer whole', async () => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'setTimeout', 'clearTimeout'] })
+    try {
+      const answer = 'A'.repeat(400)
+      const fixture = new RemoteFixture()
+      fixture.sessionsList.mockResolvedValue({ ok: true, value: [{ ...session, status: 'running' }] })
+      fixture.pushRead(snapshot({
+        session: { ...session, status: 'running' },
+        // One batch carrying 400 characters: what a long poll actually delivers,
+        // measured at 346 on a real Codex turn.
+        events: [event(1, { type: 'bridge/text-delta', data: { text: answer, itemId: 'x' } })],
+        latestSequence: 1,
+      }))
+      renderPanel(fixture.remote())
+
+      // Measured by subtracting the row label rather than by matching characters:
+      // the label is "Assistant", which starts with a capital A, so a /A+/ match
+      // finds that one letter and reports the row as barely revealed.
+      const revealed = (): number => {
+        const card = document.querySelector('.lab-row-card--assistant')
+        return (card?.textContent?.length ?? 0) - en['row.assistant'].length
+      }
+
+      await vi.advanceTimersByTimeAsync(50)
+      // Arrived whole, revealed progressively: the point of separating the two.
+      expect(revealed()).toBeGreaterThan(0)
+      expect(revealed()).toBeLessThan(answer.length)
+
+      // And it catches up rather than falling permanently behind a fast turn.
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(revealed()).toBe(answer.length)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not animate a transcript restored from a resumed session', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      events: [
+        event(1, { type: 'bridge/text-delta', data: { text: 'said earlier', itemId: 'old' } }),
+        event(2, { type: 'bridge/history', data: { restored: 1, truncated: false } }),
+      ],
+      latestSequence: 2,
+    }))
+    renderPanel(fixture.remote())
+
+    // The session is idle, so nothing is still being written. Typing out history
+    // would be a lie about when it happened.
+    expect(await screen.findByText('said earlier')).toBeTruthy()
+  })
 })
