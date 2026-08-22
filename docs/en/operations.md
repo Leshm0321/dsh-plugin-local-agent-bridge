@@ -4,7 +4,7 @@
 
 1. Verify `codex --version` and `claude --version` **in the shell that starts DSH**, under the same OS account. A product that works in another terminal is not enough — see [Product is installed but not listed](#product-is-installed-but-not-listed).
 2. Confirm each product already works from a local terminal without a new login flow.
-3. For remote operation, merge [`remote-web.patch.yml`](../examples/profile/remote-web.patch.yml) into the built-in `web` Profile so DSH's own workspace selection uses the in-browser picker instead of a native dialog on the Host desktop. `Local Agents` can register a workspace by absolute path without this, in any Profile.
+3. For remote operation, merge [`remote-web.patch.yml`](../../examples/profile/remote-web.patch.yml) into the built-in `web` Profile so DSH's own workspace selection uses the in-browser picker instead of a native dialog on the Host desktop. `Local Agents` can register a workspace by absolute path without this, in any Profile.
 4. Run `dsh --profile web --dump-config` and confirm both browse-picker rows load without a name-mismatch warning.
 5. Start the `web` Profile while DSH remains loopback-bound.
 6. Verify the authenticated access layer before using a remote browser.
@@ -100,7 +100,7 @@ product, so the operator does not have to reach for this document.
   automatic/native directory picker because DSH is loopback-bound. On Windows
   that is the folder dialog, on macOS the open panel, on Linux a desktop portal
   — all of them open on the Host.
-- Apply [`remote-web.patch.yml`](../examples/profile/remote-web.patch.yml), restart the Profile, and verify the composed config contains `directory-picker-browse` and `ui-directory-picker-browse`.
+- Apply [`remote-web.patch.yml`](../../examples/profile/remote-web.patch.yml), restart the Profile, and verify the composed config contains `directory-picker-browse` and `ui-directory-picker-browse`.
 - Do not change the existing `directory-picker` row's `name`; Cordis treats that value as an assertion and skips a mismatched patch. Disable the row, then insert the browse pair under distinct IDs as shown in the example.
 
 ### Session is orphaned
@@ -119,3 +119,50 @@ product, so the operator does not have to reach for this document.
 - Stop DSH and inspect the process tree on the Host.
 - Capture only process names, PIDs, and exit state; do not capture command lines containing private prompts.
 - Treat a repeatable managed-child leak as a release blocker.
+
+## Runtime behavior
+
+
+- Codex uses one managed App Server process for several mapped threads
+  (`thread/start`, `thread/resume`, `turn/start`, `turn/steer`, `turn/interrupt`).
+- Claude Code uses `query()` with `includePartialMessages`, `resume`,
+  `canUseTool`, `AskUserQuestion`, and SDK elicitation callbacks.
+- A message sent during a running Codex turn steers it; a Claude Code message
+  queues until the active turn ends.
+- Approvals are one-time. No browser decision is written into product permission
+  configuration.
+- Browser reconnect uses an event sequence and a bounded replay window. After a
+  Host restart a session resumes when a native locator was already captured;
+  otherwise it is marked orphaned.
+- Archiving hides the bridge session and does not delete native history.
+
+## Remote browser use
+
+
+Merge [remote-web.patch.yml](../../examples/profile/remote-web.patch.yml) into the
+profile's `cordis.patch.yml` so the Harness's own workspace picker uses its
+in-browser directory chooser instead of a dialog on the Host desktop. `Local
+Agents` needs no picker to add a directory, so this is only about the Harness's
+own flow.
+
+Restart the profile and confirm `dsh --profile web --dump-config` contains
+`directory-picker-browse` and `ui-directory-picker-browse` with no loader
+name-mismatch warning.
+
+## Disable, enable, uninstall
+
+
+To disable without removing the package, add the row from
+[local-agent-bridge.disabled.patch.yml](../../examples/profile/local-agent-bridge.disabled.patch.yml)
+to the profile's `cordis.patch.yml` and restart. Remove `disabled: true` to
+re-enable.
+
+To uninstall, first remove the `local-agent-bridge` override row from the
+profile's own `cordis.patch.yml`, then:
+
+```sh
+dsh plugin --profile web remove dsh-plugin-local-agent-bridge
+```
+
+Unload disposes active sessions, closes protocol transports, and waits for
+managed process trees to exit.

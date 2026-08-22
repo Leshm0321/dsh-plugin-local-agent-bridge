@@ -102,6 +102,12 @@ export const PANEL_STYLES = `
   --lab-fast: .16s;
   --lab-slow: .28s;
 
+  /* The side panel's width when open. Declared here rather than inline in the track
+     list because the animation reads it back off the element: a grid whose track
+     count changes cannot be transitioned, so the open and shut widths are tweened
+     through --lab-side-width, and this is the value it tweens to. */
+  --lab-side-open: 420px;
+
   font-family: var(--lab-font);
   color: var(--lab-text);
   /* macOS only, and deliberately kept: it is what makes text there match the rest
@@ -753,8 +759,8 @@ body[data-ds-dark-theme] .lab-code {
 
 /* The body grows a third column only when the panel is open, so a closed panel
    costs the conversation nothing. */
-.lab-body--side { grid-template-columns: var(--lab-aside-width, 288px) minmax(0, 1fr) var(--lab-side-width, 420px); }
-.lab-body--side.lab-body--collapsed { grid-template-columns: 52px minmax(0, 1fr) var(--lab-side-width, 420px); }
+.lab-body--side { grid-template-columns: var(--lab-aside-width, 288px) minmax(0, 1fr) var(--lab-side-width, var(--lab-side-open)); }
+.lab-body--side.lab-body--collapsed { grid-template-columns: 52px minmax(0, 1fr) var(--lab-side-width, var(--lab-side-open)); }
 
 .lab-side {
   min-width: 0;
@@ -1487,6 +1493,7 @@ body[data-ds-dark-theme] .lab-code {
   animation: lab-pulse 1.6s var(--lab-ease) infinite;
 }
 .lab-mic-glyph { display: block; }
+.lab-brand-glyph { display: block; flex: none; }
 
 @keyframes lab-pulse {
   0%, 100% { opacity: 1; }

@@ -66,6 +66,7 @@ import type {
 } from '../types.ts'
 import { en, type LocalAgentBridgeKey, zh } from './locales.ts'
 import { Markdown } from './markdown.tsx'
+import { useFoldHeight, useTrackWidth } from './motion.ts'
 import { buildTrace } from './trace.ts'
 import { DiffPane, FilesPane } from './side-panel.tsx'
 import { TraceView, formatDuration } from './trace-view.tsx'
@@ -752,6 +753,10 @@ function TurnGroup({
   const elapsed = node.durationMs ?? Math.max(0, now - node.startedAt)
   // Anything at all is foldable, because folding leaves the summary chip rather than
   // a blank space. Whether it *starts* folded is the separate question above.
+  //
+  // The work stays mounted while it collapses, which is the only way it can be seen
+  // to collapse; `work.mounted`, not `open`, decides whether the rows render.
+  const work = useFoldHeight<HTMLDivElement>(open)
 
   return (
     <>
@@ -771,8 +776,8 @@ function TurnGroup({
             </span>
             <span className="lab-turn-count">{t('turn.steps', { count: node.work.length })}</span>
           </button>
-          {open && (
-            <div className="lab-turn-work">
+          {work.mounted && (
+            <div className="lab-turn-work" ref={work.ref}>
               {node.work.map((row, index) => (
                 <TimelineEntry
                   key={row.key}
@@ -1116,6 +1121,44 @@ function formatTokens(tokens: number): string {
   if (tokens < 1_000) return String(tokens)
   if (tokens < 1_000_000) return `${(tokens / 1_000).toFixed(tokens < 10_000 ? 1 : 0)}k`
   return `${(tokens / 1_000_000).toFixed(1)}M`
+}
+
+/**
+ * The plugin's own mark, for the Harness sidebar.
+ *
+ * It used to borrow the code-block primitive, which renders as a bare `#` — accurate
+ * about nothing and unrecognisable next to the Harness's own entries. This says what
+ * the plugin is instead: a terminal on this machine, with a prompt inside it.
+ *
+ * Drawn rather than composed from two primitives. At 16px a mark has room for one
+ * idea, and two overlapping shapes for "two products" would be mud; "the command line
+ * on this machine, reachable from here" is the idea that survives the size.
+ *
+ * Stroke weight and radii follow the primitive set so it sits in a row with them.
+ * @param size - square edge in pixels; the sidebar renders it at 16.
+ */
+function BridgeIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      className="lab-brand-glyph"
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {/* The machine: a window, not a card, so it reads as something that runs. */}
+      <rect x="1.9" y="2.9" width="12.2" height="10.2" rx="2.6" />
+      {/* The prompt, off-centre left the way a real one sits. */}
+      <path d="M5.1 6.4 L7 8 L5.1 9.6" />
+      {/* And the caret it is waiting at. */}
+      <path d="M8.7 9.6 H11" />
+    </svg>
+  )
 }
 
 /**
@@ -2287,6 +2330,13 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
     return () => { cancelled = true; clearTimeout(timer) }
   }, [fileQuery, remote, selectedId])
 
+  /**
+   * The side panel opens and shuts by animating the grid track it sits in, so the
+   * conversation gives up its room over the same interval instead of jumping. It
+   * needs a session to have anything to show, so "no session" reads as shut.
+   */
+  const side = useTrackWidth<HTMLDivElement>(sideOpen && snapshot !== undefined, '--lab-side-width', '--lab-side-open')
+
   const rows = useMemo(() => timeline(snapshot?.events ?? [], t), [snapshot?.events, t])
   /**
    * The transcript as question / work / answer, so a reply is not buried under the
@@ -2950,7 +3000,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
         title={t('panel.name')}
         onClick={() => { setOpen(true) }}
       >
-        <IconCodeOutline16 />{wide && <span>{t('panel.name')}</span>}
+        <BridgeIcon />{wide && <span>{t('panel.name')}</span>}
       </button>
       {open && (
         <div className="lab-root lab-scrim" role="dialog" aria-modal="true" aria-label={t('panel.name')}>
@@ -3002,10 +3052,13 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
             </header>
 
             <div
+              ref={side.ref}
               className={[
                 'lab-body',
                 sidebarCollapsed ? 'lab-body--collapsed' : '',
-                sideOpen && snapshot !== undefined ? 'lab-body--side' : '',
+                // Keyed to `mounted`, not the toggle: the third track has to still be
+                // there while the panel is collapsing into it.
+                side.mounted ? 'lab-body--side' : '',
               ].filter(part => part.length > 0).join(' ')}
             >
               <aside className="lab-aside">
@@ -3466,7 +3519,11 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                 </form>
               </main>
 
-              {sideOpen && snapshot !== undefined && (
+              {/* `mounted` keeps the panel alive through its collapse; the snapshot
+                  check is for the other way it can end — a session going away under
+                  it, where there is nothing left to show and the track can just
+                  close over an empty column. */}
+              {side.mounted && snapshot !== undefined && (
                 <aside className="lab-side">
                   <div className="lab-views" role="tablist" aria-label={t('side.files')}>
                     {(['files', 'diff'] as const).map(candidate => (

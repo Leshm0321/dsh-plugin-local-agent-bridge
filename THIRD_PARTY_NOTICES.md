@@ -22,4 +22,20 @@ Documentation: <https://code.claude.com/docs/en/agent-sdk/overview>
 
 Commercial Terms: <https://www.anthropic.com/legal/commercial-terms>
 
+## lowlight and highlight.js
+
+The panel highlights code with `lowlight` `3.3.0`, which wraps `highlight.js` `11.11.2` and returns a syntax tree rather than a string of HTML. Both are bundled into the client build and therefore redistributed with this package. `lowlight` is distributed under the MIT License; `highlight.js` is distributed under BSD-3-Clause.
+
+The tree, rather than the HTML, is the reason for the wrapper: the panel renders React elements throughout and never sets inner HTML, so highlighting a file cannot become a way to inject markup into the Harness.
+
+Upstream: <https://github.com/wooorm/lowlight> and <https://github.com/highlightjs/highlight.js>
+
+## GSAP
+
+Animation uses `gsap` `3.15.0`, bundled into the client build and therefore redistributed with this package.
+
+GSAP is **not** under an OSI-approved open-source licence. It is published by Webflow under the GSAP Standard "No Charge" License, which has been free for all uses — including commercial — since 2025-04-30, and which permits redistribution as part of a website or application. It is not MIT, it is not a licence a consumer of this package can assume from the fact that everything around it is, and it can be changed by its publisher in a way an OSI licence cannot. If that matters for a downstream distribution, the two animations that need it are isolated in `src/client/motion.ts` and both are a fold whose only alternative is to snap.
+
+Licence: <https://gsap.com/standard-license>
+
 Re-review licensing, terms, and brand requirements before public, commercial, multi-user, or hosted distribution.

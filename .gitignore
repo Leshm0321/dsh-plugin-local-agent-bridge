@@ -24,6 +24,11 @@ node_modules/
 # belongs here too. Uploads are operator-supplied content, never source.
 .dsh-bridge-uploads/
 
+# Development planning notes. `docs/` is the plugin's own documentation — what a
+# reader of this repository needs — and a task plan is neither that nor something a
+# consumer of the package should receive.
+docs/plans/
+
 # Local CodeGraph index. A SQLite graph of this tree, rebuilt on demand and large
 # enough that committing it would be its own problem.
 .codegraph/
