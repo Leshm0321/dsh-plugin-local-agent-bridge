@@ -11,7 +11,16 @@
  * sends an absolute Host path — unlike the composer's host browser, which exists to
  * do exactly that and says so.
  */
-import { IconCodeOutline16, IconFolderClose16, IconFolderOpen16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  IconCheckOutline16,
+  IconCloseOutline16,
+  IconCodeOutline16,
+  IconEditOutline16,
+  IconFolderClose16,
+  IconFolderOpen16,
+  IconPlusOutline16,
+  IconTrashOutline16,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { useEffect, useMemo, useState } from 'react'
 import { Code } from './code.tsx'
@@ -52,10 +61,13 @@ function formatBytes(bytes: number): string {
 export function FilesPane({
   remote,
   bridgeSessionId,
+  writable,
   t,
 }: {
   remote: LocalAgentRemote
   bridgeSessionId: string
+  /** Whether this Profile serves writes; false hides the controls entirely. */
+  writable: boolean
   t: Translate
 }) {
   // One entry per directory that has been read; absent means "not opened yet".
@@ -67,6 +79,12 @@ export function FilesPane({
   const [filter, setFilter] = useState('')
   const [error, setError] = useState<string>()
   const [showHidden, setShowHidden] = useState(false)
+  const [editing, setEditing] = useState<string | null>(null)
+  const [buffer, setBuffer] = useState('')
+  const [saving, setSaving] = useState(false)
+  // Where a name is being typed: creating into a directory, or renaming a path.
+  const [naming, setNaming] = useState<{ kind: 'file' | 'directory' | 'rename'; at: string } | null>(null)
+  const [name, setName] = useState('')
 
   /**
    * Read one directory level, once.
@@ -131,6 +149,102 @@ export function FilesPane({
   }
 
   /**
+   * Re-read the directory an action changed, and the root if it was the root.
+   * @param path - workspace-relative path of the affected directory.
+   */
+  const refresh = async (path: string): Promise<void> => {
+    await load(path)
+  }
+
+  /**
+   * Save the editor's buffer.
+   *
+   * A revision mismatch is reported rather than retried: the agent shares this tree,
+   * and the operator has to decide whether their version or its version wins.
+   */
+  const save = async (): Promise<void> => {
+    if (file === undefined || editing === null) return
+    setSaving(true)
+    const result = await remote.workspaceWrite({
+      bridgeSessionId,
+      path: editing,
+      content: buffer,
+      revision: file.revision,
+    })
+    if (!result.ok) {
+      // Asked rather than inferred from the failure's code. The transport's code is
+      // its own, not the Host's BridgeError code, so matching on it was guesswork —
+      // and the real question is simply whether the file moved underneath us. One
+      // extra read answers it definitively.
+      const fresh = await remote.workspaceFile({ bridgeSessionId, path: editing })
+      setSaving(false)
+      if (fresh.ok && fresh.value.revision !== file.revision) {
+        setError('stale')
+        // The newer file is what the operator now has to reckon with, so it replaces
+        // the viewer's copy while their own text stays in the editor.
+        setFile(fresh.value)
+        return
+      }
+      setError('write')
+      return
+    }
+    setSaving(false)
+    setFile(result.value)
+    setEditing(null)
+    setError(undefined)
+  }
+
+  /** Act on the name being typed, whichever action opened the field. */
+  const commitName = async (): Promise<void> => {
+    const trimmed = name.trim()
+    if (naming === null || trimmed.length === 0) return
+    setError(undefined)
+    const parent = naming.kind === 'rename'
+      ? naming.at.split('/').slice(0, -1).join('/')
+      : naming.at
+    const target = parent.length === 0 ? trimmed : `${parent}/${trimmed}`
+    const result = naming.kind === 'rename'
+      ? await remote.workspaceRename({ bridgeSessionId, from: naming.at, to: target })
+      : await remote.workspaceCreate({ bridgeSessionId, path: target, directory: naming.kind === 'directory' })
+    if (!result.ok) {
+      setError(result.error.code)
+      return
+    }
+    setNaming(null)
+    setName('')
+    await refresh(parent)
+    // A renamed file that was open is no longer at the path the viewer holds.
+    if (naming.kind === 'rename' && selected === naming.at) {
+      setSelected(undefined)
+      setFile(undefined)
+      setEditing(null)
+    }
+  }
+
+  /**
+   * Delete an entry, then re-read the directory it was in.
+   * @param path - workspace-relative path.
+   * @param directory - what was asked about, so a refusal can be explained.
+   */
+  const remove = async (path: string, directory: boolean): Promise<void> => {
+    setError(undefined)
+    const result = await remote.workspaceDelete({ bridgeSessionId, path })
+    if (!result.ok) {
+      // The one business refusal here is a directory with contents, and the caller
+      // already knows which it asked about — so the reason comes from what was
+      // deleted rather than from decoding the transport's error code.
+      setError(directory ? 'notEmpty' : 'write')
+      return
+    }
+    await refresh(path.split('/').slice(0, -1).join(''))
+    if (selected === path) {
+      setSelected(undefined)
+      setFile(undefined)
+      setEditing(null)
+    }
+  }
+
+  /**
    * The visible tree, flattened depth-first.
    *
    * A filter matches against the whole path and keeps only files, because filtering a
@@ -175,10 +289,55 @@ export function FilesPane({
               </span>
             ))}
             <span className="lab-files-meta">{formatBytes(file.bytes)}</span>
+            {writable && !file.binary && (
+              editing === null
+                ? (
+                  <button
+                    type="button"
+                    className="lab-files-action"
+                    aria-label={t('files.edit')}
+                    title={t('files.edit')}
+                    // A truncated file must not be editable: saving would write the
+                    // part that was shown over the whole file.
+                    disabled={file.truncated}
+                    onClick={() => { setEditing(file.path); setBuffer(file.content); setError(undefined) }}
+                  >
+                    <IconEditOutline16 />
+                  </button>
+                )
+                : (
+                  <>
+                    <button
+                      type="button"
+                      className="lab-files-action"
+                      aria-label={t('files.save')}
+                      title={t('files.save')}
+                      disabled={saving}
+                      onClick={() => { void save() }}
+                    >
+                      <IconCheckOutline16 />
+                    </button>
+                    <button
+                      type="button"
+                      className="lab-files-action"
+                      aria-label={t('files.cancel')}
+                      title={t('files.cancel')}
+                      onClick={() => { setEditing(null); setError(undefined) }}
+                    >
+                      <IconCloseOutline16 />
+                    </button>
+                  </>
+                )
+            )}
           </div>
         )}
         <div className="lab-files-content">
-          {error !== undefined && <p className="lab-browse-note">{t('files.error')}</p>}
+          {error === 'stale' && <p className="lab-files-warning">{t('files.stale')}</p>}
+          {error === 'notEmpty' && <p className="lab-files-warning">{t('files.notEmpty')}</p>}
+          {error === 'write' && <p className="lab-files-warning">{t('files.writeFailed')}</p>}
+          {error !== undefined && error !== 'stale' && error !== 'notEmpty' && error !== 'write' && (
+            <p className="lab-browse-note">{t('files.error')}</p>
+          )}
           {loading && <p className="lab-browse-note">{t('browse.loading')}</p>}
           {!loading && error === undefined && file === undefined && (
             <div className="lab-files-empty">
@@ -188,28 +347,87 @@ export function FilesPane({
             </div>
           )}
           {!loading && file?.binary === true && <p className="lab-browse-note">{t('files.binary')}</p>}
-          {!loading && file !== undefined && !file.binary && (
+          {!loading && file !== undefined && !file.binary && editing === null && (
             <>
               <Code text={file.content} path={file.path} />
               {file.truncated && <p className="lab-browse-note">{t('files.cut')}</p>}
             </>
           )}
+          {editing !== null && (
+            /* A plain textarea, not the highlighted view made editable. Overlaying a
+               caret on coloured spans is a rewrite of text editing, and getting it
+               subtly wrong is worse than editing in monospace for a minute. */
+            <textarea
+              className="lab-files-editor"
+              value={buffer}
+              spellCheck={false}
+              onChange={event => { setBuffer(event.target.value) }}
+            />
+          )}
         </div>
       </div>
 
       <div className="lab-files-tree">
-        <input
-          type="search"
-          className="lab-input lab-files-filter"
-          value={filter}
-          placeholder={t('files.filter')}
-          onChange={event => { setFilter(event.target.value) }}
-        />
+        <div className="lab-files-toolbar">
+          <input
+            type="search"
+            className="lab-input lab-files-filter"
+            value={filter}
+            placeholder={t('files.filter')}
+            onChange={event => { setFilter(event.target.value) }}
+          />
+          {writable && (
+            <>
+              <button
+                type="button"
+                className="lab-files-action"
+                aria-label={t('files.newFile')}
+                title={t('files.newFile')}
+                onClick={() => { setNaming({ kind: 'file', at: '' }); setName('') }}
+              >
+                <IconPlusOutline16 />
+              </button>
+              <button
+                type="button"
+                className="lab-files-action"
+                aria-label={t('files.newDirectory')}
+                title={t('files.newDirectory')}
+                onClick={() => { setNaming({ kind: 'directory', at: '' }); setName('') }}
+              >
+                <IconFolderClose16 />
+              </button>
+            </>
+          )}
+        </div>
+        {naming !== null && (
+          <div className="lab-files-naming">
+            <input
+              // eslint-disable-next-line jsx-a11y/no-autofocus -- the field exists
+              // because a button was just pressed for it; focusing anything else would
+              // be the surprise.
+              autoFocus
+              className="lab-input"
+              value={name}
+              placeholder={naming.kind === 'rename' ? t('files.renameTo') : t('files.nameIt')}
+              onChange={event => { setName(event.target.value) }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') { event.preventDefault(); void commitName() }
+                if (event.key === 'Escape') { event.preventDefault(); setNaming(null) }
+              }}
+            />
+            <button type="button" className="lab-files-action" aria-label={t('files.confirm')} onClick={() => { void commitName() }}>
+              <IconCheckOutline16 />
+            </button>
+            <button type="button" className="lab-files-action" aria-label={t('files.cancel')} onClick={() => { setNaming(null) }}>
+              <IconCloseOutline16 />
+            </button>
+          </div>
+        )}
         <div className="lab-files-rows">
           {rows.length === 0 && <p className="lab-browse-note">{t('files.treeEmpty')}</p>}
           {rows.map(({ entry, depth }) => (
+            <div key={entry.path} className="lab-files-line">
             <button
-              key={entry.path}
               type="button"
               className={entry.path === selected ? 'lab-files-row lab-files-row--on' : 'lab-files-row'}
               style={{ paddingLeft: `${String(8 + depth * 12)}px` }}
@@ -225,6 +443,40 @@ export function FilesPane({
               <span className="lab-files-name">{entry.name}</span>
               {entry.bytes !== null && <span className="lab-files-size">{formatBytes(entry.bytes)}</span>}
             </button>
+            {writable && (
+              <span className="lab-files-row-actions">
+                {entry.directory && (
+                  <button
+                    type="button"
+                    className="lab-files-action"
+                    aria-label={t('files.newIn', { name: entry.name })}
+                    title={t('files.newIn', { name: entry.name })}
+                    onClick={() => { setNaming({ kind: 'file', at: entry.path }); setName('') }}
+                  >
+                    <IconPlusOutline16 />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="lab-files-action"
+                  aria-label={t('files.rename', { name: entry.name })}
+                  title={t('files.rename', { name: entry.name })}
+                  onClick={() => { setNaming({ kind: 'rename', at: entry.path }); setName(entry.name) }}
+                >
+                  <IconEditOutline16 />
+                </button>
+                <button
+                  type="button"
+                  className="lab-files-action"
+                  aria-label={t('files.delete', { name: entry.name })}
+                  title={t('files.delete', { name: entry.name })}
+                  onClick={() => { void remove(entry.path, entry.directory) }}
+                >
+                  <IconTrashOutline16 />
+                </button>
+              </span>
+            )}
+            </div>
           ))}
         </div>
         <label className="lab-browse-toggle">

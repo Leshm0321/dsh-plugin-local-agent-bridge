@@ -3475,6 +3475,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                   <FilesPane
                     remote={remote}
                     bridgeSessionId={snapshot.session.bridgeSessionId}
+                    writable={catalog?.workspaceWrites === true}
                     t={t}
                   />
                 </aside>

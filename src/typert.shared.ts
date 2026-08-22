@@ -319,6 +319,7 @@ const workspaceListRequestSchema = z.object({
 
 const workspaceFileSchema = z.object({
   path: z.string(),
+  revision: z.string(),
   content: z.string(),
   bytes: z.number(),
   truncated: z.boolean(),
@@ -332,10 +333,30 @@ const workspaceFileRequestSchema = z.object({
   path: z.string(),
 }).strict()
 
+const workspaceWriteRequestSchema = z.object({
+  bridgeSessionId: z.string(),
+  path: z.string(),
+  content: z.string(),
+  revision: z.string(),
+}).strict()
+
+const workspaceCreateRequestSchema = z.object({
+  bridgeSessionId: z.string(),
+  path: z.string(),
+  directory: z.boolean(),
+}).strict()
+
+const workspaceRenameRequestSchema = z.object({
+  bridgeSessionId: z.string(),
+  from: z.string(),
+  to: z.string(),
+}).strict()
+
 const catalogSchema = z.object({
   providers: z.array(providerSchema),
   workspaces: z.array(workspaceSchema),
   hostBrowsing: z.boolean(),
+  workspaceWrites: z.boolean(),
 }).strict()
 
 const createRequestSchema = z.object({
@@ -441,4 +462,8 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('hostList', [parameter('request', hostListRequestSchema)], hostListingSchema),
   invocation('workspaceList', [parameter('request', workspaceListRequestSchema)], workspaceListingSchema),
   invocation('workspaceFile', [parameter('request', workspaceFileRequestSchema)], workspaceFileSchema),
+  invocation('workspaceWrite', [parameter('request', workspaceWriteRequestSchema)], workspaceFileSchema),
+  invocation('workspaceCreate', [parameter('request', workspaceCreateRequestSchema)], z.undefined()),
+  invocation('workspaceRename', [parameter('request', workspaceRenameRequestSchema)], z.undefined()),
+  invocation('workspaceDelete', [parameter('request', workspaceFileRequestSchema)], z.undefined()),
 ] as const

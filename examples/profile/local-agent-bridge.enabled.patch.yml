@@ -4,6 +4,7 @@
   config:
     allowExperimentalVersions: false
     allowHostBrowsing: true
+    allowWorkspaceWrites: true
     enableFakeProvider: false
     eventRetention: 2000
     longPollMaxMs: 25000

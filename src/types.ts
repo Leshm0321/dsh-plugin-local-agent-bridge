@@ -699,6 +699,11 @@ export interface BridgeWorkspaceListRequest extends BridgeSessionIdRequest {
 
 export interface BridgeWorkspaceFile {
   readonly path: string
+  /**
+   * What the file looked like when read, handed back on a write so the Host can
+   * refuse one that would overwrite a change made since. Opaque to the browser.
+   */
+  readonly revision: string
   /** The text, cut at the Host's ceiling. Empty for a binary file. */
   readonly content: string
   readonly bytes: number
@@ -711,6 +716,24 @@ export interface BridgeWorkspaceFileRequest extends BridgeSessionIdRequest {
   readonly path: string
 }
 
+export interface BridgeWorkspaceWriteRequest extends BridgeSessionIdRequest {
+  readonly path: string
+  readonly content: string
+  /** The revision the editor was opened at; a mismatch is refused. */
+  readonly revision: string
+}
+
+export interface BridgeWorkspaceCreateRequest extends BridgeSessionIdRequest {
+  readonly path: string
+  /** True for a directory, false for an empty file. */
+  readonly directory: boolean
+}
+
+export interface BridgeWorkspaceRenameRequest extends BridgeSessionIdRequest {
+  readonly from: string
+  readonly to: string
+}
+
 export interface BridgeCatalogResult {
   readonly providers: readonly NativeProviderView[]
   readonly workspaces: readonly BridgeWorkspaceView[]
@@ -720,6 +743,12 @@ export interface BridgeCatalogResult {
    * one that fails — see `allowHostBrowsing` in the Profile config.
    */
   readonly hostBrowsing: boolean
+  /**
+   * Whether this Profile lets the panel create, rename, delete or edit files in the
+   * working directory. Off hides those controls rather than offering ones that fail —
+   * see `allowWorkspaceWrites` in the Profile config.
+   */
+  readonly workspaceWrites: boolean
 }
 
 export interface BridgeSessionCreateRequest {

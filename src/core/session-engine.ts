@@ -30,7 +30,14 @@ import type {
 import { BridgeError, bridgeError } from './errors.ts'
 import { searchFiles } from './file-search.ts'
 import { receiveImages, receiveUploads } from './uploads.ts'
-import { listWorkspace, readWorkspaceFile } from './workspace-files.ts'
+import {
+  createWorkspaceEntry,
+  deleteWorkspaceEntry,
+  listWorkspace,
+  readWorkspaceFile,
+  renameWorkspaceEntry,
+  writeWorkspaceFile,
+} from './workspace-files.ts'
 import type {
   BridgeEventDraft,
   NativeProviderAdapter,
@@ -652,6 +659,67 @@ export class BridgeSessionEngine {
     const runtime = this.requireSession(bridgeSessionId)
     const workspace = await this.requireWorkspace(runtime.record.workspaceId)
     return await readWorkspaceFile(workspace.cwd, path)
+  }
+
+  /**
+   * Write a file in the session's working directory.
+   *
+   * The revision is checked on the Host, not here: the agent shares this tree, and a
+   * write that would discard its work must be refused rather than merged optimistically.
+   * @param bridgeSessionId - the session whose directory to write in.
+   * @param path - workspace-relative file path.
+   * @param content - the new contents.
+   * @param revision - the revision the editor was opened at.
+   * @returns the file as it now stands.
+   */
+  async writeWorkspaceFile(
+    bridgeSessionId: string,
+    path: string,
+    content: string,
+    revision: string,
+  ): Promise<BridgeWorkspaceFile> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    const workspace = await this.requireWorkspace(runtime.record.workspaceId)
+    return await writeWorkspaceFile(workspace.cwd, path, content, revision)
+  }
+
+  /**
+   * Create an empty file or a directory in the working directory.
+   * @param bridgeSessionId - the session whose directory to create in.
+   * @param path - workspace-relative path.
+   * @param directory - true for a directory.
+   */
+  async createWorkspaceEntry(bridgeSessionId: string, path: string, directory: boolean): Promise<void> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    const workspace = await this.requireWorkspace(runtime.record.workspaceId)
+    await createWorkspaceEntry(workspace.cwd, path, directory)
+  }
+
+  /**
+   * Rename or move an entry within the working directory.
+   * @param bridgeSessionId - the session whose directory to act in.
+   * @param from - existing workspace-relative path.
+   * @param to - new workspace-relative path.
+   */
+  async renameWorkspaceEntry(bridgeSessionId: string, from: string, to: string): Promise<void> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    const workspace = await this.requireWorkspace(runtime.record.workspaceId)
+    await renameWorkspaceEntry(workspace.cwd, from, to)
+  }
+
+  /**
+   * Delete a file, or an empty directory, from the working directory.
+   * @param bridgeSessionId - the session whose directory to act in.
+   * @param path - workspace-relative path.
+   */
+  async deleteWorkspaceEntry(bridgeSessionId: string, path: string): Promise<void> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    const workspace = await this.requireWorkspace(runtime.record.workspaceId)
+    await deleteWorkspaceEntry(workspace.cwd, path)
   }
 
   async dispose(): Promise<void> {

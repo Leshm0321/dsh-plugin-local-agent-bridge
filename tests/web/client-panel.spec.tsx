@@ -29,7 +29,9 @@ const ICON_STUBS = vi.hoisted(() => [
   'IconArchiveOutline20',
   'IconBranchOutline16',
   'IconCloseOutline16',
+  'IconCheckOutline16',
   'IconCodeOutline16',
+  'IconEditOutline16',
   'IconDataOutline16',
   'IconFolderClose16',
   'IconFolderOpen16',
@@ -39,6 +41,7 @@ const ICON_STUBS = vi.hoisted(() => [
   'IconRefreshOutline16',
   'IconSendOutline16',
   'IconSparkle16',
+  'IconTrashOutline16',
   'IconStopFill16',
 ])
 
@@ -126,6 +129,7 @@ const catalog: BridgeCatalogResult = {
   }],
   workspaces: [{ id: 'workspace-1', title: 'Fixture workspace', status: 'ok', published: false }],
   hostBrowsing: true,
+  workspaceWrites: true,
 }
 
 function event(
@@ -230,8 +234,24 @@ class RemoteFixture {
   readonly workspaceFile = vi.fn(async (request: { bridgeSessionId: string; path: string }) => ({
     ok: true as const,
     value: request.path.endsWith('.png')
-      ? { path: request.path, content: '', bytes: 2_048, truncated: false, binary: true }
-      : { path: request.path, content: 'export const answer = 42\n', bytes: 25, truncated: false, binary: false },
+      ? { path: request.path, revision: 'r1', content: '', bytes: 2_048, truncated: false, binary: true }
+      : { path: request.path, revision: 'r1', content: 'export const answer = 42\n', bytes: 25, truncated: false, binary: false },
+  }))
+  readonly workspaceWrite = vi.fn(async (request: { bridgeSessionId: string; path: string; content: string; revision: string }) => ({
+    ok: true as const,
+    value: { path: request.path, revision: 'r2', content: request.content, bytes: request.content.length, truncated: false, binary: false },
+  }))
+  readonly workspaceCreate = vi.fn(async (_request: { bridgeSessionId: string; path: string; directory: boolean }) => ({
+    ok: true as const,
+    value: undefined,
+  }))
+  readonly workspaceRename = vi.fn(async (_request: { bridgeSessionId: string; from: string; to: string }) => ({
+    ok: true as const,
+    value: undefined,
+  }))
+  readonly workspaceDelete = vi.fn(async (_request: { bridgeSessionId: string; path: string }) => ({
+    ok: true as const,
+    value: undefined,
   }))
   readonly hostList = vi.fn(async (request: { path?: string }) => ({
     ok: true as const,
@@ -2502,5 +2522,155 @@ describe('LocalAgentPanel', () => {
     fireEvent.click(await screen.findByText('logo.png'))
     // Better than a screenful of replacement characters.
     expect(await screen.findByText(en['files.binary'])).toBeTruthy()
+  })
+
+  it('edits a file and writes it back at the revision it was opened at', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['panel.showSide']))
+    fireEvent.click(await screen.findByText('README.md'))
+    await screen.findByText(/answer = 42/)
+
+    fireEvent.click(screen.getByLabelText(en['files.edit']))
+    const editor = screen.getByDisplayValue(/answer = 42/) as HTMLTextAreaElement
+    fireEvent.change(editor, { target: { value: 'export const answer = 43\n' } })
+    fireEvent.click(screen.getByLabelText(en['files.save']))
+
+    // The revision goes back with the write, so the Host can refuse one that would
+    // overwrite a change the agent made in the meantime.
+    await waitFor(() => {
+      expect(fixture.workspaceWrite).toHaveBeenCalledWith({
+        bridgeSessionId: 'session-1',
+        path: 'README.md',
+        content: 'export const answer = 43\n',
+        revision: 'r1',
+      })
+    })
+    // Back to the highlighted view once saved.
+    await waitFor(() => { expect(screen.queryByDisplayValue(/answer = 43/)).toBeNull() })
+  })
+
+  it('explains a stale write by checking whether the file moved, not by decoding a code', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.workspaceWrite.mockResolvedValue({
+      ok: false,
+      error: { code: 'whatever-the-transport-says', message: 'refused' },
+    } as never)
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['panel.showSide']))
+    fireEvent.click(await screen.findByText('README.md'))
+    await screen.findByText(/answer = 42/)
+    fireEvent.click(screen.getByLabelText(en['files.edit']))
+
+    // The agent got there first: the same path now reads at a different revision.
+    fixture.workspaceFile.mockResolvedValue({
+      ok: true,
+      value: { path: 'README.md', revision: 'r2', content: 'the agent wrote this', bytes: 20, truncated: false, binary: false },
+    })
+    fireEvent.click(screen.getByLabelText(en['files.save']))
+
+    // Deliberately not matched on the failure's code — that is the transport's, not
+    // the Host's — so the conclusion comes from the revision having moved.
+    expect(await screen.findByText(en['files.stale'])).toBeTruthy()
+  })
+
+  it('says a write simply failed when the file did not move', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.workspaceWrite.mockResolvedValue({
+      ok: false,
+      error: { code: 'whatever', message: 'no' },
+    } as never)
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['panel.showSide']))
+    fireEvent.click(await screen.findByText('README.md'))
+    await screen.findByText(/answer = 42/)
+    fireEvent.click(screen.getByLabelText(en['files.edit']))
+    fireEvent.click(screen.getByLabelText(en['files.save']))
+
+    // Same revision, so this was not a conflict — a permission problem, or writes
+    // turned off. Saying "the agent changed it" would be a guess.
+    expect(await screen.findByText(en['files.writeFailed'])).toBeTruthy()
+  })
+
+  it('creates, renames and deletes through the tree', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['panel.showSide']))
+    await screen.findByText('src')
+
+    // Into a directory the operator has open, named where they can see it.
+    fireEvent.click(screen.getByLabelText(en['files.newIn'].replace('{name}', 'src')))
+    fireEvent.change(screen.getByPlaceholderText(en['files.nameIt']), { target: { value: 'extra.ts' } })
+    fireEvent.click(screen.getByLabelText(en['files.confirm']))
+    await waitFor(() => {
+      expect(fixture.workspaceCreate).toHaveBeenCalledWith({
+        bridgeSessionId: 'session-1',
+        path: 'src/extra.ts',
+        directory: false,
+      })
+    })
+
+    fireEvent.click(screen.getByLabelText(en['files.rename'].replace('{name}', 'README.md')))
+    fireEvent.change(screen.getByPlaceholderText(en['files.renameTo']), { target: { value: 'READ.md' } })
+    fireEvent.click(screen.getByLabelText(en['files.confirm']))
+    await waitFor(() => {
+      expect(fixture.workspaceRename).toHaveBeenCalledWith({
+        bridgeSessionId: 'session-1',
+        from: 'README.md',
+        to: 'READ.md',
+      })
+    })
+
+    fireEvent.click(screen.getByLabelText(en['files.delete'].replace('{name}', 'README.md')))
+    await waitFor(() => {
+      expect(fixture.workspaceDelete).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', path: 'README.md' })
+    })
+  })
+
+  it('offers no file controls when the Profile does not serve writes', async () => {
+    const fixture = new RemoteFixture()
+    fixture.catalog.mockResolvedValue({ ok: true, value: { ...catalog, workspaceWrites: false } })
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['panel.showSide']))
+    fireEvent.click(await screen.findByText('README.md'))
+    await screen.findByText(/answer = 42/)
+
+    // Absent rather than disabled: a control that cannot work should not be offered.
+    expect(screen.queryByLabelText(en['files.edit'])).toBeNull()
+    expect(screen.queryByLabelText(en['files.newFile'])).toBeNull()
+    expect(screen.queryByLabelText(en['files.delete'].replace('{name}', 'README.md'))).toBeNull()
+  })
+
+  it('will not offer to edit a file it only partly read', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.workspaceFile.mockResolvedValue({
+      ok: true,
+      value: { path: 'huge.txt', revision: 'r1', content: 'first part', bytes: 900_000, truncated: true, binary: false },
+    })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['panel.showSide']))
+    fireEvent.click(await screen.findByText('README.md'))
+    await screen.findByText(en['files.cut'])
+
+    // Saving would write the part that was shown over the whole file.
+    expect((screen.getByLabelText(en['files.edit']) as HTMLButtonElement).disabled).toBe(true)
   })
 })

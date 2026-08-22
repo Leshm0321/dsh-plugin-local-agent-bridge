@@ -31,7 +31,10 @@ import type {
   BridgeRepository,
   BridgeUploadRequest,
   BridgeWorkspaceFile,
+  BridgeWorkspaceCreateRequest,
   BridgeWorkspaceFileRequest,
+  BridgeWorkspaceRenameRequest,
+  BridgeWorkspaceWriteRequest,
   BridgeWorkspaceListRequest,
   BridgeWorkspaceListing,
   BridgeUploadResult,
@@ -69,6 +72,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     hostList: (request: BridgeHostListRequest) => Promise<RemoteResult<BridgeHostListing>>
     workspaceList: (request: BridgeWorkspaceListRequest) => Promise<RemoteResult<BridgeWorkspaceListing>>
     workspaceFile: (request: BridgeWorkspaceFileRequest) => Promise<RemoteResult<BridgeWorkspaceFile>>
+    workspaceWrite: (request: BridgeWorkspaceWriteRequest) => Promise<RemoteResult<BridgeWorkspaceFile>>
+    workspaceCreate: (request: BridgeWorkspaceCreateRequest) => Promise<RemoteResult<void>>
+    workspaceRename: (request: BridgeWorkspaceRenameRequest) => Promise<RemoteResult<void>>
+    workspaceDelete: (request: BridgeWorkspaceFileRequest) => Promise<RemoteResult<void>>
   }
 
   interface TypertRemoteMap {
@@ -131,6 +138,18 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'localAgentBridge/workspaceFile': (
       request: BridgeWorkspaceFileRequest,
     ) => Promise<RemoteResult<BridgeWorkspaceFile>>
+    'localAgentBridge/workspaceWrite': (
+      request: BridgeWorkspaceWriteRequest,
+    ) => Promise<RemoteResult<BridgeWorkspaceFile>>
+    'localAgentBridge/workspaceCreate': (
+      request: BridgeWorkspaceCreateRequest,
+    ) => Promise<RemoteResult<void>>
+    'localAgentBridge/workspaceRename': (
+      request: BridgeWorkspaceRenameRequest,
+    ) => Promise<RemoteResult<void>>
+    'localAgentBridge/workspaceDelete': (
+      request: BridgeWorkspaceFileRequest,
+    ) => Promise<RemoteResult<void>>
   }
 
   interface TypertRemoteNamespaceMap {

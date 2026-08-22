@@ -377,6 +377,32 @@ tree nobody asked to see. `.git` and `node_modules` are skipped. Dotfiles are li
 but hidden until asked for. A file over 512 KB is cut and says so, and a binary file
 says it is binary rather than rendering a screenful of replacement characters.
 
+With writes enabled the panel is a lightweight file manager: create a file or
+directory, rename, delete, and edit contents in place. Everything is confined to the
+working directory, and three refusals are deliberate:
+
+- **Creating never overwrites.** "New file" and "erase that file" are different
+  intentions and only one was expressed. The parent directory must already exist, so
+  one mistyped path cannot produce a tree nobody asked for.
+- **Deleting is not recursive.** A directory with contents is refused, and says so. A
+  recursive delete reachable from a browser is a way to lose a repository to one
+  mis-click.
+- **Saving is refused if the file moved.** The file is read with a revision, and the
+  write carries it back. The agent works in this same tree, and a panel that wrote
+  whatever its buffer held would silently discard whatever the agent had just done. On
+  a mismatch your text stays in the editor and the viewer shows the newer file, so you
+  can see both before deciding.
+
+A truncated file cannot be edited at all — saving would write the part that was shown
+over the whole file.
+
+Editing is a plain textarea rather than the highlighted view made editable. Overlaying
+a caret on coloured spans is a rewrite of text editing, and getting it subtly wrong is
+worse than editing in monospace for a minute.
+
+Set `allowWorkspaceWrites: false` in the Profile config to turn all of it off; the
+controls then do not appear rather than appearing and failing.
+
 Syntax colour comes from lowlight — highlight.js's analysis as a tree rather than as
 a string of HTML, which is why this renders React elements and no
 `dangerouslySetInnerHTML` exists in the panel at all. 37 languages, chosen from the
@@ -539,6 +565,7 @@ config block, so keep every key when changing one — see
 | --- | ---: | --- |
 | `allowExperimentalVersions` | `false` | Permit product versions classified `unknown`. |
 | `allowHostBrowsing` | `true` | Let the composer's file button browse the Host beyond the working directory. Off omits the route entirely. |
+| `allowWorkspaceWrites` | `true` | Let the side panel create, rename, delete and edit files in the working directory. Off hides those controls. |
 | `enableFakeProvider` | `false` | Expose the local verification fixture. Leave off; it shows up in the product picker. |
 | `eventRetention` | `2000` | Maximum retained bridge events per session. |
 | `longPollMaxMs` | `25000` | Maximum Client long-poll duration. |

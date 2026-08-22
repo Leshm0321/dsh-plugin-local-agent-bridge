@@ -41,7 +41,10 @@ import type {
   BridgeRepository,
   BridgeUploadRequest,
   BridgeWorkspaceFile,
+  BridgeWorkspaceCreateRequest,
   BridgeWorkspaceFileRequest,
+  BridgeWorkspaceRenameRequest,
+  BridgeWorkspaceWriteRequest,
   BridgeWorkspaceListRequest,
   BridgeWorkspaceListing,
   BridgeUploadResult,
@@ -67,6 +70,16 @@ export interface Config {
    * and a Profile serving remote clients should decide about it explicitly.
    */
   allowHostBrowsing?: boolean
+  /**
+   * Whether the side panel may create, rename, delete or edit files in the session's
+   * working directory.
+   *
+   * On by default, because a browser on the operator's own machine editing their own
+   * project is the point of the panel. Turn it off for a deployment serving clients
+   * across a network: it is the only place the browser writes arbitrary paths, and a
+   * Profile with remote users should decide about it deliberately.
+   */
+  allowWorkspaceWrites?: boolean
   enableFakeProvider?: boolean
   eventRetention?: number
   longPollMaxMs?: number
@@ -76,6 +89,7 @@ export interface Config {
 interface ResolvedConfig {
   readonly allowExperimentalVersions: boolean
   readonly allowHostBrowsing: boolean
+  readonly allowWorkspaceWrites: boolean
   readonly enableFakeProvider: boolean
   readonly eventRetention: number
   readonly longPollMaxMs: number
@@ -114,6 +128,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   static Config: z<Config> = z.object({
     allowExperimentalVersions: z.boolean().default(false),
     allowHostBrowsing: z.boolean().default(true),
+    allowWorkspaceWrites: z.boolean().default(true),
     enableFakeProvider: z.boolean().default(false),
     eventRetention: z.number().min(100).max(10_000).default(2_000),
     longPollMaxMs: z.number().min(1_000).max(30_000).default(25_000),
@@ -121,6 +136,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   }).default({
     allowExperimentalVersions: false,
     allowHostBrowsing: true,
+    allowWorkspaceWrites: true,
     enableFakeProvider: false,
     eventRetention: 2_000,
     longPollMaxMs: 25_000,
@@ -155,6 +171,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     this.config = {
       allowExperimentalVersions: config.allowExperimentalVersions ?? false,
       allowHostBrowsing: config.allowHostBrowsing ?? true,
+      allowWorkspaceWrites: config.allowWorkspaceWrites ?? true,
       enableFakeProvider: config.enableFakeProvider ?? false,
       eventRetention: config.eventRetention ?? 2_000,
       longPollMaxMs: config.longPollMaxMs ?? 25_000,
@@ -273,6 +290,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
       providers: this.providerViews,
       workspaces: await this.listDirectories(),
       hostBrowsing: this.config.allowHostBrowsing,
+      workspaceWrites: this.config.allowWorkspaceWrites,
     }
   }
 
@@ -444,6 +462,17 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     return await listHostDirectory(request.path)
   }
 
+  /**
+   * Refuse a write when the Profile does not serve them.
+   *
+   * Refused rather than answered emptily: the panel hides the controls when the
+   * catalog says writes are off, so reaching here means something is out of step, and
+   * pretending to succeed would be worse than saying no.
+   */
+  private assertWritable(): void {
+    if (!this.config.allowWorkspaceWrites) throw new BridgeError('INVALID_REQUEST')
+  }
+
   @Remote('workspaceList')
   async workspaceList(request: BridgeWorkspaceListRequest): Promise<BridgeWorkspaceListing> {
     return await this.requireEngine().listWorkspace(request.bridgeSessionId, request.path ?? '')
@@ -452,6 +481,39 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   @Remote('workspaceFile')
   async workspaceFile(request: BridgeWorkspaceFileRequest): Promise<BridgeWorkspaceFile> {
     return await this.requireEngine().readWorkspaceFile(request.bridgeSessionId, request.path)
+  }
+
+  @Remote('workspaceWrite')
+  async workspaceWrite(request: BridgeWorkspaceWriteRequest): Promise<BridgeWorkspaceFile> {
+    this.assertWritable()
+    return await this.requireEngine().writeWorkspaceFile(
+      request.bridgeSessionId,
+      request.path,
+      request.content,
+      request.revision,
+    )
+  }
+
+  @Remote('workspaceCreate')
+  async workspaceCreate(request: BridgeWorkspaceCreateRequest): Promise<void> {
+    this.assertWritable()
+    await this.requireEngine().createWorkspaceEntry(
+      request.bridgeSessionId,
+      request.path,
+      request.directory,
+    )
+  }
+
+  @Remote('workspaceRename')
+  async workspaceRename(request: BridgeWorkspaceRenameRequest): Promise<void> {
+    this.assertWritable()
+    await this.requireEngine().renameWorkspaceEntry(request.bridgeSessionId, request.from, request.to)
+  }
+
+  @Remote('workspaceDelete')
+  async workspaceDelete(request: BridgeWorkspaceFileRequest): Promise<void> {
+    this.assertWritable()
+    await this.requireEngine().deleteWorkspaceEntry(request.bridgeSessionId, request.path)
   }
 
   @Remote('sessionUpload')

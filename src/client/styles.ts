@@ -829,6 +829,77 @@ body[data-ds-dark-theme] .lab-code {
 .lab-files-row:hover { background: var(--lab-hover); }
 .lab-files-row--on { background: var(--lab-fill-strong); }
 .lab-files-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.lab-files-toolbar { display: flex; align-items: center; gap: 4px; }
+.lab-files-naming { display: flex; align-items: center; gap: 4px; }
+
+/* Row and its actions share a line; the actions appear on hover so the tree reads
+   as a tree until it is being worked on. */
+.lab-files-line { position: relative; display: flex; align-items: center; }
+.lab-files-line > .lab-files-row { flex: 1 1 auto; min-width: 0; }
+.lab-files-row-actions {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  opacity: 0;
+  transition: opacity var(--lab-fast) var(--lab-ease);
+}
+.lab-files-line:hover .lab-files-row-actions,
+.lab-files-line:focus-within .lab-files-row-actions { opacity: 1; }
+
+.lab-files-action {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  padding: 0;
+  color: var(--lab-text-3);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease), color var(--lab-fast) var(--lab-ease);
+}
+.lab-files-action:hover { color: var(--lab-text); background: var(--lab-fill-strong); }
+.lab-files-action:disabled { opacity: .4; cursor: default; }
+.lab-files-action:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lab-accent) 18%, transparent);
+}
+
+/* The editor fills the viewer and scrolls itself, so saving is never a scroll away. */
+.lab-files-editor {
+  width: 100%;
+  min-height: 320px;
+  height: 100%;
+  resize: none;
+  padding: 8px 10px;
+  font-family: var(--lab-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--lab-text);
+  background: var(--lab-bg);
+  border: var(--lab-hairline) solid var(--lab-line-strong);
+  border-radius: var(--lab-r-control);
+}
+.lab-files-editor:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lab-accent) 18%, transparent);
+}
+
+/* A refusal worth reading, not a code. */
+.lab-files-warning {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lab-warn);
+  background: color-mix(in srgb, var(--lab-warn) 10%, transparent);
+  border-radius: 7px;
+}
 .lab-files-size { font-size: 10px; font-family: var(--lab-mono); color: var(--lab-text-3); }
 
 /* ----------------------------------------------------------- attachments */

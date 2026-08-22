@@ -188,6 +188,10 @@ describe('Typert descriptors', () => {
       'hostList',
       'workspaceList',
       'workspaceFile',
+      'workspaceWrite',
+      'workspaceCreate',
+      'workspaceRename',
+      'workspaceDelete',
     ])
     expect(LOCAL_AGENT_BRIDGE_INVOCATIONS.every(item => item.invocation.kind === 'direct')).toBe(true)
     expect(LOCAL_AGENT_BRIDGE_INVOCATIONS.filter(item => 'cancellation' in item).map(item => item.method)).toEqual([

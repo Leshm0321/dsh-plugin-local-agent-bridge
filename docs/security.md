@@ -108,6 +108,26 @@ path appearing inside a *product's reply* is still dropped where the reply is pa
 navigated to and clicked is the opposite: it is what they chose, and it is the only
 useful thing to return.
 
+## Files the browser writes in the working directory
+
+With `allowWorkspaceWrites` on — the default — the side panel can create, rename,
+delete and edit files inside the session's working directory. It is the only place the
+browser writes arbitrary paths, and the rules are in `src/core/workspace-files.ts`:
+
+| Rule | Why |
+| --- | --- |
+| Confined to the working directory, checked after symlinks resolve | A link committed into a repository must not become a way to write outside the tree. The read side enforces this too, but a write is the one that does damage |
+| Creating and renaming confine the *parent* and require the last segment to be a single name | The target does not exist yet, so the existing-path check cannot be used; confining the parent is what stops `a/../../b` reaching out through a directory that is itself inside |
+| The parent must already exist | One mistyped path should not produce a directory tree nobody asked for |
+| Creating and renaming never overwrite | "New file" and "erase that file" are different intentions, and only one was expressed |
+| Deleting is never recursive; a non-empty directory is refused | A recursive delete reachable from a browser is a way to lose a repository to one mis-click |
+| The workspace root itself cannot be deleted | Never what was meant |
+| Writes carry the revision the file was read at, and a mismatch is refused | The agent works in this same tree. A panel that wrote whatever its buffer held would silently discard the agent's work |
+| 2 MB per write | Smaller than the read ceiling on purpose: reading a large file is a look, writing one is a change, and a buffer that size is not something anyone typed |
+
+Set `allowWorkspaceWrites: false` for a deployment serving clients across a network.
+The panel then omits the controls and the Host refuses the calls.
+
 ## Files the browser sends to the Host
 
 Every other path in this bridge carries data outward. The composer's upload
