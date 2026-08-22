@@ -902,6 +902,58 @@ body[data-ds-dark-theme] .lab-code {
 }
 .lab-files-size { font-size: 10px; font-family: var(--lab-mono); color: var(--lab-text-3); }
 
+/* -------------------------------------------------------------------- diff */
+
+.lab-diff-layout {
+  appearance: none;
+  font: inherit;
+  font-size: 10px;
+  padding: 2px 7px;
+  color: var(--lab-text-3);
+  background: var(--lab-fill);
+  border: 0;
+  border-radius: var(--lab-r-chip);
+  cursor: pointer;
+}
+.lab-diff-layout--on { color: var(--lab-on-accent); background: var(--lab-accent); }
+.lab-diff-counts { font-size: 10px; font-family: var(--lab-mono); color: var(--lab-text-3); white-space: nowrap; }
+
+.lab-diff { font-family: var(--lab-mono); font-size: 11px; line-height: 1.5; }
+/* Each half of a split row is about half the width, so the type comes down a step to
+   keep a normal line of code readable without scrolling it. */
+.lab-diff--split { font-size: 10px; }
+.lab-diff-hunk { margin-bottom: 10px; }
+.lab-diff-header {
+  padding: 3px 8px;
+  color: var(--lab-text-3);
+  background: var(--lab-fill);
+  border-radius: 4px;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* Unified: two gutters, a sign, then the line. Rows scroll as one block so the
+   gutters stay put while a long line moves. */
+.lab-diff-line { display: grid; grid-template-columns: 34px 34px 12px minmax(0, 1fr); }
+.lab-diff-num { color: var(--lab-text-3); text-align: right; padding-right: 6px; user-select: none; }
+.lab-diff-sign { text-align: center; user-select: none; }
+.lab-diff-text { white-space: pre; overflow-x: auto; }
+
+/* Added and removed carry a tint rather than only a sign, because a sign in the
+   gutter is easy to lose in a long hunk. */
+.lab-diff-line--added,
+.lab-diff-side.lab-diff-line--added { background: color-mix(in srgb, var(--lab-success) 14%, transparent); }
+.lab-diff-line--removed,
+.lab-diff-side.lab-diff-line--removed { background: color-mix(in srgb, var(--lab-danger) 12%, transparent); }
+.lab-diff-line--context { background: transparent; }
+
+/* Side by side: one row, two independently coloured halves. */
+.lab-diff-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1px; }
+.lab-diff-side { display: grid; grid-template-columns: 34px minmax(0, 1fr); min-width: 0; }
+/* A row where one side ran out: three lines replaced by one is not three edits, and
+   the empty cell is what says so. */
+.lab-diff-side--empty { background: var(--lab-fill); }
+
 /* ----------------------------------------------------------- attachments */
 
 .lab-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }

@@ -420,6 +420,27 @@ honest way to derive eight distinguishable hues for code from four semantic ones
 it carries two full sets, one per theme, rather than one being an inversion of the
 other.
 
+### The Diff tab
+
+When the working directory is a git repository, the panel's second tab shows what is
+uncommitted — against HEAD, so staged and unstaged changes are one view, which is what
+a person means by "what have I changed".
+
+Two layouts. **Unified** is git's own line order and the default, because the panel is
+narrow and one column of long lines beats two columns of wrapped ones. **Side by side**
+pairs each removal with the addition that replaced it, so an edited line reads as one
+change rather than as a deletion followed by an unrelated insertion; where one side
+runs out, the other keeps a blank cell — three lines replaced by one is not three
+edits.
+
+The diff itself comes from git's unified output rather than from comparing files in
+the plugin. git knows about rename detection, whitespace options, text conversion
+filters and binary files, and a reimplementation would be wrong about all four.
+
+Untracked files are listed but carry no hunks: they have no older version to compare
+against, and rendering a whole new file as one enormous addition would bury the
+changes it sits beside. The panel says so and points at the Files tab.
+
 ## How a turn reads
 
 A turn is three layers: the question, the work, the answer.

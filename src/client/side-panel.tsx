@@ -25,7 +25,14 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { useEffect, useMemo, useState } from 'react'
 import { Code } from './code.tsx'
 import type { LocalAgentRemote } from './index.tsx'
-import type { BridgeWorkspaceEntry, BridgeWorkspaceFile } from '../types.ts'
+import { DiffBody, type DiffLayout } from './diff-view.tsx'
+import type {
+  BridgeDiffEntry,
+  BridgeDiffHunk,
+  BridgeWorkspaceDiff,
+  BridgeWorkspaceEntry,
+  BridgeWorkspaceFile,
+} from '../types.ts'
 
 type Translate = TranslateNS<'local-agent-bridge'>
 
@@ -487,6 +494,131 @@ export function FilesPane({
           />
           {t('browse.showHidden')}
         </label>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Uncommitted changes in the session's working directory.
+ *
+ * The list is read when the tab opens and re-read on demand, not on a timer: a diff
+ * changes when the agent writes, and polling it would be Host work on every tick for
+ * a view that is usually not open.
+ */
+export function DiffPane({
+  remote,
+  bridgeSessionId,
+  t,
+}: {
+  remote: LocalAgentRemote
+  bridgeSessionId: string
+  t: Translate
+}) {
+  const [diff, setDiff] = useState<BridgeWorkspaceDiff>()
+  const [selected, setSelected] = useState<BridgeDiffEntry>()
+  const [hunks, setHunks] = useState<readonly BridgeDiffHunk[]>([])
+  const [layout, setLayout] = useState<DiffLayout>('unified')
+  const [loading, setLoading] = useState(false)
+
+  const load = async (): Promise<void> => {
+    setLoading(true)
+    const result = await remote.workspaceDiff({ bridgeSessionId })
+    setLoading(false)
+    setDiff(result.ok ? result.value : { entries: [], unavailable: true })
+  }
+
+  useEffect(() => {
+    setDiff(undefined)
+    setSelected(undefined)
+    setHunks([])
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed to the session,
+    // not to the identity of a function rebuilt every render.
+  }, [bridgeSessionId])
+
+  /**
+   * Show one file's changes.
+   * @param entry - the file from the list.
+   */
+  const open = async (entry: BridgeDiffEntry): Promise<void> => {
+    setSelected(entry)
+    setHunks([])
+    // An untracked or binary file has nothing to fetch, and asking anyway would be a
+    // round trip whose answer is already known.
+    if (entry.untracked || entry.binary) return
+    setLoading(true)
+    const result = await remote.workspaceFileDiff({ bridgeSessionId, path: entry.path })
+    setLoading(false)
+    if (result.ok) setHunks(result.value)
+  }
+
+  if (diff?.unavailable === true) {
+    return <div className="lab-files-content"><p className="lab-browse-note">{t('diff.unavailable')}</p></div>
+  }
+
+  return (
+    <div className="lab-files">
+      <div className="lab-files-viewer">
+        <div className="lab-files-crumbs">
+          {selected !== undefined && <span className="lab-files-crumb--last">{selected.path}</span>}
+          <span className="lab-files-meta">
+            {selected !== undefined && !selected.untracked && !selected.binary && (
+              t('diff.counts', { added: selected.added, removed: selected.removed })
+            )}
+          </span>
+          {(['unified', 'split'] as const).map(candidate => (
+            <button
+              key={candidate}
+              type="button"
+              className={layout === candidate ? 'lab-diff-layout lab-diff-layout--on' : 'lab-diff-layout'}
+              aria-pressed={layout === candidate}
+              onClick={() => { setLayout(candidate) }}
+            >
+              {t(`diff.${candidate}`)}
+            </button>
+          ))}
+        </div>
+        <div className="lab-files-content">
+          {loading && <p className="lab-browse-note">{t('browse.loading')}</p>}
+          {!loading && selected === undefined && (
+            <div className="lab-files-empty">
+              <p className="lab-files-empty-title">{t('diff.pick')}</p>
+            </div>
+          )}
+          {!loading && selected?.untracked === true && <p className="lab-browse-note">{t('diff.untracked')}</p>}
+          {!loading && selected?.binary === true && <p className="lab-browse-note">{t('diff.binary')}</p>}
+          {!loading && selected !== undefined && !selected.untracked && !selected.binary && (
+            <DiffBody hunks={hunks} layout={layout} t={t} />
+          )}
+        </div>
+      </div>
+
+      <div className="lab-files-tree">
+        <div className="lab-files-rows">
+          {diff !== undefined && diff.entries.length === 0 && (
+            <p className="lab-browse-note">{t('diff.clean')}</p>
+          )}
+          {(diff?.entries ?? []).map(entry => (
+            <button
+              key={entry.path}
+              type="button"
+              className={entry.path === selected?.path ? 'lab-files-row lab-files-row--on' : 'lab-files-row'}
+              title={entry.path}
+              onClick={() => { void open(entry) }}
+            >
+              <IconCodeOutline16 />
+              <span className="lab-files-name">{entry.path}</span>
+              <span className="lab-diff-counts">
+                {entry.untracked
+                  ? t('diff.untrackedTag')
+                  : entry.binary
+                    ? ''
+                    : t('diff.counts', { added: entry.added, removed: entry.removed })}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )

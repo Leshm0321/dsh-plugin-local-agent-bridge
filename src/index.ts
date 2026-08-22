@@ -13,6 +13,7 @@ import { discoverProvider, isAdmissible, permissionModesFor, publicProvider } fr
 import { redactText } from './core/redaction.ts'
 import { listHostDirectory } from './core/host-browse.ts'
 import { readRepository } from './core/repository.ts'
+import { listWorkspaceDiff, readFileDiff } from './core/workspace-diff.ts'
 import { ClaudeProviderAdapter } from './providers/claude.ts'
 import { CodexProviderAdapter } from './providers/codex.ts'
 import { FakeProviderAdapter } from './providers/fake.ts'
@@ -41,11 +42,13 @@ import type {
   BridgeRepository,
   BridgeUploadRequest,
   BridgeWorkspaceFile,
+  BridgeDiffHunk,
   BridgeWorkspaceCreateRequest,
   BridgeWorkspaceFileRequest,
   BridgeWorkspaceRenameRequest,
   BridgeWorkspaceWriteRequest,
   BridgeWorkspaceListRequest,
+  BridgeWorkspaceDiff,
   BridgeWorkspaceListing,
   BridgeUploadResult,
   BridgeSessionReadRequest,
@@ -266,6 +269,8 @@ export class LocalAgentBridgeService extends TypertRemoteService {
       // Cached briefly, because the panel polls it and running two git commands
       // per poll on a large repository is real Host work for a status line that
       // cannot change meaningfully in that window.
+      readDiff: async cwd => await listWorkspaceDiff(this.ctx.subprocess, cwd),
+      readFileDiff: async (cwd, path) => await readFileDiff(this.ctx.subprocess, cwd, path),
       readRepository: async (cwd) => {
         const held = this.repositories.get(cwd)
         const now = Date.now()
@@ -481,6 +486,16 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   @Remote('workspaceFile')
   async workspaceFile(request: BridgeWorkspaceFileRequest): Promise<BridgeWorkspaceFile> {
     return await this.requireEngine().readWorkspaceFile(request.bridgeSessionId, request.path)
+  }
+
+  @Remote('workspaceDiff')
+  async workspaceDiff(request: BridgeSessionIdRequest): Promise<BridgeWorkspaceDiff> {
+    return await this.requireEngine().listDiff(request.bridgeSessionId)
+  }
+
+  @Remote('workspaceFileDiff')
+  async workspaceFileDiff(request: BridgeWorkspaceFileRequest): Promise<readonly BridgeDiffHunk[]> {
+    return await this.requireEngine().fileDiff(request.bridgeSessionId, request.path)
   }
 
   @Remote('workspaceWrite')

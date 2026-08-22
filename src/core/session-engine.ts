@@ -17,6 +17,8 @@ import type {
   BridgeRepository,
   BridgeUploadInput,
   BridgeUploadResult,
+  BridgeDiffHunk,
+  BridgeWorkspaceDiff,
   BridgeWorkspaceFile,
   BridgeWorkspaceListing,
   BridgeSessionStatus,
@@ -72,6 +74,14 @@ export interface SessionEngineOptions {
    * repository rather than the engine depending on one.
    */
   readonly readRepository?: (cwd: string) => Promise<BridgeRepository | null>
+  /**
+   * Reads uncommitted changes, when the composition can.
+   *
+   * Injected for the same reason as the repository read: the engine has no process
+   * runtime, and a test can describe a diff without needing git on the machine.
+   */
+  readonly readDiff?: (cwd: string) => Promise<BridgeWorkspaceDiff>
+  readonly readFileDiff?: (cwd: string, path: string) => Promise<readonly BridgeDiffHunk[]>
 }
 
 interface PendingResolution {
@@ -170,6 +180,8 @@ export class BridgeSessionEngine {
   private readonly providers: ReadonlyMap<ProviderId, NativeProviderAdapter>
   private readonly resolveWorkspace: SessionEngineOptions['resolveWorkspace']
   private readonly readRepository: SessionEngineOptions['readRepository']
+  private readonly readDiff: SessionEngineOptions['readDiff']
+  private readonly readFileDiff: SessionEngineOptions['readFileDiff']
   private readonly eventRetention: number
   private readonly longPollMaxMs: number
   private readonly sessions = new Map<string, RuntimeSession>()
@@ -180,6 +192,8 @@ export class BridgeSessionEngine {
     this.providers = options.providers
     this.resolveWorkspace = options.resolveWorkspace
     this.readRepository = options.readRepository
+    this.readDiff = options.readDiff
+    this.readFileDiff = options.readFileDiff
     this.eventRetention = options.eventRetention ?? DEFAULT_EVENT_RETENTION
     this.longPollMaxMs = options.longPollMaxMs ?? DEFAULT_LONG_POLL_MAX_MS
   }
@@ -720,6 +734,41 @@ export class BridgeSessionEngine {
     const runtime = this.requireSession(bridgeSessionId)
     const workspace = await this.requireWorkspace(runtime.record.workspaceId)
     await deleteWorkspaceEntry(workspace.cwd, path)
+  }
+
+  /**
+   * Uncommitted changes in the session's working directory.
+   * @param bridgeSessionId - the session whose directory to inspect.
+   * @returns the changed files, or `unavailable` when there is no repository.
+   */
+  async listDiff(bridgeSessionId: string): Promise<BridgeWorkspaceDiff> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    if (this.readDiff === undefined) return { entries: [], unavailable: true }
+    const workspace = await this.requireWorkspace(runtime.record.workspaceId)
+    try {
+      return await this.readDiff(workspace.cwd)
+    } catch {
+      return { entries: [], unavailable: true }
+    }
+  }
+
+  /**
+   * One file's diff against HEAD.
+   * @param bridgeSessionId - the session whose directory to inspect.
+   * @param path - the file's path as the listing reported it.
+   * @returns the hunks, empty when there is nothing to show.
+   */
+  async fileDiff(bridgeSessionId: string, path: string): Promise<readonly BridgeDiffHunk[]> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    if (this.readFileDiff === undefined) return []
+    const workspace = await this.requireWorkspace(runtime.record.workspaceId)
+    try {
+      return await this.readFileDiff(workspace.cwd, path)
+    } catch {
+      return []
+    }
   }
 
   async dispose(): Promise<void> {

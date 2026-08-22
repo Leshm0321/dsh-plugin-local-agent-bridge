@@ -67,7 +67,7 @@ import type {
 import { en, type LocalAgentBridgeKey, zh } from './locales.ts'
 import { Markdown } from './markdown.tsx'
 import { buildTrace } from './trace.ts'
-import { FilesPane } from './side-panel.tsx'
+import { DiffPane, FilesPane } from './side-panel.tsx'
 import { TraceView, formatDuration } from './trace-view.tsx'
 import { PANEL_STYLES } from './styles.ts'
 
@@ -2082,6 +2082,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
   const [pending, setPending] = useState<readonly PendingImage[]>([])
   const [view, setView] = useState<'chat' | 'trace'>('chat')
   const [sideOpen, setSideOpen] = useState(false)
+  const [sideView, setSideView] = useState<'files' | 'diff'>('files')
   const [traceQuery, setTraceQuery] = useState('')
   const attachRoot = useRef<HTMLSpanElement>(null)
   const [repository, setRepository] = useState<BridgeRepository | null>(null)
@@ -3468,16 +3469,38 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
               {sideOpen && snapshot !== undefined && (
                 <aside className="lab-side">
                   <div className="lab-views" role="tablist" aria-label={t('side.files')}>
-                    <button type="button" role="tab" aria-selected className="lab-view-tab lab-view-tab--on">
-                      {t('side.files')}
-                    </button>
+                    {(['files', 'diff'] as const).map(candidate => (
+                      <button
+                        key={candidate}
+                        type="button"
+                        role="tab"
+                        aria-selected={sideView === candidate}
+                        className={sideView === candidate ? 'lab-view-tab lab-view-tab--on' : 'lab-view-tab'}
+                        onClick={() => { setSideView(candidate) }}
+                      >
+                        {t(`side.${candidate}`)}
+                      </button>
+                    ))}
                   </div>
-                  <FilesPane
-                    remote={remote}
-                    bridgeSessionId={snapshot.session.bridgeSessionId}
-                    writable={catalog?.workspaceWrites === true}
-                    t={t}
-                  />
+                  {/* Mounted one at a time. Both read the Host when they open, and
+                      keeping the hidden one alive would mean the diff re-reading git
+                      every time the files tab was used. */}
+                  {sideView === 'files'
+                    ? (
+                      <FilesPane
+                        remote={remote}
+                        bridgeSessionId={snapshot.session.bridgeSessionId}
+                        writable={catalog?.workspaceWrites === true}
+                        t={t}
+                      />
+                    )
+                    : (
+                      <DiffPane
+                        remote={remote}
+                        bridgeSessionId={snapshot.session.bridgeSessionId}
+                        t={t}
+                      />
+                    )}
                 </aside>
               )}
             </div>

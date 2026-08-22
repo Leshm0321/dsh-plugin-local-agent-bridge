@@ -734,6 +734,42 @@ export interface BridgeWorkspaceRenameRequest extends BridgeSessionIdRequest {
   readonly to: string
 }
 
+/** One line of a diff hunk, with the row it occupies on each side. */
+export interface BridgeDiffLine {
+  readonly kind: 'context' | 'added' | 'removed'
+  readonly text: string
+  readonly oldNumber: number | null
+  readonly newNumber: number | null
+}
+
+export interface BridgeDiffHunk {
+  /** git's own `@@` header, which sometimes names the enclosing function. */
+  readonly header: string
+  readonly lines: readonly BridgeDiffLine[]
+}
+
+/** One uncommitted change, as the list shows it. */
+export interface BridgeDiffEntry {
+  readonly path: string
+  readonly added: number
+  readonly removed: number
+  /** True for a change git reports without line counts. */
+  readonly binary: boolean
+  /** True when the file is not in the index, so it has nothing to diff against. */
+  readonly untracked: boolean
+}
+
+export interface BridgeWorkspaceDiff {
+  readonly entries: readonly BridgeDiffEntry[]
+  /** True when the directory is not a repository, or the Host has no git. */
+  readonly unavailable: boolean
+}
+
+export interface BridgeFileDiff {
+  readonly path: string
+  readonly hunks: readonly BridgeDiffHunk[]
+}
+
 export interface BridgeCatalogResult {
   readonly providers: readonly NativeProviderView[]
   readonly workspaces: readonly BridgeWorkspaceView[]

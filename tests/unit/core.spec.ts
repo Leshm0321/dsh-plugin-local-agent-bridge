@@ -188,6 +188,8 @@ describe('Typert descriptors', () => {
       'hostList',
       'workspaceList',
       'workspaceFile',
+      'workspaceDiff',
+      'workspaceFileDiff',
       'workspaceWrite',
       'workspaceCreate',
       'workspaceRename',

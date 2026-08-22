@@ -8,6 +8,9 @@ import type {
   BridgePermissionModeView,
   BridgeRateLimit,
   BridgeHostEntry,
+  BridgeDiffEntry,
+  BridgeDiffHunk,
+  BridgeDiffLine,
   BridgeWorkspaceEntry,
   BridgeWorkspaceFile,
   BridgeWorkspaceListing,
@@ -352,6 +355,37 @@ const workspaceRenameRequestSchema = z.object({
   to: z.string(),
 }).strict()
 
+const diffLineSchema = z.object({
+  kind: z.enum(['context', 'added', 'removed']),
+  text: z.string(),
+  oldNumber: z.number().nullable(),
+  newNumber: z.number().nullable(),
+}).strict()
+
+const _diffLineIsExact: Exact<z.infer<typeof diffLineSchema>, BridgeDiffLine> = true
+
+const diffHunkSchema = z.object({
+  header: z.string(),
+  lines: z.array(diffLineSchema).readonly(),
+}).strict()
+
+const _diffHunkIsExact: Exact<z.infer<typeof diffHunkSchema>, BridgeDiffHunk> = true
+
+const diffEntrySchema = z.object({
+  path: z.string(),
+  added: z.number(),
+  removed: z.number(),
+  binary: z.boolean(),
+  untracked: z.boolean(),
+}).strict()
+
+const _diffEntryIsExact: Exact<z.infer<typeof diffEntrySchema>, BridgeDiffEntry> = true
+
+const workspaceDiffSchema = z.object({
+  entries: z.array(diffEntrySchema).readonly(),
+  unavailable: z.boolean(),
+}).strict()
+
 const catalogSchema = z.object({
   providers: z.array(providerSchema),
   workspaces: z.array(workspaceSchema),
@@ -462,6 +496,8 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('hostList', [parameter('request', hostListRequestSchema)], hostListingSchema),
   invocation('workspaceList', [parameter('request', workspaceListRequestSchema)], workspaceListingSchema),
   invocation('workspaceFile', [parameter('request', workspaceFileRequestSchema)], workspaceFileSchema),
+  invocation('workspaceDiff', [parameter('request', sessionIdRequestSchema)], workspaceDiffSchema),
+  invocation('workspaceFileDiff', [parameter('request', workspaceFileRequestSchema)], z.array(diffHunkSchema).readonly()),
   invocation('workspaceWrite', [parameter('request', workspaceWriteRequestSchema)], workspaceFileSchema),
   invocation('workspaceCreate', [parameter('request', workspaceCreateRequestSchema)], z.undefined()),
   invocation('workspaceRename', [parameter('request', workspaceRenameRequestSchema)], z.undefined()),

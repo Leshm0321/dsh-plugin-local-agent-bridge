@@ -31,11 +31,13 @@ import type {
   BridgeRepository,
   BridgeUploadRequest,
   BridgeWorkspaceFile,
+  BridgeDiffHunk,
   BridgeWorkspaceCreateRequest,
   BridgeWorkspaceFileRequest,
   BridgeWorkspaceRenameRequest,
   BridgeWorkspaceWriteRequest,
   BridgeWorkspaceListRequest,
+  BridgeWorkspaceDiff,
   BridgeWorkspaceListing,
   BridgeUploadResult,
 } from './types.ts'
@@ -73,6 +75,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     workspaceList: (request: BridgeWorkspaceListRequest) => Promise<RemoteResult<BridgeWorkspaceListing>>
     workspaceFile: (request: BridgeWorkspaceFileRequest) => Promise<RemoteResult<BridgeWorkspaceFile>>
     workspaceWrite: (request: BridgeWorkspaceWriteRequest) => Promise<RemoteResult<BridgeWorkspaceFile>>
+    workspaceDiff: (request: BridgeSessionIdRequest) => Promise<RemoteResult<BridgeWorkspaceDiff>>
+    workspaceFileDiff: (request: BridgeWorkspaceFileRequest) => Promise<RemoteResult<readonly BridgeDiffHunk[]>>
     workspaceCreate: (request: BridgeWorkspaceCreateRequest) => Promise<RemoteResult<void>>
     workspaceRename: (request: BridgeWorkspaceRenameRequest) => Promise<RemoteResult<void>>
     workspaceDelete: (request: BridgeWorkspaceFileRequest) => Promise<RemoteResult<void>>
@@ -141,6 +145,12 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'localAgentBridge/workspaceWrite': (
       request: BridgeWorkspaceWriteRequest,
     ) => Promise<RemoteResult<BridgeWorkspaceFile>>
+    'localAgentBridge/workspaceDiff': (
+      request: BridgeSessionIdRequest,
+    ) => Promise<RemoteResult<BridgeWorkspaceDiff>>
+    'localAgentBridge/workspaceFileDiff': (
+      request: BridgeWorkspaceFileRequest,
+    ) => Promise<RemoteResult<readonly BridgeDiffHunk[]>>
     'localAgentBridge/workspaceCreate': (
       request: BridgeWorkspaceCreateRequest,
     ) => Promise<RemoteResult<void>>

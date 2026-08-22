@@ -209,6 +209,19 @@ export const zh = {
   'files.notEmpty': '这个目录里还有东西。里面的内容需要先逐个删除。',
   'files.writeFailed': '这个改动没有写成。可能是权限问题，或者这个 Profile 关掉了写入。',
 
+  // Uncommitted changes.
+  'side.diff': '差异',
+  'diff.unified': '统一视图',
+  'diff.split': '并排对比',
+  'diff.clean': '没有未提交的改动。',
+  'diff.unavailable': '这个工作目录不是 git 仓库，或者主机上没有 git。',
+  'diff.pick': '选一个文件查看差异',
+  'diff.noHunks': '这个文件没有可显示的差异。',
+  'diff.binary': '二进制文件的改动无法按行显示。',
+  'diff.untracked': '这是新文件，还没纳入版本控制，所以没有可对比的旧版本。在「文件」页签里可以查看它的内容。',
+  'diff.counts': '+{added} −{removed}',
+  'diff.untrackedTag': '未跟踪',
+
   // Collapsible sidebar.
   'panel.collapseSidebar': '收起侧栏',
   'panel.expandSidebar': '展开侧栏',
@@ -502,6 +515,18 @@ export const en = {
   'files.stale': 'This file changed after you opened it — most likely the agent. Reopen it and decide which version to keep.',
   'files.notEmpty': 'This directory still has contents. They have to be removed one at a time.',
   'files.writeFailed': 'That change was not written. It may be a permission problem, or this Profile has writes turned off.',
+
+  'side.diff': 'Diff',
+  'diff.unified': 'Unified',
+  'diff.split': 'Side by side',
+  'diff.clean': 'Nothing uncommitted.',
+  'diff.unavailable': 'This working directory is not a git repository, or the Host has no git.',
+  'diff.pick': 'Choose a file to see its changes',
+  'diff.noHunks': 'No changes to show for this file.',
+  'diff.binary': 'A binary change cannot be shown line by line.',
+  'diff.untracked': 'This file is new and not yet in version control, so there is no older version to compare against. The Files tab shows its contents.',
+  'diff.counts': '+{added} −{removed}',
+  'diff.untrackedTag': 'untracked',
 
   'panel.collapseSidebar': 'Collapse sidebar',
   'panel.expandSidebar': 'Expand sidebar',

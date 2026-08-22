@@ -237,6 +237,29 @@ class RemoteFixture {
       ? { path: request.path, revision: 'r1', content: '', bytes: 2_048, truncated: false, binary: true }
       : { path: request.path, revision: 'r1', content: 'export const answer = 42\n', bytes: 25, truncated: false, binary: false },
   }))
+  readonly workspaceDiff = vi.fn(async (_request: { bridgeSessionId: string }) => ({
+    ok: true as const,
+    value: {
+      entries: [
+        { path: 'src/main.ts', added: 2, removed: 1, binary: false, untracked: false },
+        { path: 'logo.png', added: 0, removed: 0, binary: true, untracked: false },
+        { path: 'notes.txt', added: 0, removed: 0, binary: false, untracked: true },
+      ] as readonly { path: string; added: number; removed: number; binary: boolean; untracked: boolean }[],
+      unavailable: false,
+    },
+  }))
+  readonly workspaceFileDiff = vi.fn(async (_request: { bridgeSessionId: string; path: string }) => ({
+    ok: true as const,
+    value: [{
+      header: '@@ -1,3 +1,4 @@',
+      lines: [
+        { kind: 'context' as const, text: 'const first = 1', oldNumber: 1, newNumber: 1 },
+        { kind: 'removed' as const, text: 'const second = 2', oldNumber: 2, newNumber: null },
+        { kind: 'added' as const, text: 'const second = 22', oldNumber: null, newNumber: 2 },
+        { kind: 'added' as const, text: 'const third = 3', oldNumber: null, newNumber: 3 },
+      ],
+    }] as readonly { header: string; lines: readonly { kind: 'context' | 'added' | 'removed'; text: string; oldNumber: number | null; newNumber: number | null }[] }[],
+  }))
   readonly workspaceWrite = vi.fn(async (request: { bridgeSessionId: string; path: string; content: string; revision: string }) => ({
     ok: true as const,
     value: { path: request.path, revision: 'r2', content: request.content, bytes: request.content.length, truncated: false, binary: false },
@@ -2672,5 +2695,83 @@ describe('LocalAgentPanel', () => {
 
     // Saving would write the part that was shown over the whole file.
     expect((screen.getByLabelText(en['files.edit']) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('lists uncommitted changes and shows one file’s diff', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['panel.showSide']))
+    fireEvent.click(await screen.findByRole('tab', { name: en['side.diff'] }))
+
+    await waitFor(() => { expect(fixture.workspaceDiff).toHaveBeenCalledWith({ bridgeSessionId: 'session-1' }) })
+    expect(await screen.findByText('src/main.ts')).toBeTruthy()
+    expect(screen.getByText(en['diff.counts'].replace('{added}', '2').replace('{removed}', '1'))).toBeTruthy()
+    // Untracked files are listed but flagged: they have no older version to compare.
+    expect(screen.getByText(en['diff.untrackedTag'])).toBeTruthy()
+
+    fireEvent.click(screen.getByText('src/main.ts'))
+    await waitFor(() => {
+      expect(fixture.workspaceFileDiff).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', path: 'src/main.ts' })
+    })
+    expect(await screen.findByText('@@ -1,3 +1,4 @@')).toBeTruthy()
+    expect(screen.getByText('const second = 22')).toBeTruthy()
+  })
+
+  it('switches between unified and side-by-side', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['panel.showSide']))
+    fireEvent.click(await screen.findByRole('tab', { name: en['side.diff'] }))
+    fireEvent.click(await screen.findByText('src/main.ts'))
+    await screen.findByText('@@ -1,3 +1,4 @@')
+
+    // Unified is git's own order: one line per line.
+    expect(document.querySelectorAll('.lab-diff-line')).toHaveLength(4)
+    expect(document.querySelectorAll('.lab-diff-row')).toHaveLength(0)
+
+    fireEvent.click(screen.getByRole('button', { name: en['diff.split'] }))
+    // Paired: the removal and the addition that replaced it share a row, and the
+    // second addition gets a row with an empty left side. Three rows, not four.
+    await waitFor(() => { expect(document.querySelectorAll('.lab-diff-row')).toHaveLength(3) })
+    expect(document.querySelectorAll('.lab-diff-side--empty')).toHaveLength(1)
+  })
+
+  it('explains an untracked or binary change instead of fetching a diff for it', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['panel.showSide']))
+    fireEvent.click(await screen.findByRole('tab', { name: en['side.diff'] }))
+
+    fireEvent.click(await screen.findByText('notes.txt'))
+    expect(await screen.findByText(en['diff.untracked'])).toBeTruthy()
+
+    fireEvent.click(screen.getByText('logo.png'))
+    expect(await screen.findByText(en['diff.binary'])).toBeTruthy()
+
+    // Neither has anything to fetch, and asking would be a round trip whose answer is
+    // already known.
+    expect(fixture.workspaceFileDiff).not.toHaveBeenCalled()
+  })
+
+  it('says when there is no repository to diff', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.workspaceDiff.mockResolvedValue({ ok: true, value: { entries: [], unavailable: true } })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['panel.showSide']))
+    fireEvent.click(await screen.findByRole('tab', { name: en['side.diff'] }))
+
+    expect(await screen.findByText(en['diff.unavailable'])).toBeTruthy()
   })
 })

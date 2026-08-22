@@ -51,6 +51,10 @@ const MAX_BYTES = 512 * 1024
 
 /**
  * Run one git command in a directory and return its stdout.
+ *
+ * Exported so the diff reader shares this exact invocation: the timeout, the empty
+ * environment, and the two variables that stop git blocking on a credential prompt or
+ * taking the index lock. Two callers with two sets of those would be two behaviours.
  * @param subprocess - the Host's process runtime.
  * @param executable - resolved absolute path to git.
  * @param cwd - the directory to run in.
@@ -58,7 +62,7 @@ const MAX_BYTES = 512 * 1024
  * @param signal - caller's cancellation.
  * @returns stdout on success, or null when git failed or was killed.
  */
-async function run(
+export async function runGit(
   subprocess: SubprocessRuntime,
   executable: string,
   cwd: string,
@@ -90,6 +94,23 @@ async function run(
   const outcome = await child.done
   if (outcome.exitCode !== 0) return null
   return child.collected.stdout?.readFrom(0).text ?? ''
+}
+
+/**
+ * Locate git, or report that this Host has none.
+ * @param subprocess - the Host's process runtime.
+ * @param signal - caller's cancellation.
+ * @returns the absolute path, or null when git is not installed.
+ */
+export async function resolveGit(
+  subprocess: SubprocessRuntime,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  try {
+    return await subprocess.resolveExecutable('git', {}, signal)
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -168,15 +189,11 @@ export async function readRepository(
   cwd: string,
   signal?: AbortSignal,
 ): Promise<RepositoryStatus | null> {
-  let executable: string
-  try {
-    executable = await subprocess.resolveExecutable('git', {}, signal)
-  } catch {
-    return null
-  }
+  const executable = await resolveGit(subprocess, signal)
+  if (executable === null) return null
   // `--untracked-files=no` because the header is all this needs and counting
   // untracked files in a large tree is the slow part of a status read.
-  const status = await run(
+  const status = await runGit(
     subprocess,
     executable,
     cwd,
@@ -188,7 +205,7 @@ export async function readRepository(
   if (status === null) return null
   // Against HEAD rather than the index, so staged and unstaged changes are counted
   // once, together — which is what a person means by "how much have I changed".
-  const numstat = await run(subprocess, executable, cwd, ['diff', '--numstat', 'HEAD'], signal)
+  const numstat = await runGit(subprocess, executable, cwd, ['diff', '--numstat', 'HEAD'], signal)
     .catch(() => null)
   return {
     ...parseStatus(status),
