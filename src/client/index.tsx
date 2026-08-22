@@ -58,6 +58,8 @@ import type {
   PendingInteractionView,
 } from '../types.ts'
 import { en, type LocalAgentBridgeKey, zh } from './locales.ts'
+import { buildTrace } from './trace.ts'
+import { TraceView } from './trace-view.tsx'
 import { PANEL_STYLES } from './styles.ts'
 
 export type { LocalAgentBridgeKey } from './locales.ts'
@@ -1812,6 +1814,8 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
   const [hostListing, setHostListing] = useState<BridgeHostListing>()
   const [hostBusy, setHostBusy] = useState(false)
   const [hostHidden, setHostHidden] = useState(false)
+  const [view, setView] = useState<'chat' | 'trace'>('chat')
+  const [traceQuery, setTraceQuery] = useState('')
   const attachRoot = useRef<HTMLSpanElement>(null)
   const [repository, setRepository] = useState<BridgeRepository | null>(null)
   const [attachSource, setAttachSource] = useState<AttachSource>('workspace')
@@ -2021,6 +2025,24 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
    * not animate a finished answer or a row restored from a transcript.
    */
   const streamingRow = snapshot !== undefined && BUSY_STATUSES.includes(snapshot.session.status)
+  /**
+   * The trace, derived from the same events the conversation is built from — so it
+   * costs one pass over data already in hand, and only while that view is open.
+   */
+  const trace = useMemo(
+    () => view === 'trace'
+      ? buildTrace(snapshot?.events ?? [], snapshot?.session.tokenUsage ?? null)
+      : null,
+    [view, snapshot?.events, snapshot?.session.tokenUsage],
+  )
+
+  // The trace belongs to the session it describes, so switching sessions returns to
+  // the conversation rather than showing another session's timings under a stale
+  // filter.
+  useEffect(() => {
+    setView('chat')
+    setTraceQuery('')
+  }, [selectedId])
 
   /**
    * What the operator has sent in this session, newest first — the list `↑`
@@ -2838,7 +2860,38 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                   )}
                 </div>
 
-                <div className="lab-timeline" ref={timelineRef}>
+                {snapshot !== undefined && (
+                  <div className="lab-views" role="tablist" aria-label={t('view.chat')}>
+                    {(['chat', 'trace'] as const).map(candidate => (
+                      <button
+                        key={candidate}
+                        type="button"
+                        role="tab"
+                        aria-selected={view === candidate}
+                        className={view === candidate ? 'lab-view-tab lab-view-tab--on' : 'lab-view-tab'}
+                        onClick={() => { setView(candidate) }}
+                      >
+                        {t(`view.${candidate}`)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {view === 'trace' && trace !== null && (
+                  <div className="lab-timeline">
+                    {error !== undefined && <div className="lab-error-banner">{error}</div>}
+                    <TraceView trace={trace} query={traceQuery} t={t} onQuery={setTraceQuery} />
+                  </div>
+                )}
+
+                <div
+                  className="lab-timeline"
+                  ref={timelineRef}
+                  // Kept mounted rather than unmounted: the transcript's scroll
+                  // position, and every expanded tool row in it, should survive a
+                  // look at the trace.
+                  hidden={view !== 'chat'}
+                >
                   {error !== undefined && <div className="lab-error-banner">{error}</div>}
                   {snapshot?.pendingInteraction !== null && snapshot?.pendingInteraction !== undefined && (
                     <InteractionCard

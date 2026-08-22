@@ -516,6 +516,140 @@ export const PANEL_STYLES = `
 .lab-usage-fill--warn { background: var(--lab-warn); }
 .lab-usage-fill--full { background: var(--lab-danger); }
 
+/* ------------------------------------------------------------ view tabs */
+
+.lab-views {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px 0;
+  border-bottom: var(--lab-hairline) solid var(--lab-line);
+}
+.lab-view-tab {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  color: var(--lab-text-3);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color var(--lab-fast) var(--lab-ease), border-color var(--lab-fast) var(--lab-ease);
+}
+.lab-view-tab:hover { color: var(--lab-text-2); }
+.lab-view-tab--on { color: var(--lab-text); border-bottom-color: var(--lab-accent); }
+
+/* ----------------------------------------------------------------- trace */
+
+.lab-trace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.lab-trace-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.lab-trace-summary { display: flex; gap: 12px; flex-wrap: wrap; }
+.lab-trace-figure { font-size: 11px; font-family: var(--lab-mono); color: var(--lab-text-3); white-space: nowrap; }
+.lab-trace-search { max-width: 260px; }
+
+/* The strip: one row per lane, each a full-width track with spans positioned as
+   percentages of the trace's own duration. */
+.lab-trace-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  padding: 8px 0;
+}
+.lab-trace-lane { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 8px; }
+.lab-trace-lane-label { font-size: 10px; color: var(--lab-text-3); text-align: right; }
+.lab-trace-track {
+  position: relative;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--lab-fill);
+}
+.lab-trace-span {
+  /* Absolute inside the track, and a block so the inline width means something. */
+  display: block;
+  position: absolute;
+  top: 2px;
+  height: 6px;
+  border-radius: 2px;
+}
+/* Three inks so a glance separates waiting from thinking from doing. Input is an
+   instant, so it reads as a tick rather than a bar. */
+.lab-trace-span--input { background: var(--lab-text-3); min-width: 3px; }
+.lab-trace-span--model { background: var(--lab-accent); }
+.lab-trace-span--tools { background: var(--lab-warn); }
+.lab-trace-span--failed { background: var(--lab-danger); }
+
+.lab-trace-steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+}
+.lab-trace-step {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 3fr) minmax(0, 4fr) auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-trace-step:hover { background: var(--lab-hover); }
+.lab-trace-step--failed { background: color-mix(in srgb, var(--lab-danger) 7%, transparent); }
+.lab-trace-tag {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-align: center;
+  padding: 3px 4px;
+  border-radius: 4px;
+  color: var(--lab-text-2);
+  background: var(--lab-fill-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Each kind gets its own tint, matching the lane colours where they correspond. */
+.lab-trace-tag--tool { color: var(--lab-warn); background: color-mix(in srgb, var(--lab-warn) 14%, transparent); }
+.lab-trace-tag--assistant { color: var(--lab-text); background: color-mix(in srgb, var(--lab-accent) 12%, transparent); }
+.lab-trace-tag--reasoning { color: var(--lab-text-3); background: var(--lab-fill); }
+.lab-trace-tag--user { color: var(--lab-text-2); background: var(--lab-fill-strong); }
+.lab-trace-tag--context { color: var(--lab-success); background: color-mix(in srgb, var(--lab-success) 14%, transparent); }
+.lab-trace-tag--error { color: var(--lab-danger); background: color-mix(in srgb, var(--lab-danger) 12%, transparent); }
+
+/* One line each, truncated: a trace is scanned down the left edge, and a wrapped
+   cell would break that column. The full text is in the title. */
+.lab-trace-call,
+.lab-trace-result {
+  font-family: var(--lab-mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-trace-call { color: var(--lab-text); }
+.lab-trace-result { color: var(--lab-text-3); }
+.lab-trace-name { font-weight: 600; margin-right: 6px; }
+.lab-trace-arrow { margin-right: 6px; opacity: .6; }
+.lab-trace-elapsed { font-family: var(--lab-mono); font-size: 10px; color: var(--lab-text-3); white-space: nowrap; }
+
+.lab-trace-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding-top: 8px;
+  border-top: var(--lab-hairline) solid var(--lab-line);
+  font-size: 11px;
+  font-family: var(--lab-mono);
+  color: var(--lab-text-3);
+}
+
 /* --------------------------------------------------------------- timeline */
 
 .lab-timeline {

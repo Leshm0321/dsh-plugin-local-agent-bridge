@@ -360,6 +360,38 @@ sessions it created itself.
 Session transcript paths stay on the Host. An unknown or expired locator makes the
 session `orphaned`, the same as one that stopped resolving after a Host restart.
 
+## The trace view
+
+`Trace` sits beside `Conversation` and answers a different question: not what was
+said, but where the time went and what the agent actually did. A strip over the
+turn's timeline — input, model, tools — then one line per step with its arguments,
+its result and its duration, filterable, with the totals underneath.
+
+All of it is derived from events the panel already holds. There is no extra Host
+call, no new event type and no additional retention: every bridge event carries a
+timestamp and a turn id, and that is enough for spans, ordering and totals.
+
+Two things are deliberate:
+
+**Idle time is removed.** Duration counts the turns, not the wall clock. A session
+left open overnight has a first-to-last span of hours — measured on a real one, it
+read `4262m40s` — and none of that was work. Activity is bounded by turn start and
+turn completion rather than by gaps between events, because a model reasoning for
+ten seconds emits nothing and a gap-based rule would score deep thinking as idleness.
+Waiting on an approval stays counted: the turn genuinely had not finished.
+
+**A figure that was not measured is absent, not zero.** No token report means no
+tokens-per-second and no cache ratio. A zero in a performance view gets believed.
+
+**There is no model-time / tool-time split, and that is on purpose.** It looks
+derivable from the event timestamps and is not: those record when a product chose to
+report something, not when it did it. A real Codex turn lasting 2m18s delivered
+every one of its events in the final three seconds, and stamped a shell command's
+start and completion 1ms apart — from which the first version of this view computed
+"model 11ms, tools 1ms, 7636 tok/s". The trace therefore says *when* each step was
+reported, and the only rate it gives is output tokens over turn duration, whose
+denominator the bridge stamps itself.
+
 ## Streaming
 
 Both products stream token by token, and the Host relays each delta the moment it

@@ -2044,4 +2044,96 @@ describe('LocalAgentPanel', () => {
     // would be a lie about when it happened.
     expect(await screen.findByText('said earlier')).toBeTruthy()
   })
+
+  it('shows a trace of where the time went, alongside the conversation', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({
+      ok: true,
+      value: [{
+        ...session,
+        tokenUsage: { input: 1_000, output: 500, cacheRead: 3_000, cacheWrite: 0, total: 4_500 },
+      }],
+    })
+    fixture.pushRead(snapshot({
+      session: {
+        ...session,
+        tokenUsage: { input: 1_000, output: 500, cacheRead: 3_000, cacheWrite: 0, total: 4_500 },
+      },
+      events: [
+        { ...event(1, { type: 'bridge/user-message', data: { text: 'summarise this', delivery: 'started' } }), timestamp: 1_000 },
+        {
+          ...event(2, {
+            type: 'bridge/turn-started',
+            data: {
+              turn: {
+                bridgeTurnId: 'turn-1',
+                bridgeSessionId: 'session-1',
+                status: 'running' as const,
+                startedAt: 1_100,
+                completedAt: null,
+                stopReason: null,
+              },
+            },
+          }),
+          timestamp: 1_100,
+        },
+        { ...event(3, { type: 'bridge/text-delta', data: { text: 'reading', itemId: 'a' } }), timestamp: 1_600 },
+        {
+          ...event(4, {
+            type: 'bridge/tool-completed',
+            data: {
+              itemId: 't1',
+              toolName: 'read',
+              summary: 'read docs',
+              status: 'completed',
+              detail: { input: '{"file_path":"docs/feature.md"}', output: '<type>file</type>', truncated: false },
+            },
+          }),
+          timestamp: 4_100,
+        },
+      ],
+      latestSequence: 4,
+    }))
+    renderPanel(fixture.remote())
+
+    // The conversation is the default; the trace answers a different question and
+    // is a tab away rather than replacing it.
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByRole('tab', { name: en['view.trace'] }))
+
+    // The tool call, with its arguments and its result on one line.
+    expect(await screen.findByText(/feature\.md/)).toBeTruthy()
+    expect(screen.getByText(/<type>file<\/type>/)).toBeTruthy()
+    // Totals derived from the timestamps, not fetched.
+    expect(screen.getByText(en['trace.turns'].replace('{count}', '1'))).toBeTruthy()
+    expect(screen.getByText(en['trace.cache'].replace('{percent}', '75'))).toBeTruthy()
+
+    // Search narrows the steps.
+    fireEvent.change(screen.getByPlaceholderText(en['trace.search']), { target: { value: 'nothing-matches' } })
+    expect(await screen.findByText(en['trace.empty'])).toBeTruthy()
+
+    // And the conversation is still there, with its scroll position and any expanded
+    // rows intact, because it was hidden rather than unmounted.
+    fireEvent.click(screen.getByRole('tab', { name: en['view.chat'] }))
+    expect(screen.getByText('summarise this')).toBeTruthy()
+  })
+
+  it('leaves out a trace figure the products never reported', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      events: [event(1, { type: 'bridge/user-message', data: { text: 'hello', delivery: 'started' } })],
+      latestSequence: 1,
+    }))
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByRole('tab', { name: en['view.trace'] }))
+    await screen.findByPlaceholderText(en['trace.search'])
+
+    // No token report means no rate and no cache ratio. A zero in a performance view
+    // gets believed, so absence is rendered as absence.
+    expect(screen.queryByText(/tok\/s/)).toBeNull()
+    expect(screen.queryByText(new RegExp(en['trace.cache'].replace('{percent}', '\\d+')))).toBeNull()
+  })
 })

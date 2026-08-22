@@ -16,18 +16,25 @@
  * loading this file, so it needs no assertion here; the completeness check below
  * covers the milder version where a whole section goes missing.
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CLASS_PREFIX, PANEL_STYLES } from '../../src/client/styles.ts'
 
 /**
- * The panel source with comments removed. Comments are stripped first because
+ * The client's JSX sources with comments removed. Comments are stripped first because
  * they legitimately discuss class names — the note explaining why the row
  * modifier is a lookup table quotes the interpolated form it replaced — and a
  * scan that counted those would report a class that is only ever mentioned.
  */
-const clientSource = readFileSync(join(process.cwd(), 'src/client/index.tsx'), 'utf8')
+const clientSource = readdirSync(join(process.cwd(), 'src/client'))
+  // Every JSX file, not just the panel: class names live wherever a component does,
+  // and scanning one file meant splitting a component out silently turned its rules
+  // into "dead" ones and its classes into "missing" ones at the same time.
+  .filter(name => name.endsWith('.tsx'))
+  .sort()
+  .map(name => readFileSync(join(process.cwd(), 'src/client', name), 'utf8'))
+  .join('\n')
   .replaceAll(/\/\*[\s\S]*?\*\//g, '')
   .replaceAll(/^\s*\/\/.*$/gm, '')
 
