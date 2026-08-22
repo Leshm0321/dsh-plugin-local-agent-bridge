@@ -210,7 +210,7 @@ describe('ClaudeProviderAdapter', () => {
     const adapter = new ClaudeProviderAdapter(runtime.subprocess, 'C:\\Tools\\claude.exe')
     const harness = createHooks()
 
-    await adapter.startTurn({ text: 'stream a fixture', hooks: harness.hooks })
+    await adapter.startTurn({ text: 'stream a fixture', images: [], hooks: harness.hooks })
 
     expect(captured?.prompt).toBe('stream a fixture')
     expect(captured?.options).toMatchObject({
@@ -250,7 +250,7 @@ describe('ClaudeProviderAdapter', () => {
     const adapter = new ClaudeProviderAdapter(runtime.subprocess, 'claude')
     const harness = createHooks({ nativeSessionLocator: 'native-existing' })
 
-    await adapter.startTurn({ text: 'resume fixture', hooks: harness.hooks })
+    await adapter.startTurn({ text: 'resume fixture', images: [], hooks: harness.hooks })
 
     expect(captured?.options.resume).toBe('native-existing')
     expect(harness.locators).toEqual([])
@@ -322,7 +322,7 @@ describe('ClaudeProviderAdapter', () => {
     const adapter = new ClaudeProviderAdapter(runtime.subprocess, 'claude')
     const harness = createHooks()
 
-    await adapter.startTurn({ text: 'interaction fixture', hooks: harness.hooks })
+    await adapter.startTurn({ text: 'interaction fixture', images: [], hooks: harness.hooks })
 
     expect(harness.interactions.map(request => request.kind)).toEqual(['approval', 'question', 'question'])
     expect(harness.interactions[0]).toMatchObject({ toolName: 'Bash', target: 'echo fixture' })
@@ -355,7 +355,7 @@ describe('ClaudeProviderAdapter', () => {
     })
     const adapter = new ClaudeProviderAdapter(runtime.subprocess, 'claude')
     const harness = createHooks()
-    const active = adapter.startTurn({ text: 'hold for cancellation', hooks: harness.hooks })
+    const active = adapter.startTurn({ text: 'hold for cancellation', images: [], hooks: harness.hooks })
     await new Promise<void>(resolve => { setTimeout(resolve, 10) })
 
     await adapter.cancel(harness.hooks.bridgeSessionId)
@@ -379,7 +379,7 @@ describe('ClaudeProviderAdapter', () => {
     const bare = new ClaudeProviderAdapter(runtime.subprocess as never, '/host/bin/claude')
     const sessionId = createHooks().hooks.bridgeSessionId
     expect(await bare.listCompletions(sessionId)).toEqual({ completions: [], pending: true })
-    await bare.startTurn({ text: 'first turn', hooks: createHooks().hooks })
+    await bare.startTurn({ text: 'first turn', images: [], hooks: createHooks().hooks })
     // Still pending, not an error, and not a fabricated empty answer.
     expect(await bare.listCompletions(sessionId)).toEqual({ completions: [], pending: true })
     await bare.dispose()
@@ -398,7 +398,7 @@ describe('ClaudeProviderAdapter', () => {
     }) as unknown as Query)
 
     const current = new ClaudeProviderAdapter(runtime.subprocess as never, '/host/bin/claude')
-    await current.startTurn({ text: 'first turn', hooks: createHooks().hooks })
+    await current.startTurn({ text: 'first turn', images: [], hooks: createHooks().hooks })
     const reported = await current.listCompletions(sessionId)
 
     expect(reported.pending).toBe(false)

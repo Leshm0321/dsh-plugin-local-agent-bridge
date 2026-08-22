@@ -310,7 +310,14 @@ const readRequestSchema = sessionIdRequestSchema.extend({
   afterSequence: z.number().optional(),
   waitMs: z.number().optional(),
 })
-const sendRequestSchema = sessionIdRequestSchema.extend({ text: z.string() }).strict()
+const sendRequestSchema = sessionIdRequestSchema.extend({
+  text: z.string(),
+  images: z.array(z.object({
+    mediaType: z.string(),
+    dataBase64: z.string(),
+    name: z.string().optional(),
+  }).strict()).readonly().optional(),
+}).strict()
 const archiveRequestSchema = sessionIdRequestSchema.extend({ archived: z.boolean().optional() }).strict()
 const interactionResponseSchema = sessionIdRequestSchema.extend({
   interactionId: z.string(),

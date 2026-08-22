@@ -357,7 +357,11 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   @Remote('sessionSend')
   async sessionSend(request: BridgeSessionSendRequest): Promise<BridgeSendResult> {
-    return await this.requireEngine().send(request.bridgeSessionId, request.text)
+    return await this.requireEngine().send(
+      request.bridgeSessionId,
+      request.text,
+      request.images ?? [],
+    )
   }
 
   @Remote('sessionCancel')

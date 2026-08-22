@@ -177,6 +177,10 @@ export const zh = {
   'turn.processed': '已处理 {value}',
   'turn.steps': '{count} 步',
 
+  // Images pasted into the composer.
+  'image.remove': '移除这张图片',
+  'image.attached': '{count} 张图片',
+
   // Collapsible sidebar.
   'panel.collapseSidebar': '收起侧栏',
   'panel.expandSidebar': '展开侧栏',
@@ -441,6 +445,9 @@ export const en = {
   'turn.working': 'working {value}',
   'turn.processed': 'processed in {value}',
   'turn.steps': '{count} steps',
+
+  'image.remove': 'Remove this image',
+  'image.attached': '{count} image(s)',
 
   'panel.collapseSidebar': 'Collapse sidebar',
   'panel.expandSidebar': 'Expand sidebar',

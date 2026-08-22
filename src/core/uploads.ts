@@ -29,6 +29,7 @@
 import { mkdir, realpath, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, relative, sep } from 'node:path'
 import { BridgeError } from './errors.ts'
+import type { BridgeImageInput } from '../types.ts'
 
 /**
  * Where uploads land, relative to the working directory.
@@ -54,6 +55,20 @@ const MAX_DEPTH = 8
 
 /** Longest single path segment, after rebuilding. */
 const MAX_SEGMENT = 96
+
+/**
+ * Image types the products accept, and therefore the only ones saved.
+ *
+ * A paste can carry anything the source application put on the clipboard; an
+ * allow-list means an unexpected type is refused rather than written to disk under a
+ * name derived from it.
+ */
+export const IMAGE_TYPES: Readonly<Record<string, string>> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+}
 
 /** One file as the browser offers it. */
 export interface UploadInput {
@@ -185,6 +200,56 @@ async function writeUnique(
     return candidate
   }
   return null
+}
+
+/** Images accepted in one message. Enough for a few screenshots, not a gallery. */
+const MAX_IMAGES = 8
+
+/** Largest single image, decoded. Above this the products would refuse it anyway. */
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+/**
+ * Save images the operator pasted, and hand back both the bytes and where they went.
+ *
+ * The bytes go to the product as image input for this turn; the paths go into the
+ * transcript so the conversation still makes sense after a reload. Storing base64 in
+ * the event log instead would trade the whole transcript for a few pictures.
+ *
+ * Types are allow-listed to what the products accept, so a clipboard carrying
+ * something unexpected is refused rather than written to disk under a name derived
+ * from it.
+ * @param cwd - the session's working directory, resolved on the Host.
+ * @param images - what the browser pasted.
+ * @returns the images that survived validation, and their workspace-relative paths.
+ * @throws BridgeError INVALID_REQUEST when more images are offered than are allowed.
+ */
+export async function receiveImages(
+  cwd: string,
+  images: readonly BridgeImageInput[],
+): Promise<{ images: BridgeImageInput[]; paths: string[] }> {
+  if (images.length > MAX_IMAGES) throw new BridgeError('INVALID_REQUEST')
+  const accepted: BridgeImageInput[] = []
+  const inputs: UploadInput[] = []
+  for (const [index, image] of images.entries()) {
+    const extension = IMAGE_TYPES[image.mediaType]
+    if (extension === undefined) continue
+    const bytes = decode(image.dataBase64)
+    if (bytes === null || bytes.byteLength === 0 || bytes.byteLength > MAX_IMAGE_BYTES) continue
+    // Named from the clipboard when it offered one, else by position. A paste
+    // usually has no name, and "pasted-1.png" is more use than a random string.
+    const safeName = image.name === undefined ? null : safeUploadPath(image.name)
+    inputs.push({
+      path: safeName ?? `pasted-${String(index + 1)}.${extension}`,
+      contentBase64: image.dataBase64,
+    })
+    accepted.push(image)
+  }
+  if (inputs.length === 0) return { images: [], paths: [] }
+  const written = await receiveUploads(cwd, inputs)
+  // Only the images that actually landed are sent on: an image the Host could not
+  // write is one the transcript cannot reference, and sending it anyway would leave
+  // the agent seeing something the operator cannot find afterwards.
+  return { images: accepted.slice(0, written.paths.length), paths: [...written.paths] }
 }
 
 /**

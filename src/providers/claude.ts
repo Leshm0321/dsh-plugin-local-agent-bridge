@@ -15,6 +15,7 @@ import {
   type SDKMessage,
   type SDKControlGetContextUsageResponse,
   type SDKPartialAssistantMessage,
+  type SDKUserMessage,
   type SessionMessage,
   type SpawnOptions,
 } from '@anthropic-ai/claude-agent-sdk'
@@ -36,6 +37,7 @@ import { redactText, redactValue } from '../core/redaction.ts'
 import type {
   BridgeCompletion,
   BridgeCompletionsResult,
+  BridgeImageInput,
   BridgeModel,
   BridgeModelsResult,
   BridgeNativeSessionsResult,
@@ -646,6 +648,41 @@ function projectHistory(messages: readonly SessionMessage[]): ProviderHistory {
     : { events, truncated: false }
 }
 
+/**
+ * One user message carrying text and images, as the SDK's streaming input.
+ *
+ * The image blocks are the Anthropic content-block shape the API takes directly.
+ * `uuid` and `session_id` are optional on this type and are left out: the SDK fills
+ * in what it needs, and inventing identifiers here would put values into the
+ * transcript that mean nothing.
+ * @param text - the operator's message.
+ * @param images - validated images from the Host.
+ * @returns a single-message async iterable for `query`.
+ */
+async function* imagePrompt(
+  text: string,
+  images: readonly BridgeImageInput[],
+): AsyncGenerator<SDKUserMessage> {
+  yield {
+    type: 'user',
+    parent_tool_use_id: null,
+    message: {
+      role: 'user',
+      content: [
+        ...text.trim().length === 0 ? [] : [{ type: 'text' as const, text }],
+        ...images.map(image => ({
+          type: 'image' as const,
+          source: {
+            type: 'base64' as const,
+            media_type: image.mediaType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
+            data: image.dataBase64,
+          },
+        })),
+      ],
+    },
+  }
+}
+
 export class ClaudeProviderAdapter implements NativeProviderAdapter {
   readonly id = 'claude' as const
   readonly supportsSteer = false
@@ -682,7 +719,7 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
     private readonly graceMs = 3_000,
   ) {}
 
-  async startTurn({ text, hooks }: ProviderTurnRequest): Promise<void> {
+  async startTurn({ text, images, hooks }: ProviderTurnRequest): Promise<void> {
     if (this.active.has(hooks.bridgeSessionId)) throw new BridgeError('TURN_CONFLICT')
     const controller = new AbortController()
     const relayAbort = (): void => controller.abort(hooks.signal.reason)
@@ -717,7 +754,14 @@ export class ClaudeProviderAdapter implements NativeProviderAdapter {
       sawResult: false,
     }
     try {
-      active.query = claudeQuery({ prompt: text, options })
+      // A plain string for the ordinary case, and a one-message stream only when
+      // there are images. The streaming form is what carries image blocks, but it
+      // also switches the SDK into streaming-input mode — so the path every existing
+      // turn takes is left exactly as it was.
+      active.query = claudeQuery({
+        prompt: images.length === 0 ? text : imagePrompt(text, images),
+        options,
+      })
       // Fire and forget: the turn must not wait on a convenience read, and a
       // product that refuses the control request still has to run its turn. The
       // catch is the last line of defence — captureCompletions already swallows

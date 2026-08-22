@@ -271,7 +271,7 @@ describe('CodexProviderAdapter', () => {
     const adapter = new CodexProviderAdapter(runtime.subprocess, 'codex')
     const harness = createHooks()
 
-    await adapter.startTurn({ text: 'normal turn', hooks: harness.hooks })
+    await adapter.startTurn({ text: 'normal turn', images: [], hooks: harness.hooks })
 
     const process = runtime.latest()
     expect(process.spec.argv).toEqual(['codex', 'app-server', '--stdio'])
@@ -297,7 +297,7 @@ describe('CodexProviderAdapter', () => {
     const adapter = new CodexProviderAdapter(runtime.subprocess, 'codex')
     const harness = createHooks()
 
-    await adapter.startTurn({ text: 'approval and question', hooks: harness.hooks })
+    await adapter.startTurn({ text: 'approval and question', images: [], hooks: harness.hooks })
 
     expect(harness.interactions.map(item => item.kind)).toEqual(['approval', 'question'])
     expect(harness.interactions[0]).toMatchObject({ toolName: 'shell', target: 'echo approved' })
@@ -313,7 +313,7 @@ describe('CodexProviderAdapter', () => {
     const runtime = new FakeCodexRuntime()
     const adapter = new CodexProviderAdapter(runtime.subprocess, 'codex')
     const harness = createHooks()
-    const active = adapter.startTurn({ text: 'hold this turn', hooks: harness.hooks })
+    const active = adapter.startTurn({ text: 'hold this turn', images: [], hooks: harness.hooks })
     await nextTask()
 
     await adapter.steer(harness.hooks.bridgeSessionId, 'steered input')
@@ -333,7 +333,7 @@ describe('CodexProviderAdapter', () => {
     const runtime = new FakeCodexRuntime()
     const adapter = new CodexProviderAdapter(runtime.subprocess, 'codex')
     const harness = createHooks({ nativeSessionLocator: 'thread-existing' })
-    const active = adapter.startTurn({ text: 'hold resumed turn', hooks: harness.hooks })
+    const active = adapter.startTurn({ text: 'hold resumed turn', images: [], hooks: harness.hooks })
     await nextTask()
 
     const resume = runtime.latest().requests.find(request => request.method === 'thread/resume')

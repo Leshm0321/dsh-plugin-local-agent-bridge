@@ -383,6 +383,28 @@ Routine status rows — `running`, then `idle`, around every turn — are not sh
 all. The toolbar reports that live, and two rows between every question and its
 answer was the noise this grouping exists to remove.
 
+## Images
+
+Paste a screenshot into the composer and the agent sees it. Both products take
+images natively — Codex as an `image` input item, Claude Code as a base64 image
+block — so this is the picture reaching the model, not a file it has to be told to go
+and read. An image on its own is a valid message: "what is this" is a perfectly good
+prompt when the picture is the question.
+
+Each image is also saved into `.dsh-bridge-uploads/` and referenced in the message
+text, so the conversation still makes sense after a reload. The paths are what the
+transcript stores, not the bytes: a screenshot is hundreds of kilobytes and the event
+log keeps two thousand entries, so storing the images there would trade the whole
+transcript for a few pictures.
+
+Types are allow-listed to PNG, JPEG, GIF and WebP — what the products accept. SVG is
+excluded deliberately: it is an image to a browser and a script host to everything
+else. Eight images per message, 5 MB each.
+
+Claude Code's streaming input mode is used only when there are images, because that
+is what carries image blocks. Every text-only turn takes exactly the path it did
+before.
+
 ## Markdown
 
 Both products answer in markdown, and the panel renders it: headings, tables, lists,

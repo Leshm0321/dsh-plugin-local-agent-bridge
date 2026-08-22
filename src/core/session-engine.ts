@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type {
   BridgeEvent,
+  BridgeImageInput,
   BridgeInteractionRespondRequest,
   BridgeInteractionRespondResult,
   BridgeSendResult,
@@ -26,7 +27,7 @@ import type {
 } from '../types.ts'
 import { BridgeError, bridgeError } from './errors.ts'
 import { searchFiles } from './file-search.ts'
-import { receiveUploads } from './uploads.ts'
+import { receiveImages, receiveUploads } from './uploads.ts'
 import type {
   BridgeEventDraft,
   NativeProviderAdapter,
@@ -346,20 +347,40 @@ export class BridgeSessionEngine {
     }
   }
 
-  async send(bridgeSessionId: string, rawText: string): Promise<BridgeSendResult> {
+  async send(
+    bridgeSessionId: string,
+    rawText: string,
+    rawImages: readonly BridgeImageInput[] = [],
+  ): Promise<BridgeSendResult> {
     const runtime = this.requireSession(bridgeSessionId)
-    const text = normalizeInput(rawText)
     const provider = this.requireProvider(runtime.record.providerId)
+    // Saved before anything else, so the conversation keeps them across a reload
+    // whichever way the message ends up being delivered.
+    const workspace = rawImages.length === 0 ? null : await this.requireWorkspace(runtime.record.workspaceId)
+    const saved = workspace === null
+      ? { images: [], paths: [] }
+      : await receiveImages(workspace.cwd, rawImages)
+    // The paths go into the text as `@` references as well. For a started turn that
+    // is redundant with the image input; for a steered or queued one it is the only
+    // way the agent learns they exist, since neither path can carry image input.
+    const text = normalizeInput(
+      saved.paths.length === 0 ? rawText : [rawText, ...saved.paths.map(path => `@${path}`)].join('\n'),
+    )
+
     if (runtime.activeRun === null) {
       const bridgeTurnId = randomUUID()
-      await this.launchTurn(runtime, provider, bridgeTurnId, text)
+      await this.launchTurn(runtime, provider, bridgeTurnId, text, saved.images, saved.paths)
       return { delivery: 'started', bridgeTurnId }
     }
     if (provider.supportsSteer && runtime.record.status === 'running' && runtime.activeTurn !== null) {
       await provider.steer(bridgeSessionId, text)
       await this.append(runtime, runtime.activeTurn.bridgeTurnId, {
         type: 'bridge/user-message',
-        data: { text, delivery: 'steered' },
+        data: {
+          text,
+          delivery: 'steered',
+          ...saved.paths.length === 0 ? {} : { attachments: saved.paths },
+        },
       })
       return { delivery: 'steered', bridgeTurnId: runtime.activeTurn.bridgeTurnId }
     }
@@ -367,7 +388,11 @@ export class BridgeSessionEngine {
     const bridgeTurnId = runtime.activeTurn?.bridgeTurnId ?? runtime.record.lastTurnId ?? randomUUID()
     await this.append(runtime, bridgeTurnId, {
       type: 'bridge/user-message',
-      data: { text, delivery: 'queued' },
+      data: {
+        text,
+        delivery: 'queued',
+        ...saved.paths.length === 0 ? {} : { attachments: saved.paths },
+      },
     })
     return {
       delivery: 'queued',
@@ -666,6 +691,8 @@ export class BridgeSessionEngine {
     provider: NativeProviderAdapter,
     bridgeTurnId: string,
     text: string,
+    images: readonly BridgeImageInput[] = [],
+    attachments: readonly string[] = [],
   ): Promise<void> {
     const controller = new AbortController()
     const turn: BridgeTurnView = {
@@ -682,14 +709,16 @@ export class BridgeSessionEngine {
     await this.setStatus(runtime, 'running', null)
     await this.append(runtime, bridgeTurnId, {
       type: 'bridge/user-message',
-      data: { text, delivery: 'started' },
+      // Paths, not the images: the event log keeps two thousand entries, and a
+      // base64 screenshot is hundreds of kilobytes.
+      data: { text, delivery: 'started', ...attachments.length === 0 ? {} : { attachments } },
     })
     await this.append(runtime, bridgeTurnId, {
       type: 'bridge/turn-started',
       data: { turn },
     })
 
-    const active = this.executeTurn(runtime, provider, turn, text, controller)
+    const active = this.executeTurn(runtime, provider, turn, text, images, controller)
     runtime.activeRun = active
     void active.catch(() => {})
   }
@@ -699,6 +728,7 @@ export class BridgeSessionEngine {
     provider: NativeProviderAdapter,
     turn: BridgeTurnView,
     text: string,
+    images: readonly BridgeImageInput[],
     controller: AbortController,
   ): Promise<void> {
     let completed: BridgeTurnView
@@ -706,6 +736,7 @@ export class BridgeSessionEngine {
     try {
       await provider.startTurn({
         text,
+        images,
         hooks: {
           bridgeSessionId: runtime.record.bridgeSessionId,
           bridgeTurnId: turn.bridgeTurnId,

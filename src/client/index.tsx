@@ -1,5 +1,12 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import type { ButtonHTMLAttributes, CSSProperties, FormEvent, KeyboardEvent, ReactNode } from 'react'
+import type {
+  ButtonHTMLAttributes,
+  ClipboardEvent,
+  CSSProperties,
+  FormEvent,
+  KeyboardEvent,
+  ReactNode,
+} from 'react'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 // Type-only: merges `locale` onto Context and declares the LocaleNamespaceMap
@@ -175,6 +182,21 @@ interface WorkspaceRegistrar {
  */
 type DirectoryListing = Awaited<ReturnType<ClientContext['workspaces']['listDirectory']>>
 
+/**
+ * An image waiting in the composer.
+ *
+ * Both the bytes and a preview: the base64 goes to the Host, and the object URL is
+ * what the thumbnail renders from. Object URLs hold their blob alive until revoked,
+ * which is why removing one and sending both do it explicitly.
+ */
+interface PendingImage {
+  readonly id: string
+  readonly mediaType: string
+  readonly dataBase64: string
+  readonly previewUrl: string
+  readonly name?: string
+}
+
 /** Which directory-choosing route this Profile actually supports. */
 type BrowseSupport = 'unknown' | 'browse' | 'native' | 'none'
 
@@ -310,7 +332,17 @@ function timeline(events: readonly BridgeEvent[], t: PanelTranslate): TimelineRo
     const key = `${String(event.sequence)}-${event.type}`
     const turnId = event.bridgeTurnId
     if (event.type === 'bridge/user-message') {
-      rows.push({ key, kind: 'user', title: t(`row.delivery.${event.data.delivery}`), text: event.data.text, turnId })
+      // Attachment paths are appended to the text the Host already put them in, so
+      // the row says what came with the message without a second rendering path.
+      rows.push({
+        key,
+        kind: 'user',
+        title: event.data.attachments === undefined || event.data.attachments.length === 0
+          ? t(`row.delivery.${event.data.delivery}`)
+          : `${t(`row.delivery.${event.data.delivery}`)} · ${t('image.attached', { count: event.data.attachments.length })}`,
+        text: event.data.text,
+        turnId,
+      })
     } else if (event.type === 'bridge/text-delta' || event.type === 'bridge/reasoning-delta') {
       const kind = event.type === 'bridge/text-delta' ? 'assistant' : 'reasoning'
       const previous = rows.at(-1)
@@ -2046,6 +2078,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
   const [hostListing, setHostListing] = useState<BridgeHostListing>()
   const [hostBusy, setHostBusy] = useState(false)
   const [hostHidden, setHostHidden] = useState(false)
+  const [pending, setPending] = useState<readonly PendingImage[]>([])
   const [view, setView] = useState<'chat' | 'trace'>('chat')
   const [traceQuery, setTraceQuery] = useState('')
   const attachRoot = useRef<HTMLSpanElement>(null)
@@ -2783,6 +2816,65 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
     setDraft(current => current.trim().length === 0 ? text : `${current.trimEnd()} ${text}`)
   }
 
+  /**
+   * Take an image into the composer.
+   *
+   * Read as a data URL and split, for the same reason the upload path does: `btoa`
+   * over a large array overflows the argument stack, and the platform's own encoder
+   * does not.
+   * @param file - an image from the clipboard or a file chooser.
+   */
+  const addImage = async (file: File): Promise<void> => {
+    if (!file.type.startsWith('image/') || file.size > UPLOAD_FILE_LIMIT) return
+    const encoded = await new Promise<string | null>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const value = typeof reader.result === 'string' ? reader.result : ''
+        const comma = value.indexOf(',')
+        resolve(comma < 0 ? null : value.slice(comma + 1))
+      }
+      reader.onerror = () => { resolve(null) }
+      reader.readAsDataURL(file)
+    })
+    if (encoded === null) return
+    setPending(current => [...current, {
+      id: `${String(current.length)}-${file.name}-${String(file.size)}`,
+      mediaType: file.type,
+      dataBase64: encoded,
+      previewUrl: URL.createObjectURL(file),
+      ...file.name.length === 0 ? {} : { name: file.name },
+    }])
+  }
+
+  /**
+   * Take images out of a paste, and let anything else paste normally.
+   *
+   * Only claims the event when the clipboard actually held an image; a paste of text
+   * that happens to come from an image editor must still land in the textarea.
+   * @param event - the paste.
+   */
+  const onComposerPaste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const files = [...event.clipboardData.items]
+      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+      .map(item => item.getAsFile())
+      .filter((file): file is File => file !== null)
+    if (files.length === 0) return
+    event.preventDefault()
+    for (const file of files) void addImage(file)
+  }
+
+  /**
+   * Drop a pending image, releasing the blob its preview holds open.
+   * @param id - the image to remove.
+   */
+  const removeImage = (id: string): void => {
+    setPending((current) => {
+      const going = current.find(image => image.id === id)
+      if (going !== undefined) URL.revokeObjectURL(going.previewUrl)
+      return current.filter(image => image.id !== id)
+    })
+  }
+
   const dictation = useDictation(speechLocale, appendDictation)
   // The file popover's open state lives here rather than inside the picker,
   // because the plus button that opens it sits outside the picker's own markup.
@@ -2809,14 +2901,34 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
    * a cleared box is what a terminal does.
    */
   const submitDraft = async (): Promise<void> => {
-    if (selectedId === undefined || draft.trim().length === 0) return
+    // An image on its own is a message: "what is this" is a perfectly good prompt
+    // when the picture is the question.
+    if (selectedId === undefined || (draft.trim().length === 0 && pending.length === 0)) return
     const text = draft
+    const images = pending
     setDraft('')
+    setPending([])
     setHistoryIndex(-1)
     try {
-      unwrap(await remote.sessionSend({ bridgeSessionId: selectedId, text }))
+      unwrap(await remote.sessionSend({
+        bridgeSessionId: selectedId,
+        text,
+        ...images.length === 0
+          ? {}
+          : {
+            images: images.map(image => ({
+              mediaType: image.mediaType,
+              dataBase64: image.dataBase64,
+              ...image.name === undefined ? {} : { name: image.name },
+            })),
+          },
+      }))
+      // Released only once the Host has them: a failed send puts the thumbnails
+      // back, and a revoked URL would leave them blank.
+      for (const image of images) URL.revokeObjectURL(image.previewUrl)
     } catch (cause) {
       setDraft(text)
+      setPending(images)
       setError(cause instanceof Error ? cause.message : String(cause))
     }
   }
@@ -3201,6 +3313,24 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                       )}
                     </span>
                   </div>
+                  {pending.length > 0 && (
+                    <div className="lab-attachments">
+                      {pending.map(image => (
+                        <span key={image.id} className="lab-attachment">
+                          <img className="lab-attachment-thumb" src={image.previewUrl} alt={image.name ?? ''} />
+                          <button
+                            type="button"
+                            className="lab-attachment-remove"
+                            aria-label={t('image.remove')}
+                            title={t('image.remove')}
+                            onClick={() => { removeImage(image.id) }}
+                          >
+                            <IconCloseOutline16 size={12} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <textarea
                     className="lab-textarea"
                     value={draft}
@@ -3208,6 +3338,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                     disabled={selectedId === undefined}
                     onChange={event => { setDraft(event.target.value); setPaletteIndex(0); setHistoryIndex(-1) }}
                     onKeyDown={onComposerKeyDown}
+                    onPaste={onComposerPaste}
                   />
                   {/* Below the box, split the way the products' own composers do:
                       what the agent is allowed to do and what it is being given on
@@ -3292,7 +3423,11 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                           onSelect={(model, effort) => { void changeModel(model, effort) }}
                         />
                       )}
-                      <ActionButton primary type="submit" disabled={selectedId === undefined || draft.trim().length === 0}>
+                      <ActionButton
+                        primary
+                        type="submit"
+                        disabled={selectedId === undefined || (draft.trim().length === 0 && pending.length === 0)}
+                      >
                         <IconSendOutline16 /> {t('composer.send')}
                       </ActionButton>
                     </div>

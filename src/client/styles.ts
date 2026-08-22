@@ -650,6 +650,37 @@ export const PANEL_STYLES = `
   color: var(--lab-text-3);
 }
 
+/* ----------------------------------------------------------- attachments */
+
+.lab-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.lab-attachment { position: relative; display: block; line-height: 0; }
+.lab-attachment-thumb {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--lab-r-control);
+  border: var(--lab-hairline) solid var(--lab-line-strong);
+}
+/* Sits on the corner of its own thumbnail, which is why the wrapper is positioned. */
+.lab-attachment-remove {
+  appearance: none;
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--lab-on-accent);
+  background: var(--lab-accent);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
 /* ------------------------------------------------------------- turn group */
 
 .lab-turn { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }

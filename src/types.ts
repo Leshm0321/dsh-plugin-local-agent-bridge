@@ -404,7 +404,18 @@ export type BridgeEvent =
   }
   | BridgeEventBase & {
     readonly type: 'bridge/user-message'
-    readonly data: { readonly text: string; readonly delivery: 'started' | 'steered' | 'queued' }
+    readonly data: {
+      readonly text: string
+      readonly delivery: 'started' | 'steered' | 'queued'
+      /**
+       * Where any images were saved, relative to the working directory.
+       *
+       * Paths rather than the images themselves: a base64 screenshot is hundreds of
+       * kilobytes, and the event log keeps two thousand entries. Storing the bytes
+       * here would trade the whole transcript for a few pictures.
+       */
+      readonly attachments?: readonly string[]
+    }
   }
   | BridgeEventBase & {
     readonly type: 'bridge/turn-started'
@@ -729,8 +740,33 @@ export interface BridgeSessionReadResult {
   readonly reset: boolean
 }
 
+/**
+ * An image the operator pasted into the composer.
+ *
+ * Both products take images natively — Codex as an `image` input item, Claude Code
+ * as a base64 image block — so a pasted screenshot is something the agent sees
+ * rather than a file it has to be told to go and read.
+ */
+export interface BridgeImageInput {
+  /** IANA type, restricted on the Host to the formats the products accept. */
+  readonly mediaType: string
+  /** The image, base64, without a data-URL prefix. */
+  readonly dataBase64: string
+  /**
+   * The clipboard's name for it, when it had one. Used for the file it is saved as;
+   * a paste usually has none, and the Host names it by time in that case.
+   */
+  readonly name?: string
+}
+
 export interface BridgeSessionSendRequest extends BridgeSessionIdRequest {
   readonly text: string
+  /**
+   * Images to send with the message. Saved into the working directory's upload
+   * directory so the conversation survives a reload, and passed to the product as
+   * image input for the turn itself.
+   */
+  readonly images?: readonly BridgeImageInput[]
 }
 
 export interface BridgeSendResult {

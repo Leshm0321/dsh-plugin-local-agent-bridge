@@ -1,6 +1,7 @@
 import type {
   BridgeCompletionsResult,
   BridgeContextUsage,
+  BridgeImageInput,
   BridgeModelsResult,
   BridgeRateLimit,
   BridgeTokenUsage,
@@ -104,6 +105,15 @@ export interface ProviderHistory {
 
 export interface ProviderTurnRequest {
   readonly text: string
+  /**
+   * Images to send with the message, already validated and size-checked on the Host.
+   *
+   * Passed as image input rather than as file paths, because both products accept
+   * that and it is what "the agent can see the screenshot" means. Empty for the
+   * ordinary case, and an adapter with no image support may ignore it — the text
+   * still carries the paths the Host saved them to.
+   */
+  readonly images: readonly BridgeImageInput[]
   readonly hooks: ProviderTurnHooks
 }
 

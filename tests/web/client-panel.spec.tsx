@@ -2315,4 +2315,97 @@ describe('LocalAgentPanel', () => {
     // survives even though the status itself is routine.
     expect(await screen.findByText(en['note.host-restarted-resumable'])).toBeTruthy()
   })
+
+  it('takes an image from a paste and sends it with the message', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    const png = new File([Uint8Array.from([137, 80, 78, 71])], 'shot.png', { type: 'image/png' })
+    fireEvent.paste(composer, {
+      clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => png }] },
+    })
+
+    // A thumbnail while it waits, so the operator can see what they attached.
+    const thumb = await screen.findByAltText('shot.png')
+    expect(thumb.getAttribute('src')).toContain('blob:')
+
+    fireEvent.change(composer, { target: { value: 'what is this' } })
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(en['composer.send']) }))
+
+    await waitFor(() => {
+      expect(fixture.sessionSend).toHaveBeenCalledWith({
+        bridgeSessionId: 'session-1',
+        text: 'what is this',
+        images: [{
+          mediaType: 'image/png',
+          dataBase64: Buffer.from(Uint8Array.from([137, 80, 78, 71])).toString('base64'),
+          name: 'shot.png',
+        }],
+      })
+    })
+    // Cleared after sending, so the next message does not carry it again.
+    await waitFor(() => { expect(screen.queryByAltText('shot.png')).toBeNull() })
+  })
+
+  it('sends an image with no text at all', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    const png = new File([Uint8Array.from([137, 80])], 'only.png', { type: 'image/png' })
+    fireEvent.paste(composer, {
+      clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => png }] },
+    })
+    await screen.findByAltText('only.png')
+
+    // The picture is the question. Send must not be disabled just because the text
+    // box is empty.
+    const button = screen.getByRole('button', { name: new RegExp(en['composer.send']) }) as HTMLButtonElement
+    expect(button.disabled).toBe(false)
+    fireEvent.click(button)
+    await waitFor(() => { expect(fixture.sessionSend).toHaveBeenCalled() })
+  })
+
+  it('lets a text paste through untouched', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    const prevented = !fireEvent.paste(composer, {
+      clipboardData: { items: [{ kind: 'string', type: 'text/plain', getAsFile: () => null }] },
+    })
+    // Not claimed: a paste of text that happens to come from an image editor still
+    // has to land in the textarea.
+    expect(prevented).toBe(false)
+  })
+
+  it('drops a pending image without sending it', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    fireEvent.paste(composer, {
+      clipboardData: {
+        items: [{
+          kind: 'file',
+          type: 'image/png',
+          getAsFile: () => new File([Uint8Array.from([1])], 'wrong.png', { type: 'image/png' }),
+        }],
+      },
+    })
+    await screen.findByAltText('wrong.png')
+
+    fireEvent.click(screen.getByLabelText(en['image.remove']))
+    await waitFor(() => { expect(screen.queryByAltText('wrong.png')).toBeNull() })
+    expect(fixture.sessionSend).not.toHaveBeenCalled()
+  })
 })

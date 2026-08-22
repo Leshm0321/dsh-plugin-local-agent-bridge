@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { BridgeError } from '../../src/core/errors.ts'
-import { UPLOAD_DIRECTORY, receiveUploads, safeUploadPath } from '../../src/core/uploads.ts'
+import { UPLOAD_DIRECTORY, receiveImages, receiveUploads, safeUploadPath } from '../../src/core/uploads.ts'
 
 let root = ''
 let outside = ''
@@ -141,6 +141,45 @@ describe('uploads', () => {
       contentBase64: encode('x'),
     }))
     await expect(receiveUploads(root, many)).rejects.toBeInstanceOf(BridgeError)
+  })
+
+  it('saves pasted images and reports both the bytes and the paths', async () => {
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+    const result = await receiveImages(root, [
+      { mediaType: 'image/png', dataBase64: png },
+      { mediaType: 'image/png', dataBase64: png, name: 'screenshot.png' },
+    ])
+
+    // Both come back: the bytes go to the product as image input for this turn, and
+    // the paths go into the transcript so a reload still makes sense.
+    expect(result.images).toHaveLength(2)
+    expect(result.paths).toEqual([
+      `${UPLOAD_DIRECTORY}/pasted-1.png`,
+      `${UPLOAD_DIRECTORY}/screenshot.png`,
+    ])
+    // A paste usually carries no name, and "pasted-1.png" is more use than a random
+    // string.
+    expect(await readFile(join(root, UPLOAD_DIRECTORY, 'pasted-1.png'))).toHaveLength(70)
+  })
+
+  it('refuses an image type the products do not take', async () => {
+    const result = await receiveImages(root, [
+      { mediaType: 'image/svg+xml', dataBase64: Buffer.from('<svg onload="x"/>').toString('base64') },
+      { mediaType: 'application/pdf', dataBase64: Buffer.from('%PDF').toString('base64') },
+      { mediaType: 'image/png', dataBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' },
+    ])
+
+    // An allow-list, so a clipboard carrying something unexpected is refused rather
+    // than written to disk under a name derived from its type. SVG is the one worth
+    // naming: it is an image to a browser and a script host to everything else.
+    expect(result.paths).toEqual([`${UPLOAD_DIRECTORY}/pasted-3.png`])
+    expect(result.images).toHaveLength(1)
+  })
+
+  it('refuses more images than one message may carry', async () => {
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+    const many = Array.from({ length: 9 }, () => ({ mediaType: 'image/png', dataBase64: png }))
+    await expect(receiveImages(root, many)).rejects.toBeInstanceOf(BridgeError)
   })
 
   it('resolves the working directory through a symlink before writing', async () => {

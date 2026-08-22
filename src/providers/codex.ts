@@ -643,7 +643,7 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
     private readonly graceMs = 3_000,
   ) {}
 
-  async startTurn({ text, hooks }: ProviderTurnRequest): Promise<void> {
+  async startTurn({ text, images, hooks }: ProviderTurnRequest): Promise<void> {
     const state = this.session(hooks)
     if (state.completion !== null) throw new BridgeError('TURN_CONFLICT')
     const connection = await this.ensureConnection()
@@ -657,7 +657,15 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
       const approvalPolicy = CODEX_APPROVAL_POLICIES[hooks.permissionMode]
       const response = object(await connection.transport.request('turn/start', {
         threadId: state.threadId as string,
-        input: [{ type: 'text', text, text_elements: [] }],
+        input: [
+          { type: 'text', text, text_elements: [] },
+          // Data URLs, which this App Server accepts: verified against 0.147.0
+          // rather than assumed, since the schema only says the field is a string.
+          ...images.map(image => ({
+            type: 'image' as const,
+            url: `data:${image.mediaType};base64,${image.dataBase64}`,
+          })),
+        ],
         // Omitted entirely for a mode Codex cannot express, so the product keeps
         // whatever the operator configured on the Host rather than being handed
         // an approximation.
