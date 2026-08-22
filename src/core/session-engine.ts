@@ -17,6 +17,8 @@ import type {
   BridgeRepository,
   BridgeUploadInput,
   BridgeUploadResult,
+  BridgeWorkspaceFile,
+  BridgeWorkspaceListing,
   BridgeSessionStatus,
   BridgeSessionView,
   BridgeStatusNote,
@@ -28,6 +30,7 @@ import type {
 import { BridgeError, bridgeError } from './errors.ts'
 import { searchFiles } from './file-search.ts'
 import { receiveImages, receiveUploads } from './uploads.ts'
+import { listWorkspace, readWorkspaceFile } from './workspace-files.ts'
 import type {
   BridgeEventDraft,
   NativeProviderAdapter,
@@ -623,6 +626,32 @@ export class BridgeSessionEngine {
       // A status line is not worth an error banner.
       return null
     }
+  }
+
+  /**
+   * One level of the session's working directory.
+   * @param bridgeSessionId - the session whose directory to list.
+   * @param path - workspace-relative directory; empty lists the root.
+   * @returns the level.
+   */
+  async listWorkspace(bridgeSessionId: string, path = ''): Promise<BridgeWorkspaceListing> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    const workspace = await this.requireWorkspace(runtime.record.workspaceId)
+    return await listWorkspace(workspace.cwd, path)
+  }
+
+  /**
+   * One file from the session's working directory.
+   * @param bridgeSessionId - the session whose directory to read from.
+   * @param path - workspace-relative file path.
+   * @returns the file's text, or a binary marker.
+   */
+  async readWorkspaceFile(bridgeSessionId: string, path: string): Promise<BridgeWorkspaceFile> {
+    this.assertActive()
+    const runtime = this.requireSession(bridgeSessionId)
+    const workspace = await this.requireWorkspace(runtime.record.workspaceId)
+    return await readWorkspaceFile(workspace.cwd, path)
   }
 
   async dispose(): Promise<void> {

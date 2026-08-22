@@ -8,6 +8,9 @@ import type {
   BridgePermissionModeView,
   BridgeRateLimit,
   BridgeHostEntry,
+  BridgeWorkspaceEntry,
+  BridgeWorkspaceFile,
+  BridgeWorkspaceListing,
   BridgeHostListing,
   BridgeRepository,
   BridgeTokenUsage,
@@ -291,6 +294,44 @@ const hostListRequestSchema = z.object({
   path: z.string().optional(),
 }).strict()
 
+const workspaceEntrySchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  directory: z.boolean(),
+  hidden: z.boolean(),
+  bytes: z.number().nullable(),
+}).strict()
+
+const _workspaceEntryIsExact: Exact<z.infer<typeof workspaceEntrySchema>, BridgeWorkspaceEntry> = true
+
+const workspaceListingSchema = z.object({
+  path: z.string(),
+  entries: z.array(workspaceEntrySchema).readonly(),
+  truncated: z.boolean(),
+}).strict()
+
+const _workspaceListingIsExact: Exact<z.infer<typeof workspaceListingSchema>, BridgeWorkspaceListing> = true
+
+const workspaceListRequestSchema = z.object({
+  bridgeSessionId: z.string(),
+  path: z.string().optional(),
+}).strict()
+
+const workspaceFileSchema = z.object({
+  path: z.string(),
+  content: z.string(),
+  bytes: z.number(),
+  truncated: z.boolean(),
+  binary: z.boolean(),
+}).strict()
+
+const _workspaceFileIsExact: Exact<z.infer<typeof workspaceFileSchema>, BridgeWorkspaceFile> = true
+
+const workspaceFileRequestSchema = z.object({
+  bridgeSessionId: z.string(),
+  path: z.string(),
+}).strict()
+
 const catalogSchema = z.object({
   providers: z.array(providerSchema),
   workspaces: z.array(workspaceSchema),
@@ -398,4 +439,6 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('sessionUpload', [parameter('request', uploadRequestSchema)], uploadResultSchema),
   invocation('sessionRepository', [parameter('request', sessionIdRequestSchema)], repositorySchema.nullable()),
   invocation('hostList', [parameter('request', hostListRequestSchema)], hostListingSchema),
+  invocation('workspaceList', [parameter('request', workspaceListRequestSchema)], workspaceListingSchema),
+  invocation('workspaceFile', [parameter('request', workspaceFileRequestSchema)], workspaceFileSchema),
 ] as const

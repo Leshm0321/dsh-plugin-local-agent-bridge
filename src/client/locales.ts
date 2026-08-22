@@ -181,6 +181,18 @@ export const zh = {
   'image.remove': '移除这张图片',
   'image.attached': '{count} 张图片',
 
+  // The right-hand panel: the project's files.
+  'panel.showSide': '显示右侧栏',
+  'panel.hideSide': '隐藏右侧栏',
+  'side.files': '文件',
+  'files.pick': '打开文件',
+  'files.pickHint': '从右侧目录树中选择一个文件',
+  'files.filter': '筛选文件…',
+  'files.treeEmpty': '这里没有文件。',
+  'files.binary': '这是二进制文件，无法以文本显示。',
+  'files.cut': '文件过大，仅显示前一部分。',
+  'files.error': '读不到这个位置。',
+
   // Collapsible sidebar.
   'panel.collapseSidebar': '收起侧栏',
   'panel.expandSidebar': '展开侧栏',
@@ -448,6 +460,17 @@ export const en = {
 
   'image.remove': 'Remove this image',
   'image.attached': '{count} image(s)',
+
+  'panel.showSide': 'Show side panel',
+  'panel.hideSide': 'Hide side panel',
+  'side.files': 'Files',
+  'files.pick': 'Open a file',
+  'files.pickHint': 'Choose one from the tree on the right',
+  'files.filter': 'Filter files…',
+  'files.treeEmpty': 'No files here.',
+  'files.binary': 'This is a binary file and cannot be shown as text.',
+  'files.cut': 'The file is large; only the beginning is shown.',
+  'files.error': 'That path could not be read.',
 
   'panel.collapseSidebar': 'Collapse sidebar',
   'panel.expandSidebar': 'Expand sidebar',

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -32,6 +32,7 @@ const ICON_STUBS = vi.hoisted(() => [
   'IconCodeOutline16',
   'IconDataOutline16',
   'IconFolderClose16',
+  'IconFolderOpen16',
   'IconFolderOpenOutline16',
   'IconPanelLeftOutline16',
   'IconPlusOutline16',
@@ -211,6 +212,26 @@ class RemoteFixture {
   readonly sessionFiles = vi.fn(async (_request: { bridgeSessionId: string; query: string }) => ({
     ok: true as const,
     value: { matches: [] as { path: string; name: string; directory: boolean }[], partial: false },
+  }))
+  readonly workspaceList = vi.fn(async (request: { bridgeSessionId: string; path?: string }) => ({
+    ok: true as const,
+    value: {
+      path: request.path ?? '',
+      entries: (request.path ?? '') === ''
+        ? [
+          { name: 'src', path: 'src', directory: true, hidden: false, bytes: null },
+          { name: '.env.example', path: '.env.example', directory: false, hidden: true, bytes: 12 },
+          { name: 'README.md', path: 'README.md', directory: false, hidden: false, bytes: 9 },
+        ]
+        : [{ name: 'main.ts', path: 'src/main.ts', directory: false, hidden: false, bytes: 25 }],
+      truncated: false,
+    },
+  }))
+  readonly workspaceFile = vi.fn(async (request: { bridgeSessionId: string; path: string }) => ({
+    ok: true as const,
+    value: request.path.endsWith('.png')
+      ? { path: request.path, content: '', bytes: 2_048, truncated: false, binary: true }
+      : { path: request.path, content: 'export const answer = 42\n', bytes: 25, truncated: false, binary: false },
   }))
   readonly hostList = vi.fn(async (request: { path?: string }) => ({
     ok: true as const,
@@ -405,9 +426,17 @@ afterEach(() => {
 
 describe('LocalAgentPanel', () => {
   it('stubs every primitive the panel imports', () => {
-    const block = readFileSync(join(process.cwd(), 'src/client/index.tsx'), 'utf8')
-      .match(/import \{([^}]*)\} from '@deepseek-ai\/dsh-client-ui-primitives'/)
-    const imported = (block?.[1] ?? '').split(',').map(part => part.trim()).filter(part => part.length > 0)
+    // Every client JSX file, not just the panel: a component split into its own file
+    // imports its own icons, and scanning one file let an unstubbed import through as
+    // an "undefined is not a component" failure pointing somewhere else.
+    const imported = readdirSync(join(process.cwd(), 'src/client'))
+      .filter(name => name.endsWith('.tsx'))
+      .flatMap((name) => {
+        const source = readFileSync(join(process.cwd(), 'src/client', name), 'utf8')
+        const block = source.match(/import \{([^}]*)\} from '@deepseek-ai\/dsh-client-ui-primitives'/)
+        return (block?.[1] ?? '').split(',').map(part => part.trim()).filter(part => part.length > 0)
+      })
+      .filter((name, index, all) => all.indexOf(name) === index)
 
     expect(imported.length).toBeGreaterThan(0)
     // A name imported but not stubbed is `undefined` at render time, which
@@ -2407,5 +2436,71 @@ describe('LocalAgentPanel', () => {
     fireEvent.click(screen.getByLabelText(en['image.remove']))
     await waitFor(() => { expect(screen.queryByAltText('wrong.png')).toBeNull() })
     expect(fixture.sessionSend).not.toHaveBeenCalled()
+  })
+
+  it('opens the side panel and shows the project’s files', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    // Closed by default: the panel costs the conversation nothing until asked for.
+    expect(screen.queryByPlaceholderText(en['files.filter'])).toBeNull()
+
+    fireEvent.click(screen.getByLabelText(en['panel.showSide']))
+    await waitFor(() => { expect(fixture.workspaceList).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', path: '' }) })
+
+    // Directories first, and a dotfile hidden until asked for.
+    expect(await screen.findByText('src')).toBeTruthy()
+    expect(screen.getByText('README.md')).toBeTruthy()
+    expect(screen.queryByText('.env.example')).toBeNull()
+
+    // Reading a file shows it with its size and path.
+    fireEvent.click(screen.getByText('README.md'))
+    await waitFor(() => {
+      expect(fixture.workspaceFile).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', path: 'README.md' })
+    })
+    expect(await screen.findByText(/answer = 42/)).toBeTruthy()
+  })
+
+  it('reads a directory only when it is opened', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['panel.showSide']))
+    await screen.findByText('src')
+
+    // Lazily: a tree that eagerly walked a monorepo would be Host work nobody
+    // asked for.
+    expect(fixture.workspaceList).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByText('src'))
+    await waitFor(() => {
+      expect(fixture.workspaceList).toHaveBeenLastCalledWith({ bridgeSessionId: 'session-1', path: 'src' })
+    })
+    expect(await screen.findByText('main.ts')).toBeTruthy()
+  })
+
+  it('says a file is binary rather than rendering it', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.workspaceList.mockResolvedValue({
+      ok: true,
+      value: {
+        path: '',
+        entries: [{ name: 'logo.png', path: 'logo.png', directory: false, hidden: false, bytes: 2_048 }],
+        truncated: false,
+      },
+    })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByLabelText(en['panel.showSide']))
+
+    fireEvent.click(await screen.findByText('logo.png'))
+    // Better than a screenful of replacement characters.
+    expect(await screen.findByText(en['files.binary'])).toBeTruthy()
   })
 })

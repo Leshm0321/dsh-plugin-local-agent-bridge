@@ -650,6 +650,187 @@ export const PANEL_STYLES = `
   color: var(--lab-text-3);
 }
 
+/* ------------------------------------------------------------------- code */
+
+/* Gutter and body as two columns of one grid, sharing a line height. The numbers are
+   a separate column because a highlighted region can span lines — a block comment, a
+   template literal — and splitting the highlight tree to interleave numbers would
+   break exactly those. */
+.lab-code {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  font-family: var(--lab-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.lab-code-gutter {
+  display: grid;
+  text-align: right;
+  color: var(--lab-text-3);
+  user-select: none;
+}
+.lab-code-line { display: block; }
+.lab-code-body { margin: 0; overflow-x: auto; white-space: pre; }
+
+/* Syntax palette.
+ *
+ * Literal colours, which nothing else in this stylesheet uses. The platform's alias
+ * set is label / state / button — it has no syntax scale, and there is no honest way
+ * to derive eight distinguishable hues from four semantic ones. Two sets, so both
+ * themes are legible rather than one being an inversion of the other.
+ *
+ * Chosen from the GitHub light and dark palettes, which are contrast-checked and
+ * familiar enough that code looks like code here. */
+.lab-code {
+  --lab-syn-keyword: #cf222e;
+  --lab-syn-string: #0a3069;
+  --lab-syn-comment: #6e7781;
+  --lab-syn-number: #0550ae;
+  --lab-syn-name: #8250df;
+  --lab-syn-type: #953800;
+  --lab-syn-attr: #116329;
+  --lab-syn-meta: #24292f;
+}
+/* The Harness marks dark mode with an attribute on body rather than relying on the
+   media query, which is what the token bridge at the top of this sheet reads. The
+   syntax palette has no token to read, so it follows the same attribute directly. */
+body[data-ds-dark-theme] .lab-code {
+  --lab-syn-keyword: #ff7b72;
+  --lab-syn-string: #a5d6ff;
+  --lab-syn-comment: #8b949e;
+  --lab-syn-number: #79c0ff;
+  --lab-syn-name: #d2a8ff;
+  --lab-syn-type: #ffa657;
+  --lab-syn-attr: #7ee787;
+  --lab-syn-meta: #c9d1d9;
+}
+
+/* highlight.js class names, scoped under the viewer.
+ *
+ * The prefix is not cosmetic: this stylesheet is injected into the Harness document,
+ * so an unscoped hljs-keyword rule would recolour every highlighted block anywhere
+ * in the application. Grouped by meaning rather than one rule per class. */
+.lab-code .hljs-keyword,
+.lab-code .hljs-literal,
+.lab-code .hljs-selector-tag,
+.lab-code .hljs-doctag,
+.lab-code .hljs-operator { color: var(--lab-syn-keyword); }
+.lab-code .hljs-string,
+.lab-code .hljs-regexp,
+.lab-code .hljs-addition,
+.lab-code .hljs-selector-attr,
+.lab-code .hljs-selector-pseudo { color: var(--lab-syn-string); }
+.lab-code .hljs-comment,
+.lab-code .hljs-quote,
+.lab-code .hljs-deletion { color: var(--lab-syn-comment); }
+.lab-code .hljs-number,
+.lab-code .hljs-symbol,
+.lab-code .hljs-bullet { color: var(--lab-syn-number); }
+.lab-code .hljs-title,
+.lab-code .hljs-name,
+.lab-code .hljs-section,
+.lab-code .hljs-selector-id,
+.lab-code .hljs-selector-class { color: var(--lab-syn-name); }
+.lab-code .hljs-type,
+.lab-code .hljs-built_in,
+.lab-code .hljs-class,
+.lab-code .hljs-params { color: var(--lab-syn-type); }
+.lab-code .hljs-attr,
+.lab-code .hljs-attribute,
+.lab-code .hljs-property,
+.lab-code .hljs-variable,
+.lab-code .hljs-template-variable { color: var(--lab-syn-attr); }
+.lab-code .hljs-meta,
+.lab-code .hljs-tag,
+.lab-code .hljs-punctuation { color: var(--lab-syn-meta); }
+.lab-code .hljs-emphasis { font-style: italic; }
+.lab-code .hljs-strong { font-weight: 600; }
+
+/* -------------------------------------------------------------- side panel */
+
+.lab-mirror { display: flex; transform: scaleX(-1); }
+
+/* The body grows a third column only when the panel is open, so a closed panel
+   costs the conversation nothing. */
+.lab-body--side { grid-template-columns: var(--lab-aside-width, 288px) minmax(0, 1fr) var(--lab-side-width, 420px); }
+.lab-body--side.lab-body--collapsed { grid-template-columns: 52px minmax(0, 1fr) var(--lab-side-width, 420px); }
+
+.lab-side {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: var(--lab-hairline) solid var(--lab-line);
+  background: var(--lab-surface);
+}
+
+/* Viewer above, tree below: the viewer is what gets read, so it takes the room, and
+   the tree stays a fixed, scrollable strip. Two columns would leave both too narrow
+   at this width. */
+.lab-files {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 40%);
+}
+.lab-files-viewer { min-height: 0; display: flex; flex-direction: column; }
+.lab-files-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: var(--lab-hairline) solid var(--lab-line);
+  font-size: 11px;
+  font-family: var(--lab-mono);
+  color: var(--lab-text-3);
+}
+.lab-files-crumb { color: var(--lab-text-3); }
+.lab-files-crumb--last { color: var(--lab-text); }
+.lab-files-meta { margin-left: auto; }
+.lab-files-content { min-height: 0; overflow: auto; padding: 10px 12px; }
+.lab-files-empty {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 32px 12px;
+  color: var(--lab-text-3);
+}
+.lab-files-empty-title { margin: 0; font-size: 13px; color: var(--lab-text-2); }
+
+.lab-files-tree {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border-top: var(--lab-hairline) solid var(--lab-line);
+}
+.lab-files-filter { font-size: 12px; }
+.lab-files-rows { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.lab-files-row {
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--lab-text);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-files-row:hover { background: var(--lab-hover); }
+.lab-files-row--on { background: var(--lab-fill-strong); }
+.lab-files-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lab-files-size { font-size: 10px; font-family: var(--lab-mono); color: var(--lab-text-3); }
+
 /* ----------------------------------------------------------- attachments */
 
 .lab-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }

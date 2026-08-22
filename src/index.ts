@@ -40,6 +40,10 @@ import type {
   BridgeHostListing,
   BridgeRepository,
   BridgeUploadRequest,
+  BridgeWorkspaceFile,
+  BridgeWorkspaceFileRequest,
+  BridgeWorkspaceListRequest,
+  BridgeWorkspaceListing,
   BridgeUploadResult,
   BridgeSessionReadRequest,
   BridgeSessionReadResult,
@@ -438,6 +442,16 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     // is out of step and an empty listing would look like an empty disk.
     if (!this.config.allowHostBrowsing) throw new BridgeError('INVALID_REQUEST')
     return await listHostDirectory(request.path)
+  }
+
+  @Remote('workspaceList')
+  async workspaceList(request: BridgeWorkspaceListRequest): Promise<BridgeWorkspaceListing> {
+    return await this.requireEngine().listWorkspace(request.bridgeSessionId, request.path ?? '')
+  }
+
+  @Remote('workspaceFile')
+  async workspaceFile(request: BridgeWorkspaceFileRequest): Promise<BridgeWorkspaceFile> {
+    return await this.requireEngine().readWorkspaceFile(request.bridgeSessionId, request.path)
   }
 
   @Remote('sessionUpload')

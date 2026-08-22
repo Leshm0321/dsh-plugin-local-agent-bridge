@@ -674,6 +674,43 @@ export interface BridgeHostListRequest {
   readonly path?: string
 }
 
+/** One entry in the session's working directory. */
+export interface BridgeWorkspaceEntry {
+  readonly name: string
+  /** Path relative to the working directory, forward-slashed. Never absolute. */
+  readonly path: string
+  readonly directory: boolean
+  readonly hidden: boolean
+  /** File size in bytes, or null for a directory. */
+  readonly bytes: number | null
+}
+
+export interface BridgeWorkspaceListing {
+  /** The directory listed, relative to the working directory; empty for the root. */
+  readonly path: string
+  readonly entries: readonly BridgeWorkspaceEntry[]
+  readonly truncated: boolean
+}
+
+export interface BridgeWorkspaceListRequest extends BridgeSessionIdRequest {
+  /** Workspace-relative directory; omitted lists the root. */
+  readonly path?: string
+}
+
+export interface BridgeWorkspaceFile {
+  readonly path: string
+  /** The text, cut at the Host's ceiling. Empty for a binary file. */
+  readonly content: string
+  readonly bytes: number
+  readonly truncated: boolean
+  /** True when the file is not text, so the panel says so instead of rendering noise. */
+  readonly binary: boolean
+}
+
+export interface BridgeWorkspaceFileRequest extends BridgeSessionIdRequest {
+  readonly path: string
+}
+
 export interface BridgeCatalogResult {
   readonly providers: readonly NativeProviderView[]
   readonly workspaces: readonly BridgeWorkspaceView[]

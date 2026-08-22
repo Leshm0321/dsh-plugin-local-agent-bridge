@@ -137,8 +137,13 @@ describe('panel stylesheet', () => {
     const hexOutsideFallback = [...PANEL_STYLES.matchAll(/#[0-9a-f]{3,8}\b/gi)]
       .filter(match => {
         const line = PANEL_STYLES.slice(0, match.index).split('\n').at(-1) ?? ''
-        // A hex is legitimate only as the last-resort fallback of a var().
-        return !line.includes('var(--dsw-alias-')
+        // A hex is legitimate as the last-resort fallback of a var(), and in the
+        // syntax palette. The palette is the one place with nothing to read: the
+        // Harness exposes label, state and button aliases, and there is no honest way
+        // to derive eight distinguishable hues for code from four semantic ones. It
+        // carries two full sets instead, one per theme, so neither is an inversion of
+        // the other.
+        return !line.includes('var(--dsw-alias-') && !line.includes('--lab-syn-')
       })
       .map(match => match[0])
     expect(hexOutsideFallback).toEqual([])

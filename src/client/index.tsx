@@ -67,6 +67,7 @@ import type {
 import { en, type LocalAgentBridgeKey, zh } from './locales.ts'
 import { Markdown } from './markdown.tsx'
 import { buildTrace } from './trace.ts'
+import { FilesPane } from './side-panel.tsx'
 import { TraceView, formatDuration } from './trace-view.tsx'
 import { PANEL_STYLES } from './styles.ts'
 
@@ -2080,6 +2081,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
   const [hostHidden, setHostHidden] = useState(false)
   const [pending, setPending] = useState<readonly PendingImage[]>([])
   const [view, setView] = useState<'chat' | 'trace'>('chat')
+  const [sideOpen, setSideOpen] = useState(false)
   const [traceQuery, setTraceQuery] = useState('')
   const attachRoot = useRef<HTMLSpanElement>(null)
   const [repository, setRepository] = useState<BridgeRepository | null>(null)
@@ -2972,6 +2974,23 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                 </div>
               </div>
               <div className="lab-titlebar-actions">
+                {/* Mirrors the sidebar toggle on the left: each sits on the side it
+                    acts on. Only offered with a session, since the panel shows that
+                    session's working directory. */}
+                {snapshot !== undefined && (
+                  <ActionButton
+                    icon
+                    aria-label={sideOpen ? t('panel.hideSide') : t('panel.showSide')}
+                    title={sideOpen ? t('panel.hideSide') : t('panel.showSide')}
+                    aria-expanded={sideOpen}
+                    onClick={() => { setSideOpen(current => !current) }}
+                  >
+                    {/* The same glyph mirrored: the primitive set has only the
+                        left-hand one, and a mirrored pair reads as a pair in a way
+                        two different icons would not. */}
+                    <span className="lab-mirror"><IconPanelLeftOutline16 /></span>
+                  </ActionButton>
+                )}
                 <ActionButton icon aria-label={t('panel.refresh')} title={t('panel.refresh')} onClick={() => { void refresh() }}>
                   <IconRefreshOutline16 />
                 </ActionButton>
@@ -2981,7 +3000,13 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
               </div>
             </header>
 
-            <div className={sidebarCollapsed ? 'lab-body lab-body--collapsed' : 'lab-body'}>
+            <div
+              className={[
+                'lab-body',
+                sidebarCollapsed ? 'lab-body--collapsed' : '',
+                sideOpen && snapshot !== undefined ? 'lab-body--side' : '',
+              ].filter(part => part.length > 0).join(' ')}
+            >
               <aside className="lab-aside">
                 {/* Shown only when collapsed. Sessions rather than a second
                     expand button: the toggle already lives in the titlebar, and a
@@ -3439,6 +3464,21 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                   <small className="lab-composer-hint lab-composer-hint--second">{t('composer.hint')}</small>
                 </form>
               </main>
+
+              {sideOpen && snapshot !== undefined && (
+                <aside className="lab-side">
+                  <div className="lab-views" role="tablist" aria-label={t('side.files')}>
+                    <button type="button" role="tab" aria-selected className="lab-view-tab lab-view-tab--on">
+                      {t('side.files')}
+                    </button>
+                  </div>
+                  <FilesPane
+                    remote={remote}
+                    bridgeSessionId={snapshot.session.bridgeSessionId}
+                    t={t}
+                  />
+                </aside>
+              )}
             </div>
 
             {nativeSessionsOpen && (

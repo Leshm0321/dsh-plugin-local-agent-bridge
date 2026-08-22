@@ -360,6 +360,40 @@ sessions it created itself.
 Session transcript paths stay on the Host. An unknown or expired locator makes the
 session `orphaned`, the same as one that stopped resolving after a Host restart.
 
+## The side panel
+
+The button at the titlebar's right opens a third column showing the project the
+agent is working on: a viewer above, the working directory's tree below. Reading a
+file the agent just changed does not mean leaving the conversation.
+
+Everything here is workspace-relative. The tree and the viewer both work in paths
+under the session's working directory, so nothing this panel holds or sends is an
+absolute Host path — unlike the composer's host browser, which exists to do exactly
+that and says so. Confinement is checked after symlinks resolve: a link committed
+into a repository must not become a way to read whatever it points at.
+
+Directories are read when opened, not up front, so a monorepo is not walked for a
+tree nobody asked to see. `.git` and `node_modules` are skipped. Dotfiles are listed
+but hidden until asked for. A file over 512 KB is cut and says so, and a binary file
+says it is binary rather than rendering a screenful of replacement characters.
+
+Syntax colour comes from lowlight — highlight.js's analysis as a tree rather than as
+a string of HTML, which is why this renders React elements and no
+`dangerouslySetInnerHTML` exists in the panel at all. 37 languages, chosen from the
+extension and checked against what is registered: an unknown extension shows as
+plain text rather than being guessed at, because colours assert a structure and
+asserting the wrong one is worse than asserting none.
+
+It costs 314 KB uncompressed in the client bundle, around 80 KB over the wire. If
+that matters more than breadth, `createLowlight(common)` in `src/client/code.tsx`
+can take a hand-picked subset instead.
+
+The syntax palette is the one place in the stylesheet with literal colours. The
+Harness exposes label, state and button aliases and no syntax scale, and there is no
+honest way to derive eight distinguishable hues for code from four semantic ones — so
+it carries two full sets, one per theme, rather than one being an inversion of the
+other.
+
 ## How a turn reads
 
 A turn is three layers: the question, the work, the answer.
