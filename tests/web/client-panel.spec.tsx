@@ -2139,4 +2139,180 @@ describe('LocalAgentPanel', () => {
     expect(screen.queryByText(/tok\/s/)).toBeNull()
     expect(screen.queryByText(new RegExp(en['trace.cache'].replace('{percent}', '\\d+')))).toBeNull()
   })
+
+  it('folds a finished turn’s work away, leaving the question and the answer', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      events: [
+        { ...event(1, { type: 'bridge/user-message', data: { text: 'summarise the project', delivery: 'started' } }), timestamp: 1_000 },
+        {
+          ...event(2, {
+            type: 'bridge/turn-started',
+            data: {
+              turn: {
+                bridgeTurnId: 'turn-1',
+                bridgeSessionId: 'session-1',
+                status: 'running' as const,
+                startedAt: 1_000,
+                completedAt: null,
+                stopReason: null,
+              },
+            },
+          }),
+          timestamp: 1_000,
+        },
+        // An opening remark, two tool calls, some thinking, then the real answer.
+        { ...event(3, { type: 'bridge/text-delta', data: { text: 'I will start by looking around.', itemId: 'a' } }), timestamp: 1_500 },
+        { ...event(4, { type: 'bridge/tool-completed', data: { itemId: 't1', toolName: 'Bash', summary: 'Bash completed', status: 'completed' } }), timestamp: 2_000 },
+        { ...event(5, { type: 'bridge/tool-completed', data: { itemId: 't2', toolName: 'Read', summary: 'Read completed', status: 'completed' } }), timestamp: 3_000 },
+        { ...event(6, { type: 'bridge/reasoning-delta', data: { text: 'weighing it up', itemId: 'r' } }), timestamp: 4_000 },
+        { ...event(7, { type: 'bridge/text-delta', data: { text: 'Here is the summary.', itemId: 'b' } }), timestamp: 5_000 },
+        {
+          ...event(8, {
+            type: 'bridge/turn-completed',
+            data: {
+              turn: {
+                bridgeTurnId: 'turn-1',
+                bridgeSessionId: 'session-1',
+                status: 'completed' as const,
+                startedAt: 1_000,
+                completedAt: 464_000,
+                stopReason: 'completed',
+              },
+            },
+          }),
+          timestamp: 464_000,
+        },
+      ],
+      latestSequence: 8,
+    }))
+    renderPanel(fixture.remote())
+
+    // Three layers: the question, a summary of the work, the answer.
+    expect(await screen.findByText('summarise the project')).toBeTruthy()
+    expect(screen.getByText('Here is the summary.')).toBeTruthy()
+    // 463 seconds between the turn's two events.
+    const toggle = screen.getByRole('button', { name: /7m43s/ })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+
+    // Four steps folded away: the opening remark, two tools, and the thinking.
+    expect(screen.getByText(en['turn.steps'].replace('{count}', '4'))).toBeTruthy()
+    expect(screen.queryByText('I will start by looking around.')).toBeNull()
+    expect(screen.queryByText('Bash completed')).toBeNull()
+    expect(screen.queryByText('weighing it up')).toBeNull()
+
+    fireEvent.click(toggle)
+    expect(await screen.findByText('I will start by looking around.')).toBeTruthy()
+    expect(screen.getByText('Bash completed')).toBeTruthy()
+    expect(screen.getByText('Read completed')).toBeTruthy()
+    expect(screen.getByText('weighing it up')).toBeTruthy()
+    // Order preserved: the remark came before the tools, and a row key sorts as a
+    // string, so this would break if the work were reassembled by key.
+    const shown = [...document.querySelectorAll('.lab-turn-work .lab-row-card')]
+      .map(card => card.textContent ?? '')
+    expect(shown[0]).toContain('I will start by looking around.')
+    expect(shown.at(-1)).toContain('weighing it up')
+  })
+
+  it('keeps a running turn’s work open, and counts up while it runs', async () => {
+    const fixture = new RemoteFixture()
+    const running = { ...session, status: 'running' as const }
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [running] })
+    fixture.pushRead(snapshot({
+      session: running,
+      events: [
+        {
+          ...event(1, {
+            type: 'bridge/turn-started',
+            data: {
+              turn: {
+                bridgeTurnId: 'turn-1',
+                bridgeSessionId: 'session-1',
+                status: 'running' as const,
+                startedAt: Date.now(),
+                completedAt: null,
+                stopReason: null,
+              },
+            },
+          }),
+          timestamp: Date.now(),
+        },
+        event(2, { type: 'bridge/tool-completed', data: { itemId: 't1', toolName: 'Bash', summary: 'Bash completed', status: 'completed' } }),
+      ],
+      latestSequence: 2,
+    }))
+    renderPanel(fixture.remote())
+
+    // Open while it runs, because that is when watching the work is the point.
+    expect(await screen.findByText('Bash completed')).toBeTruthy()
+    const toggle = screen.getByRole('button', { name: new RegExp(en['turn.working'].replace('{value}', '')) })
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+
+    // And a fold the operator sets themselves survives: having opened the work to
+    // read it, they should not have it shut under them when the turn completes.
+    fireEvent.click(toggle)
+    await waitFor(() => { expect(screen.queryByText('Bash completed')).toBeNull() })
+  })
+
+  it('never folds an error away, even though it belongs to a turn', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      events: [
+        event(1, { type: 'bridge/tool-completed', data: { itemId: 't1', toolName: 'Bash', summary: 'Bash completed', status: 'completed' } }),
+        event(2, { type: 'bridge/error', data: { code: 'PROVIDER_PROTOCOL_ERROR', message: 'bad frame' } }),
+        event(3, { type: 'bridge/text-delta', data: { text: 'recovered', itemId: 'a' } }),
+      ],
+      latestSequence: 3,
+    }))
+    renderPanel(fixture.remote())
+
+    // A failure is an outcome, not part of the work that led to it. Folding it would
+    // hide the one row the operator most needs.
+    expect(await screen.findByText(en['error.PROVIDER_PROTOCOL_ERROR'])).toBeTruthy()
+  })
+
+  it('keeps status rows for what needs acting on, and drops the routine ones', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      events: [
+        event(1, { type: 'bridge/session-status', data: { status: 'running', note: null } }),
+        event(2, { type: 'bridge/session-status', data: { status: 'idle', note: null } }),
+        event(3, { type: 'bridge/session-status', data: { status: 'orphaned', note: 'host-restarted-orphaned' } }),
+        event(4, { type: 'bridge/session-status', data: { status: 'auth-required', note: null } }),
+      ],
+      latestSequence: 4,
+    }))
+    renderPanel(fixture.remote())
+
+    // Scoped to the transcript: the sidebar's session row carries a status chip of
+    // its own, and it is not what this is about.
+    const transcript = document.querySelector('.lab-stream') as HTMLElement
+    // A state the operator has to do something about keeps its row.
+    expect(await within(transcript).findByText(en['status.orphaned'])).toBeTruthy()
+    expect(within(transcript).getByText(en['status.auth-required'])).toBeTruthy()
+    // The ordinary rhythm of a turn does not: the toolbar shows it live, and two
+    // rows between every question and its answer is the noise the grouping removes.
+    expect(within(transcript).queryByText(en['status.running'])).toBeNull()
+    expect(within(transcript).queryByText(en['status.idle'])).toBeNull()
+  })
+
+  it('still reports a routine status that carries a note', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      events: [event(1, {
+        type: 'bridge/session-status',
+        data: { status: 'idle', note: 'host-restarted-resumable' },
+      })],
+      latestSequence: 1,
+    }))
+    renderPanel(fixture.remote())
+
+    // A note by definition says something the status word does not, so the row
+    // survives even though the status itself is routine.
+    expect(await screen.findByText(en['note.host-restarted-resumable'])).toBeTruthy()
+  })
 })

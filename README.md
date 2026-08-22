@@ -360,6 +360,29 @@ sessions it created itself.
 Session transcript paths stay on the Host. An unknown or expired locator makes the
 session `orphaned`, the same as one that stopped resolving after a Host restart.
 
+## How a turn reads
+
+A turn is three layers: the question, the work, the answer.
+
+The work — tool calls, thinking, and the "I'll start by looking around" the agents
+open with — folds into one line: `processed in 2m19s · 4 steps`. It is open while
+the turn is running, because that is when watching it is the point, and folded once
+the turn finishes, because then the answer is. A fold you set yourself wins over
+both: having opened the work to read it, you should not have it shut under you when
+the turn completes.
+
+The answer is the turn's *last* assistant message. Everything before it is work,
+which is why an opening remark folds away with the tool calls it introduced.
+
+Four things stay outside the fold, because none of them is work leading to an
+answer: your own message, the rule marking a resumed transcript, a status you have
+to act on, and an error. A failure is an outcome, and folding it away would hide the
+one row most worth seeing.
+
+Routine status rows — `running`, then `idle`, around every turn — are not shown at
+all. The toolbar reports that live, and two rows between every question and its
+answer was the noise this grouping exists to remove.
+
 ## Markdown
 
 Both products answer in markdown, and the panel renders it: headings, tables, lists,

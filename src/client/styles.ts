@@ -650,6 +650,53 @@ export const PANEL_STYLES = `
   color: var(--lab-text-3);
 }
 
+/* ------------------------------------------------------------- turn group */
+
+.lab-turn { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+
+/* A quiet chip, not a card: it describes the work rather than being part of the
+   conversation, so it should not compete with the answer below it. */
+.lab-turn-toggle {
+  appearance: none;
+  font: inherit;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--lab-text-2);
+  background: var(--lab-fill);
+  border: 0;
+  border-radius: var(--lab-r-chip);
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease);
+}
+.lab-turn-toggle:hover { background: var(--lab-fill-strong); }
+.lab-turn-toggle:disabled { cursor: default; }
+.lab-turn-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--lab-accent) 16%, transparent);
+}
+.lab-turn-caret {
+  display: inline-block;
+  transition: transform var(--lab-fast) var(--lab-ease);
+  color: var(--lab-text-3);
+}
+.lab-turn-caret--open { transform: rotate(90deg); }
+.lab-turn-label { font-family: var(--lab-mono); }
+.lab-turn-count { color: var(--lab-text-3); }
+
+/* Indented and ruled, so the work reads as belonging to the summary above it rather
+   than as more conversation. */
+.lab-turn-work {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--lab-line);
+}
+
 /* --------------------------------------------------------------- markdown */
 
 /* Blocks inside a transcript card, so the vertical rhythm is the card's rather than

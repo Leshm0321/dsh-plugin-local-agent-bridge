@@ -172,6 +172,11 @@ export const zh = {
   'trace.tokens': '输入 {input} · 输出 {output}',
   'trace.restored': '载入了 {count} 条已有记录',
 
+  // A turn's work, folded away once it has an answer.
+  'turn.working': '处理中 {value}',
+  'turn.processed': '已处理 {value}',
+  'turn.steps': '{count} 步',
+
   // Collapsible sidebar.
   'panel.collapseSidebar': '收起侧栏',
   'panel.expandSidebar': '展开侧栏',
@@ -432,6 +437,10 @@ export const en = {
   'trace.cache': '{percent}% cache hit',
   'trace.tokens': '{input} in · {output} out',
   'trace.restored': '{count} entries restored from the transcript',
+
+  'turn.working': 'working {value}',
+  'turn.processed': 'processed in {value}',
+  'turn.steps': '{count} steps',
 
   'panel.collapseSidebar': 'Collapse sidebar',
   'panel.expandSidebar': 'Expand sidebar',

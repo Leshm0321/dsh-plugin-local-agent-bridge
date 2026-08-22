@@ -60,7 +60,7 @@ import type {
 import { en, type LocalAgentBridgeKey, zh } from './locales.ts'
 import { Markdown } from './markdown.tsx'
 import { buildTrace } from './trace.ts'
-import { TraceView } from './trace-view.tsx'
+import { TraceView, formatDuration } from './trace-view.tsx'
 import { PANEL_STYLES } from './styles.ts'
 
 export type { LocalAgentBridgeKey } from './locales.ts'
@@ -93,6 +93,15 @@ const BUSY_STATUSES: readonly BridgeSessionStatus[] = [
  * authority — this is a courtesy, not a control.
  */
 const UPLOAD_FILE_LIMIT = 8 * 1024 * 1024
+
+/**
+ * Statuses the transcript does not bother reporting.
+ *
+ * The ordinary rhythm of a turn, which the toolbar already shows live. Everything
+ * else — a failure, an orphaned session, an expired login — is a state the operator
+ * has to do something about, and keeps its row.
+ */
+const ROUTINE_STATUSES: readonly BridgeSessionStatus[] = ['idle', 'running', 'creating']
 
 /**
  * How often the repository status is re-read.
@@ -198,7 +207,34 @@ interface TimelineRow {
   readonly text: string
   /** Present on a tool row the product described beyond its summary. */
   readonly detail?: BridgeToolDetail
+  /** The turn this row belongs to, or null for one outside any turn. */
+  readonly turnId: string | null
 }
+
+/**
+ * The transcript as it is read: a question, the work, then the answer.
+ *
+ * A turn's rows are grouped rather than laid out flat, because a flat list buries
+ * the answer under however many tool calls it took to reach — twenty rows of `Bash
+ * completed` between the question and the reply. The work is still there, one click
+ * away, and it stays open while the turn is running because that is when it is worth
+ * watching.
+ */
+type TimelineNode =
+  | { readonly kind: 'row'; readonly key: string; readonly row: TimelineRow }
+  | {
+    readonly kind: 'turn'
+    readonly key: string
+    /** Tool calls, thinking, and any reply the agent made before its last one. */
+    readonly work: readonly TimelineRow[]
+    /** The turn's final assistant message, or null when it produced none. */
+    readonly answer: TimelineRow | null
+    /** Turn duration, or null while it is still running. */
+    readonly durationMs: number | null
+    /** When the turn started, for counting up while it runs. */
+    readonly startedAt: number
+    readonly running: boolean
+  }
 
 
 function unwrap<T>(result: RemoteResult<T>): T {
@@ -272,8 +308,9 @@ function timeline(events: readonly BridgeEvent[], t: PanelTranslate): TimelineRo
   const rows: TimelineRow[] = []
   for (const event of events) {
     const key = `${String(event.sequence)}-${event.type}`
+    const turnId = event.bridgeTurnId
     if (event.type === 'bridge/user-message') {
-      rows.push({ key, kind: 'user', title: t(`row.delivery.${event.data.delivery}`), text: event.data.text })
+      rows.push({ key, kind: 'user', title: t(`row.delivery.${event.data.delivery}`), text: event.data.text, turnId })
     } else if (event.type === 'bridge/text-delta' || event.type === 'bridge/reasoning-delta') {
       const kind = event.type === 'bridge/text-delta' ? 'assistant' : 'reasoning'
       const previous = rows.at(-1)
@@ -281,7 +318,7 @@ function timeline(events: readonly BridgeEvent[], t: PanelTranslate): TimelineRo
       if (previous?.key.endsWith(group)) {
         rows[rows.length - 1] = { ...previous, text: previous.text + event.data.text }
       } else {
-        rows.push({ key: `${key}:${group}`, kind, title: t(`row.${kind}`), text: event.data.text })
+        rows.push({ key: `${key}:${group}`, kind, title: t(`row.${kind}`), text: event.data.text, turnId })
       }
     } else if (event.type === 'bridge/tool-started' || event.type === 'bridge/tool-updated' || event.type === 'bridge/tool-completed') {
       // One row per tool call, updated in place. A call emits started and then
@@ -291,6 +328,7 @@ function timeline(events: readonly BridgeEvent[], t: PanelTranslate): TimelineRo
       const row: TimelineRow = {
         key: `tool:${event.data.itemId}`,
         kind: 'tool',
+        turnId,
         // The tool name is the vendor's; only the status word is ours.
         title: t('row.tool', { tool: event.data.toolName, status: t(`row.toolStatus.${event.data.status}`) }),
         text: event.data.summary,
@@ -301,11 +339,12 @@ function timeline(events: readonly BridgeEvent[], t: PanelTranslate): TimelineRo
       if (existing >= 0) rows[existing] = row
       else rows.push(row)
     } else if (event.type === 'bridge/file-change') {
-      rows.push({ key, kind: 'tool', title: t('row.fileChange'), text: event.data.summary })
+      rows.push({ key, kind: 'tool', title: t('row.fileChange'), text: event.data.summary, turnId })
     } else if (event.type === 'bridge/error') {
       rows.push({
         key,
         kind: 'error',
+        turnId,
         // A turn the operator stopped is not a failure. Labelling it "Error"
         // reads as something having gone wrong with what they just asked for.
         title: event.data.code === 'USER_CANCELLED' ? t('row.cancelled') : t('row.error'),
@@ -315,24 +354,133 @@ function timeline(events: readonly BridgeEvent[], t: PanelTranslate): TimelineRo
       rows.push({
         key,
         kind: 'history',
+        turnId,
         title: event.data.truncated
           ? t('history.truncated', { count: event.data.restored })
           : t('history.restored', { count: event.data.restored }),
         text: '',
       })
     } else if (event.type === 'bridge/session-status') {
-      rows.push({
-        key,
-        kind: 'status',
-        title: t(`status.${event.data.status}`),
-        // A note is present only when it adds something the status word does
-        // not already say; an error-driven transition leaves it null because
-        // the bridge/error row above already named the cause.
-        text: statusNoteText(t, event.data.note),
-      })
+      // Routine transitions are dropped. "Running" then "idle" around every turn
+      // said nothing the toolbar was not already showing, and put two rows between
+      // each question and its answer — which is the noise the turn grouping exists
+      // to remove. A state the operator has to act on still gets a row, and so does
+      // any transition carrying a note, since a note by definition says something
+      // the status word does not.
+      if (!ROUTINE_STATUSES.includes(event.data.status) || event.data.note !== null) {
+        rows.push({
+          key,
+          kind: 'status',
+          turnId,
+          title: t(`status.${event.data.status}`),
+          // A note is present only when it adds something the status word does
+          // not already say; an error-driven transition leaves it null because
+          // the bridge/error row above already named the cause.
+          text: statusNoteText(t, event.data.note),
+        })
+      }
     }
   }
   return rows
+}
+
+/**
+ * Group a turn's rows into the work it did and the answer it reached.
+ *
+ * The answer is the turn's *last* assistant message. Everything before it — tool
+ * calls, thinking, and the "I'll start by…" the agents open with — is the work, and
+ * folds away once the turn is done.
+ *
+ * Rows outside any turn stay flat: a status change, the history rule, an error that
+ * belongs to no turn. They are not part of a question-and-answer pair and grouping
+ * them under one would invent a relationship.
+ *
+ * A turn with no assistant message keeps its work visible rather than collapsing to
+ * an empty summary — a turn that only ran tools has nothing else to show.
+ * @param rows - the flat rows, in order.
+ * @param events - the same events, for turn timing.
+ * @returns nodes in reading order.
+ */
+function groupTimeline(rows: readonly TimelineRow[], events: readonly BridgeEvent[]): TimelineNode[] {
+  const startedAt = new Map<string, number>()
+  const completedAt = new Map<string, number>()
+  for (const event of events) {
+    if (event.bridgeTurnId === null) continue
+    if (event.type === 'bridge/turn-started') startedAt.set(event.bridgeTurnId, event.timestamp)
+    else if (event.type === 'bridge/turn-completed') completedAt.set(event.bridgeTurnId, event.timestamp)
+  }
+
+  const nodes: TimelineNode[] = []
+  // Rows are visited in order and a turn's group is emitted at the position of its
+  // first grouped row, so the transcript keeps its reading order even when a status
+  // row separates two turns.
+  // Positions are carried alongside the rows, because the work and the intermediate
+  // replies are separated and then recombined — and a row key sorts as a string, so
+  // `10-` would land before `9-`.
+  const groups = new Map<string, {
+    work: { row: TimelineRow; index: number }[]
+    assistants: { row: TimelineRow; index: number }[]
+  }>()
+
+  for (const [index, row] of rows.entries()) {
+    const turnId = row.turnId
+    // A user message stays outside the group: it is the question the group answers,
+    // and putting it inside would fold away what was asked.
+    // An error stays flat with the status rows. A failure is an outcome, not part of
+    // the work that led to it, and folding it away would hide the one row the
+    // operator most needs to see.
+    if (
+      turnId === null
+      || row.kind === 'user'
+      || row.kind === 'status'
+      || row.kind === 'history'
+      || row.kind === 'error'
+    ) {
+      nodes.push({ kind: 'row', key: row.key, row })
+      continue
+    }
+    let group = groups.get(turnId)
+    if (group === undefined) {
+      group = { work: [], assistants: [] }
+      groups.set(turnId, group)
+      nodes.push({
+        kind: 'turn',
+        key: `turn:${turnId}`,
+        // Filled in below; the placeholder holds the position.
+        work: [],
+        answer: null,
+        durationMs: null,
+        startedAt: startedAt.get(turnId) ?? 0,
+        running: false,
+      })
+    }
+    if (row.kind === 'assistant') group.assistants.push({ row, index })
+    else group.work.push({ row, index })
+  }
+
+  // Second pass, now that each turn's last assistant message is known.
+  return nodes.map((node) => {
+    if (node.kind === 'row') return node
+    const turnId = node.key.slice('turn:'.length)
+    const group = groups.get(turnId)
+    if (group === undefined) return node
+    const answer = group.assistants.at(-1)?.row ?? null
+    // Every assistant message except the last is part of the work, restored to the
+    // order it was produced in.
+    const work = [...group.work, ...group.assistants.slice(0, -1)]
+      .sort((left, right) => left.index - right.index)
+      .map(entry => entry.row)
+    const started = startedAt.get(turnId)
+    const completed = completedAt.get(turnId)
+    return {
+      ...node,
+      work,
+      answer,
+      running: started !== undefined && completed === undefined,
+      durationMs: started === undefined || completed === undefined ? null : Math.max(0, completed - started),
+      startedAt: started ?? 0,
+    }
+  })
 }
 
 /**
@@ -530,6 +678,84 @@ function DirectoryBrowser({
         <ActionButton onClick={onCancel}>{t('browse.cancel')}</ActionButton>
       </div>
     </div>
+  )
+}
+
+/**
+ * A turn's work, foldable, with the answer beneath it.
+ *
+ * Open while the turn runs, because that is when watching it is the point, and
+ * folded once it finishes, because then the answer is. A fold the operator sets
+ * themselves wins over both: having opened the work to read it, they should not have
+ * it shut under them the moment the turn completes.
+ *
+ * The elapsed time counts up while running and freezes at the total when done —
+ * "how long has this been going" and "how long did that take" are the two questions
+ * asked of a turn, and they are the same readout at different moments.
+ */
+function TurnGroup({
+  node,
+  streaming,
+  t,
+}: {
+  node: Extract<TimelineNode, { kind: 'turn' }>
+  streaming: boolean
+  t: PanelTranslate
+}) {
+  const [chosen, setChosen] = useState<boolean | null>(null)
+  // A turn with no answer yet has nothing *but* its work, so folding it would leave
+  // a summary chip above an empty space. That covers a turn still running and a turn
+  // that only ever ran tools.
+  const open = chosen ?? (node.running || node.answer === null)
+  // Re-rendered on a timer only while a turn is in flight, so an idle transcript
+  // costs nothing.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!node.running) return
+    const timer = setInterval(() => { setNow(Date.now()) }, 1_000)
+    return () => { clearInterval(timer) }
+  }, [node.running])
+
+  const elapsed = node.durationMs ?? Math.max(0, now - node.startedAt)
+  // Anything at all is foldable, because folding leaves the summary chip rather than
+  // a blank space. Whether it *starts* folded is the separate question above.
+
+  return (
+    <>
+      {node.work.length > 0 && (
+        <div className="lab-turn">
+          <button
+            type="button"
+            className="lab-turn-toggle"
+            aria-expanded={open}
+            onClick={() => { setChosen(!open) }}
+          >
+            <span className={open ? 'lab-turn-caret lab-turn-caret--open' : 'lab-turn-caret'}>›</span>
+            <span className="lab-turn-label">
+              {node.running
+                ? t('turn.working', { value: formatDuration(elapsed) })
+                : t('turn.processed', { value: formatDuration(elapsed) })}
+            </span>
+            <span className="lab-turn-count">{t('turn.steps', { count: node.work.length })}</span>
+          </button>
+          {open && (
+            <div className="lab-turn-work">
+              {node.work.map((row, index) => (
+                <TimelineEntry
+                  key={row.key}
+                  row={row}
+                  streaming={streaming && node.answer === null && index === node.work.length - 1}
+                  t={t}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {node.answer !== null && (
+        <TimelineEntry key={node.answer.key} row={node.answer} streaming={streaming} t={t} />
+      )}
+    </>
   )
 }
 
@@ -2027,6 +2253,11 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
 
   const rows = useMemo(() => timeline(snapshot?.events ?? [], t), [snapshot?.events, t])
   /**
+   * The transcript as question / work / answer, so a reply is not buried under the
+   * twenty tool calls it took to reach.
+   */
+  const nodes = useMemo(() => groupTimeline(rows, snapshot?.events ?? []), [rows, snapshot?.events])
+  /**
    * Whether the newest row may still grow. Drives the typewriter reveal, which must
    * not animate a finished answer or a row restored from a transcript.
    */
@@ -2913,21 +3144,24 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
                     />
                   )}
                   <div className="lab-stream">
-                    {rows.map((row, index) => (
-                      <TimelineEntry
-                        key={row.key}
-                        row={row}
-                        // Only the row still being written: the last one, while the
-                        // session has a turn in flight, and only for text the model
-                        // is producing.
-                        streaming={
-                          streamingRow
-                          && index === rows.length - 1
-                          && (row.kind === 'assistant' || row.kind === 'reasoning')
-                        }
-                        t={t}
-                      />
-                    ))}
+                    {nodes.map((node, index) => node.kind === 'row'
+                      ? (
+                        <TimelineEntry
+                          key={node.key}
+                          row={node.row}
+                          streaming={false}
+                          t={t}
+                        />
+                      )
+                      : (
+                        <TurnGroup
+                          key={node.key}
+                          node={node}
+                          // Only the newest turn can still be writing.
+                          streaming={streamingRow && index === nodes.length - 1}
+                          t={t}
+                        />
+                      ))}
                   </div>
                 </div>
                 </div>
