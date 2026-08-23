@@ -1,3 +1,4 @@
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 /**
  * `local-agent-bridge` namespace dictionaries.
  *
@@ -237,6 +238,38 @@ export const zh = {
   'composer.send': '发送',
   'composer.hint': 'Codex 运行中的消息会即时插入当前轮；Claude 的消息排队等待当前轮结束。',
   'composer.keys': 'Enter 发送 · Shift+Enter 换行 · ↑ 上一条 · Esc 中止',
+  // The panel's own lock. Deliberately explicit about what it does not cover:
+  // the moment someone sets a password is the moment they form a belief about it.
+  'lock.checking': '正在检查锁状态…',
+  'lock.title': '面板已锁定',
+  'lock.note': '输入密码以访问本机 Agent 面板。',
+  'lock.password': '密码',
+  'lock.unlock': '解锁',
+  'lock.unlocking': '正在解锁…',
+  'lock.wrong': '密码不正确。',
+  'lock.lockedOut': '尝试过于频繁，请等待 {count} 秒。',
+  'lock.scope': '这道锁只保护本面板，不保护 Harness 的其余部分。若浏览器不在本机，仍需在 Harness 前面部署 TLS 与带认证的访问层。',
+
+  // The Privacy page in the Harness's own Settings panel.
+  'privacy.title': '隐私',
+  'privacy.note': '为本机 Agent 面板设置密码。设置之后，主机会拒绝任何未解锁的调用——不只是把界面挡住。',
+  'privacy.limit': '它保护的是「别人打开了这个页面」。它不保护 Harness 的其余部分，也不能替代 TLS 与带认证的反向代理：明文 HTTP 上的密码是明文传输的。',
+  'privacy.current': '当前密码',
+  'privacy.create': '密码',
+  'privacy.next': '新密码',
+  'privacy.confirm': '再输一次',
+  'privacy.enable': '启用',
+  'privacy.change': '修改密码',
+  'privacy.disable': '移除密码',
+  'privacy.lockNow': '立即锁定',
+  'privacy.wrong': '当前密码不正确。',
+  'privacy.tooShort': '至少 {count} 个字符。',
+  'privacy.mismatch': '两次输入不一致。',
+  'privacy.saved': '已保存。请用新密码重新解锁。',
+  'privacy.cleared': '已移除密码，面板不再需要解锁。',
+  'privacy.timeouts': '一次解锁最长 {hours} 小时，闲置 {minutes} 分钟后失效。',
+  'privacy.forgot': '忘记密码：在主机上删除本插件存储域里的 secrets 记录即可清除它。能读到那个文件的人本来也能删掉它——由进程守着的锁，管不住它所在的那台机器。',
+
 
   // Slash-command / skill / MCP palette, opened by typing "/".
   'palette.hint': '输入 / 唤起本机 Agent 的命令与 Skill',
@@ -342,6 +375,15 @@ export const zh = {
 
 /** The namespace's key union — the compile-time contract both locales meet. */
 export type LocalAgentBridgeKey = keyof typeof zh
+
+/**
+ * The panel's bound translate function.
+ *
+ * Exported from the dictionaries rather than from the panel so a component in
+ * another file can be typed without importing the panel — which would be a cycle,
+ * since the panel imports those components.
+ */
+export type LocalAgentTranslate = TranslateNS<'local-agent-bridge'>
 
 /** English dictionary; key-checked against zh so the pair cannot drift. */
 export const en = {
@@ -540,6 +582,38 @@ export const en = {
   'composer.send': 'Send',
   'composer.hint': 'Running Codex messages are steered; Claude messages queue until the active turn completes.',
   'composer.keys': 'Enter to send · Shift+Enter for a newline · ↑ for the last message · Esc to interrupt',
+  // The panel's own lock. Deliberately explicit about what it does not cover:
+  // the moment someone sets a password is the moment they form a belief about it.
+  'lock.checking': 'Checking the lock…',
+  'lock.title': 'Panel locked',
+  'lock.note': 'Enter the password to reach the local agents panel.',
+  'lock.password': 'Password',
+  'lock.unlock': 'Unlock',
+  'lock.unlocking': 'Unlocking…',
+  'lock.wrong': 'That password is not correct.',
+  'lock.lockedOut': 'Too many attempts. Wait {count}s.',
+  'lock.scope': 'This lock covers this panel, not the rest of the Harness. A browser that is not on this machine still needs TLS and an authenticated access layer in front of it.',
+
+  // The Privacy page in the Harness's own Settings panel.
+  'privacy.title': 'Privacy',
+  'privacy.note': 'Set a password for the local agents panel. Once set, the Host refuses every call that has not unlocked — not just the screen.',
+  'privacy.limit': 'It protects against someone opening this page. It does not protect the rest of the Harness, and it does not replace TLS and an authenticated reverse proxy: over plain HTTP a password crosses the wire in cleartext.',
+  'privacy.current': 'Current password',
+  'privacy.create': 'Password',
+  'privacy.next': 'New password',
+  'privacy.confirm': 'Again',
+  'privacy.enable': 'Enable',
+  'privacy.change': 'Change password',
+  'privacy.disable': 'Remove password',
+  'privacy.lockNow': 'Lock now',
+  'privacy.wrong': 'That current password is not correct.',
+  'privacy.tooShort': 'At least {count} characters.',
+  'privacy.mismatch': 'Those do not match.',
+  'privacy.saved': 'Saved. Unlock again with the new password.',
+  'privacy.cleared': 'Password removed; the panel no longer asks.',
+  'privacy.timeouts': 'One unlock lasts {hours}h, or {minutes} min idle.',
+  'privacy.forgot': 'Forgotten it: delete the secrets record in this plugin\'s storage domain on the Host. Whoever can read that file could always delete it — a lock kept by a process cannot outrank the machine it runs on.',
+
 
   'palette.hint': 'Type / for this agent\u2019s commands and skills',
   'palette.commands': 'Commands and skills',

@@ -17,6 +17,7 @@ import type {
   ProviderId,
 } from '../types.ts'
 import { credentialLeakMarkers } from './redaction.ts'
+import type { PrivacyVerifier } from './privacy.ts'
 
 export interface PersistedBridgeSession {
   bridgeSessionId: string
@@ -108,8 +109,16 @@ export const bridgeDomainSpec = defineDomain({
   tables: {
     sessions: domainTable<string, Envelope>(envelopeSchema),
     directories: domainTable<string, Envelope>(envelopeSchema),
+    // The panel's password verifier, at one fixed key. A table rather than a
+    // field on something else because it is the only record here that is not
+    // about a session or a directory, and because adding a table is the
+    // backward-compatible move the note above describes.
+    secrets: domainTable<string, Envelope>(envelopeSchema),
   },
 })
+
+/** The single key the verifier lives at; there is only ever one password. */
+const PANEL_PASSWORD_KEY = 'panel-password'
 
 function parseRecord(payload: string): PersistedBridgeSession {
   const value = JSON.parse(payload) as PersistedBridgeSession
@@ -144,11 +153,71 @@ export class BridgePersistence {
     private readonly domain: Domain<typeof bridgeDomainSpec>,
     private readonly sessions: KvTable<string, Envelope>,
     private readonly directories: KvTable<string, Envelope>,
+    private readonly secrets: KvTable<string, Envelope>,
   ) {}
 
   static async open(storageDomain: DomainFacility): Promise<BridgePersistence> {
     const domain = await storageDomain.open(bridgeDomainSpec)
-    return new BridgePersistence(domain, domain.table('sessions'), domain.table('directories'))
+    return new BridgePersistence(
+      domain,
+      domain.table('sessions'),
+      domain.table('directories'),
+      domain.table('secrets'),
+    )
+  }
+
+  /**
+   * The stored password verifier, or null when no password is set.
+   *
+   * A record that will not parse reads as "no password", not as an error: a
+   * corrupted verifier that failed the plugin's init would take the whole Profile
+   * down, and an operator locked out of the Harness by a damaged lock file has no
+   * way in at all. Failing open here is the lesser harm, and it is visible — the
+   * panel says no password is set.
+   */
+  readPanelPassword(): PrivacyVerifier | null {
+    const envelope = this.secrets.get(PANEL_PASSWORD_KEY)
+    if (envelope === undefined) return null
+    try {
+      const value = JSON.parse(envelope.payload) as PrivacyVerifier
+      if (
+        value === null
+        || typeof value !== 'object'
+        || value.kdf !== 'scrypt'
+        || typeof value.salt !== 'string'
+        || typeof value.verifier !== 'string'
+        || typeof value.cost !== 'number'
+        || typeof value.blockSize !== 'number'
+        || typeof value.parallelism !== 'number'
+        || typeof value.keyLength !== 'number'
+      ) return null
+      return value
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Write or remove the password verifier.
+   *
+   * Runs the same credential-leak probes the session writer does. The verifier is
+   * a one-way hash the Host is meant to keep, so this should never fire — which is
+   * exactly why it is worth having: it fires only if someone later puts something
+   * here that is not a hash.
+   *
+   * @param verifier - the record to store, or null to remove the password.
+   */
+  async writePanelPassword(verifier: PrivacyVerifier | null): Promise<void> {
+    if (verifier === null) {
+      await this.secrets.delete(PANEL_PASSWORD_KEY)
+      return
+    }
+    const payload = JSON.stringify(verifier)
+    const markers = credentialLeakMarkers(payload)
+    if (markers.length > 0) {
+      throw new Error(`local-agent-bridge: refused to persist credential-shaped data (${markers.join(', ')})`)
+    }
+    await this.secrets.put(PANEL_PASSWORD_KEY, { payload })
   }
 
   list(): PersistedBridgeSession[] {

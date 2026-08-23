@@ -17,6 +17,9 @@ const SAFE_MESSAGES: Record<BridgeErrorCode, string> = {
   CONNECTION_LOST: 'The connection to the native product was lost.',
   CLEANUP_FAILED: 'The native product process did not shut down cleanly.',
   INVALID_REQUEST: 'The request is invalid.',
+  PANEL_LOCKED: 'The panel is locked. Enter the password to continue.',
+  PASSWORD_REJECTED: 'That password is not correct.',
+  PASSWORD_ATTEMPTS_EXCEEDED: 'Too many attempts. Wait before trying again.',
 }
 
 export class BridgeError extends Error {

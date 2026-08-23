@@ -1,11 +1,18 @@
 import { z } from 'zod'
 import type {
+  BridgeCatalogRequest,
   BridgeCompletion,
   BridgeContextUsage,
   BridgeFileMatch,
   BridgeModel,
   BridgeNativeSession,
   BridgePermissionModeView,
+  BridgePrivacyClearRequest,
+  BridgePrivacyPasswordRequest,
+  BridgePrivacyState,
+  BridgePrivacyUnlockRequest,
+  BridgePrivacyUnlockResult,
+  BridgeSessionsListRequest,
   BridgeRateLimit,
   BridgeHostEntry,
   BridgeDiffEntry,
@@ -68,9 +75,10 @@ const workspaceSchema = z.object({
   published: z.boolean(),
 }).strict()
 
-const directoryAddRequestSchema = z.object({ path: z.string() }).strict()
-const directoryRequestSchema = z.object({ directoryId: z.string() }).strict()
+const directoryAddRequestSchema = z.object({ token: z.string(), path: z.string() }).strict()
+const directoryRequestSchema = z.object({ token: z.string(), directoryId: z.string() }).strict()
 const directoryPublishRequestSchema = z.object({
+  token: z.string(),
   directoryId: z.string(),
   published: z.boolean(),
 }).strict()
@@ -228,11 +236,13 @@ const nativeSessionsResultSchema = z.object({
 }).strict()
 
 const permissionModeRequestSchema = z.object({
+  token: z.string(),
   bridgeSessionId: z.string(),
   mode: permissionModeSchema,
 }).strict()
 
 const modelRequestSchema = z.object({
+  token: z.string(),
   bridgeSessionId: z.string(),
   model: z.string().nullable(),
   effort: z.string().nullable(),
@@ -252,11 +262,13 @@ const fileSearchResultSchema = z.object({
 }).strict()
 
 const fileSearchRequestSchema = z.object({
+  token: z.string(),
   bridgeSessionId: z.string(),
   query: z.string(),
 }).strict()
 
 const uploadRequestSchema = z.object({
+  token: z.string(),
   bridgeSessionId: z.string(),
   files: z.array(z.object({
     path: z.string(),
@@ -270,6 +282,7 @@ const uploadResultSchema = z.object({
 }).strict()
 
 const nativeSessionsRequestSchema = z.object({
+  token: z.string(),
   providerId: z.enum(['codex', 'claude', 'fake']),
   workspaceId: z.string(),
 }).strict()
@@ -294,6 +307,7 @@ const hostListingSchema = z.object({
 const _hostListingShapeIsExact: Exact<z.infer<typeof hostListingSchema>, BridgeHostListing> = true
 
 const hostListRequestSchema = z.object({
+  token: z.string(),
   path: z.string().optional(),
 }).strict()
 
@@ -316,6 +330,7 @@ const workspaceListingSchema = z.object({
 const _workspaceListingIsExact: Exact<z.infer<typeof workspaceListingSchema>, BridgeWorkspaceListing> = true
 
 const workspaceListRequestSchema = z.object({
+  token: z.string(),
   bridgeSessionId: z.string(),
   path: z.string().optional(),
 }).strict()
@@ -332,11 +347,13 @@ const workspaceFileSchema = z.object({
 const _workspaceFileIsExact: Exact<z.infer<typeof workspaceFileSchema>, BridgeWorkspaceFile> = true
 
 const workspaceFileRequestSchema = z.object({
+  token: z.string(),
   bridgeSessionId: z.string(),
   path: z.string(),
 }).strict()
 
 const workspaceWriteRequestSchema = z.object({
+  token: z.string(),
   bridgeSessionId: z.string(),
   path: z.string(),
   content: z.string(),
@@ -344,12 +361,14 @@ const workspaceWriteRequestSchema = z.object({
 }).strict()
 
 const workspaceCreateRequestSchema = z.object({
+  token: z.string(),
   bridgeSessionId: z.string(),
   path: z.string(),
   directory: z.boolean(),
 }).strict()
 
 const workspaceRenameRequestSchema = z.object({
+  token: z.string(),
   bridgeSessionId: z.string(),
   from: z.string(),
   to: z.string(),
@@ -394,6 +413,7 @@ const catalogSchema = z.object({
 }).strict()
 
 const createRequestSchema = z.object({
+  token: z.string(),
   providerId: z.enum(['codex', 'claude', 'fake']),
   workspaceId: z.string(),
   title: z.string().optional(),
@@ -401,7 +421,7 @@ const createRequestSchema = z.object({
   permissionMode: permissionModeSchema.optional(),
 }).strict()
 
-const sessionIdRequestSchema = z.object({ bridgeSessionId: z.string() }).strict()
+const sessionIdRequestSchema = z.object({ token: z.string(), bridgeSessionId: z.string() }).strict()
 const readRequestSchema = sessionIdRequestSchema.extend({
   afterSequence: z.number().optional(),
   waitMs: z.number().optional(),
@@ -472,10 +492,57 @@ function invocation(
   }
 }
 
+/**
+ * The lock's own wire shapes.
+ *
+ * `privacyState` and `privacyUnlock` are the two methods a locked caller may
+ * reach, so neither takes a token. Everything else here does, including
+ * `privacyLock`: locking is only meaningful to someone already inside, and an
+ * unauthenticated caller able to lock the panel is a denial of service with no
+ * upside.
+ */
+const privacyStateSchema = z.object({
+  configured: z.boolean(),
+  unlocked: z.boolean(),
+  lockedOutUntil: z.number().nullable(),
+  absoluteTimeoutMs: z.number(),
+  idleTimeoutMs: z.number(),
+  minPasswordLength: z.number(),
+}).strict()
+
+const _privacyStateIsExact: Exact<z.infer<typeof privacyStateSchema>, BridgePrivacyState> = true
+
+const privacyUnlockRequestSchema = z.object({ password: z.string() }).strict()
+const privacyUnlockResultSchema = z.object({ token: z.string(), expiresAt: z.number() }).strict()
+const privacyPasswordRequestSchema = z.object({
+  current: z.string().nullable(),
+  next: z.string(),
+}).strict()
+const privacyClearRequestSchema = z.object({ current: z.string() }).strict()
+
+const _privacyUnlockRequestIsExact: Exact<z.infer<typeof privacyUnlockRequestSchema>, BridgePrivacyUnlockRequest> = true
+const _privacyUnlockResultIsExact: Exact<z.infer<typeof privacyUnlockResultSchema>, BridgePrivacyUnlockResult> = true
+const _privacyPasswordRequestIsExact: Exact<z.infer<typeof privacyPasswordRequestSchema>, BridgePrivacyPasswordRequest> = true
+const _privacyClearRequestIsExact: Exact<z.infer<typeof privacyClearRequestSchema>, BridgePrivacyClearRequest> = true
+
+/**
+ * `catalog` and `sessionsList` took no request object before the lock existed.
+ * They take one now for the single reason that the token has nowhere else to
+ * travel — the Gateway passes named arguments and nothing about the caller.
+ */
+const catalogRequestSchema = z.object({ token: z.string() }).strict()
+const sessionsListRequestSchema = z.object({
+  token: z.string(),
+  includeArchived: z.boolean(),
+}).strict()
+
+const _catalogRequestIsExact: Exact<z.infer<typeof catalogRequestSchema>, BridgeCatalogRequest> = true
+const _sessionsListRequestIsExact: Exact<z.infer<typeof sessionsListRequestSchema>, BridgeSessionsListRequest> = true
+
 /** Official Typert descriptor vocabulary, authored locally for a root-package workspace. */
 export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
-  invocation('catalog', [], catalogSchema),
-  invocation('sessionsList', [parameter('includeArchived', z.boolean())], z.array(sessionSchema)),
+  invocation('catalog', [parameter('request', catalogRequestSchema)], catalogSchema),
+  invocation('sessionsList', [parameter('request', sessionsListRequestSchema)], z.array(sessionSchema)),
   invocation('sessionCreate', [parameter('request', createRequestSchema)], sessionSchema),
   invocation('sessionRead', [parameter('request', readRequestSchema)], readResultSchema, true),
   invocation('sessionSend', [parameter('request', sendRequestSchema)], sendResultSchema),
@@ -502,4 +569,9 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('workspaceCreate', [parameter('request', workspaceCreateRequestSchema)], z.undefined()),
   invocation('workspaceRename', [parameter('request', workspaceRenameRequestSchema)], z.undefined()),
   invocation('workspaceDelete', [parameter('request', workspaceFileRequestSchema)], z.undefined()),
+  invocation('privacyState', [parameter('request', catalogRequestSchema)], privacyStateSchema),
+  invocation('privacyUnlock', [parameter('request', privacyUnlockRequestSchema)], privacyUnlockResultSchema),
+  invocation('privacyPassword', [parameter('request', privacyPasswordRequestSchema)], privacyStateSchema),
+  invocation('privacyClear', [parameter('request', privacyClearRequestSchema)], privacyStateSchema),
+  invocation('privacyLock', [parameter('request', catalogRequestSchema)], z.undefined()),
 ] as const

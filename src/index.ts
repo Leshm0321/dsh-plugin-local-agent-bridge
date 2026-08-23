@@ -9,6 +9,7 @@ import type { NativeProviderAdapter } from './core/provider.ts'
 import { BridgePersistence, type PersistedBridgeDirectory } from './core/persistence.ts'
 import { BridgeSessionEngine } from './core/session-engine.ts'
 import { BridgeError } from './core/errors.ts'
+import { PrivacyGate } from './core/privacy.ts'
 import { discoverProvider, isAdmissible, permissionModesFor, publicProvider } from './core/version.ts'
 import { redactText } from './core/redaction.ts'
 import { listHostDirectory } from './core/host-browse.ts'
@@ -18,6 +19,7 @@ import { ClaudeProviderAdapter } from './providers/claude.ts'
 import { CodexProviderAdapter } from './providers/codex.ts'
 import { FakeProviderAdapter } from './providers/fake.ts'
 import type {
+  BridgeCatalogRequest,
   BridgeCatalogResult,
   BridgeDirectoryAddRequest,
   BridgeDirectoryPublishRequest,
@@ -31,6 +33,12 @@ import type {
   BridgeNativeSessionsRequest,
   BridgeNativeSessionsResult,
   BridgePermissionModeRequest,
+  BridgePrivacyClearRequest,
+  BridgePrivacyPasswordRequest,
+  BridgePrivacyState,
+  BridgePrivacyUnlockRequest,
+  BridgePrivacyUnlockResult,
+  BridgeSessionsListRequest,
   BridgeInteractionRespondRequest,
   BridgeInteractionRespondResult,
   BridgeSendResult,
@@ -84,6 +92,19 @@ export interface Config {
    */
   allowWorkspaceWrites?: boolean
   enableFakeProvider?: boolean
+  /**
+   * How long one unlock lasts regardless of use.
+   *
+   * There is no on/off switch beside this: the lock is on exactly when a password
+   * is set, which the operator does from the panel's own Privacy settings. A
+   * config flag would be a second answer to the same question, and the two would
+   * eventually disagree.
+   */
+  panelLockAbsoluteMs?: number
+  /** How long one unlock survives with no call made through it. */
+  panelLockIdleMs?: number
+  /** Shortest password the Host will accept. */
+  panelPasswordMinLength?: number
   eventRetention?: number
   longPollMaxMs?: number
   processGraceMs?: number
@@ -94,6 +115,9 @@ interface ResolvedConfig {
   readonly allowHostBrowsing: boolean
   readonly allowWorkspaceWrites: boolean
   readonly enableFakeProvider: boolean
+  readonly panelLockAbsoluteMs: number
+  readonly panelLockIdleMs: number
+  readonly panelPasswordMinLength: number
   readonly eventRetention: number
   readonly longPollMaxMs: number
   readonly processGraceMs: number
@@ -133,6 +157,9 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     allowHostBrowsing: z.boolean().default(true),
     allowWorkspaceWrites: z.boolean().default(true),
     enableFakeProvider: z.boolean().default(false),
+    panelLockAbsoluteMs: z.number().min(60_000).max(30 * 24 * 60 * 60_000).default(8 * 60 * 60_000),
+    panelLockIdleMs: z.number().min(60_000).max(24 * 60 * 60_000).default(30 * 60_000),
+    panelPasswordMinLength: z.number().min(8).max(128).default(8),
     eventRetention: z.number().min(100).max(10_000).default(2_000),
     longPollMaxMs: z.number().min(1_000).max(30_000).default(25_000),
     processGraceMs: z.number().min(500).max(30_000).default(3_000),
@@ -141,6 +168,9 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     allowHostBrowsing: true,
     allowWorkspaceWrites: true,
     enableFakeProvider: false,
+    panelLockAbsoluteMs: 8 * 60 * 60_000,
+    panelLockIdleMs: 30 * 60_000,
+    panelPasswordMinLength: 8,
     eventRetention: 2_000,
     longPollMaxMs: 25_000,
     processGraceMs: 3_000,
@@ -168,6 +198,12 @@ export class LocalAgentBridgeService extends TypertRemoteService {
    */
   private readonly adapters = new Map<ProviderId, NativeProviderAdapter>()
   private persistence: BridgePersistence | null = null
+  /**
+   * The panel's lock. Null until init has read the stored verifier, which is why
+   * every gated method reaches it through {@link requireGate} rather than
+   * directly — a call arriving before init is refused, not waved through.
+   */
+  private gate: PrivacyGate | null = null
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'localAgentBridge')
@@ -176,6 +212,9 @@ export class LocalAgentBridgeService extends TypertRemoteService {
       allowHostBrowsing: config.allowHostBrowsing ?? true,
       allowWorkspaceWrites: config.allowWorkspaceWrites ?? true,
       enableFakeProvider: config.enableFakeProvider ?? false,
+      panelLockAbsoluteMs: config.panelLockAbsoluteMs ?? 8 * 60 * 60_000,
+      panelLockIdleMs: config.panelLockIdleMs ?? 30 * 60_000,
+      panelPasswordMinLength: config.panelPasswordMinLength ?? 8,
       eventRetention: config.eventRetention ?? 2_000,
       longPollMaxMs: config.longPollMaxMs ?? 25_000,
       processGraceMs: config.processGraceMs ?? 3_000,
@@ -237,6 +276,17 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     await this.discoverProviders()
     const persistence = await BridgePersistence.open(this.ctx.storageDomain)
     this.persistence = persistence
+    // Before anything else the browser can reach. A gate built after the first
+    // call could be asked to authorize one it had no verifier for yet.
+    this.gate = new PrivacyGate(
+      {
+        absoluteTimeoutMs: this.config.panelLockAbsoluteMs,
+        idleTimeoutMs: this.config.panelLockIdleMs,
+        minPasswordLength: this.config.panelPasswordMinLength,
+      },
+      persistence.readPanelPassword(),
+      async next => { await persistence.writePanelPassword(next) },
+    )
     await this.adoptExistingWorkspaces(persistence)
     await this.repointSessionsAtDirectories(persistence)
     this.engine = await BridgeSessionEngine.create({
@@ -289,7 +339,8 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   }
 
   @Remote('catalog')
-  async catalog(): Promise<BridgeCatalogResult> {
+  async catalog(request: BridgeCatalogRequest): Promise<BridgeCatalogResult> {
+    this.requireGate().authorize(request.token)
     await this.discoverProviders()
     return {
       providers: this.providerViews,
@@ -301,6 +352,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   @Remote('directoryAdd')
   async directoryAdd(request: BridgeDirectoryAddRequest): Promise<BridgeWorkspaceView> {
+    this.requireGate().authorize(request.token)
     const path = resolve(request.path.trim())
     if (path.length === 0) throw new BridgeError('INVALID_REQUEST')
     if (!await isDirectory(path)) throw new BridgeError('WORKSPACE_NOT_AVAILABLE')
@@ -325,6 +377,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   @Remote('directoryRemove')
   async directoryRemove(request: BridgeDirectoryRequest): Promise<void> {
+    this.requireGate().authorize(request.token)
     const persistence = this.requirePersistence()
     const record = persistence.listDirectories().find(entry => entry.directoryId === request.directoryId)
     if (record === undefined) return
@@ -339,6 +392,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   @Remote('directoryPublish')
   async directoryPublish(request: BridgeDirectoryPublishRequest): Promise<BridgeWorkspaceView> {
+    this.requireGate().authorize(request.token)
     const persistence = this.requirePersistence()
     const record = persistence.listDirectories().find(entry => entry.directoryId === request.directoryId)
     if (record === undefined) throw new BridgeError('WORKSPACE_NOT_AVAILABLE')
@@ -359,12 +413,14 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   }
 
   @Remote('sessionsList')
-  sessionsList(includeArchived: boolean): BridgeSessionView[] {
-    return this.requireEngine().list(includeArchived)
+  sessionsList(request: BridgeSessionsListRequest): BridgeSessionView[] {
+    this.requireGate().authorize(request.token)
+    return this.requireEngine().list(request.includeArchived)
   }
 
   @Remote('sessionCreate')
   async sessionCreate(request: BridgeSessionCreateRequest): Promise<BridgeSessionView> {
+    this.requireGate().authorize(request.token)
     const provider = this.providerViews.find(candidate => candidate.id === request.providerId)
     if (provider === undefined || !provider.installed) throw new BridgeError('EXECUTABLE_NOT_FOUND')
     if (provider.health !== 'ready') throw new BridgeError('UNSUPPORTED_VERSION')
@@ -379,11 +435,13 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   @Remote('sessionRead')
   async sessionRead(request: BridgeSessionReadRequest, signal?: AbortSignal): Promise<BridgeSessionReadResult> {
+    this.requireGate().authorize(request.token)
     return await this.requireEngine().read(request, signal)
   }
 
   @Remote('sessionSend')
   async sessionSend(request: BridgeSessionSendRequest): Promise<BridgeSendResult> {
+    this.requireGate().authorize(request.token)
     return await this.requireEngine().send(
       request.bridgeSessionId,
       request.text,
@@ -393,21 +451,25 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   @Remote('sessionCancel')
   async sessionCancel(request: BridgeSessionIdRequest): Promise<void> {
+    this.requireGate().authorize(request.token)
     await this.requireEngine().cancel(request.bridgeSessionId)
   }
 
   @Remote('sessionArchive')
   async sessionArchive(request: BridgeSessionArchiveRequest): Promise<BridgeSessionView> {
+    this.requireGate().authorize(request.token)
     return await this.requireEngine().archiveSession(request.bridgeSessionId, request.archived ?? true)
   }
 
   @Remote('sessionCompletions')
   async sessionCompletions(request: BridgeSessionIdRequest): Promise<BridgeCompletionsResult> {
+    this.requireGate().authorize(request.token)
     return await this.requireEngine().listCompletions(request.bridgeSessionId)
   }
 
   @Remote('nativeSessions')
   async nativeSessions(request: BridgeNativeSessionsRequest): Promise<BridgeNativeSessionsResult> {
+    this.requireGate().authorize(request.token)
     const provider = this.providerViews.find(candidate => candidate.id === request.providerId)
     if (provider === undefined || provider.health !== 'ready') {
       // Nothing to enumerate for a product that cannot back a session anyway,
@@ -419,6 +481,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   @Remote('sessionPermissionMode')
   async sessionPermissionMode(request: BridgePermissionModeRequest): Promise<BridgeSessionView> {
+    this.requireGate().authorize(request.token)
     const engine = this.requireEngine()
     const session = engine.list(true).find(item => item.bridgeSessionId === request.bridgeSessionId)
     if (session === undefined) throw new BridgeError('SESSION_NOT_FOUND')
@@ -433,11 +496,13 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   @Remote('sessionModels')
   async sessionModels(request: BridgeSessionIdRequest): Promise<BridgeModelsResult> {
+    this.requireGate().authorize(request.token)
     return await this.requireEngine().listModels(request.bridgeSessionId)
   }
 
   @Remote('sessionModel')
   async sessionModel(request: BridgeModelRequest): Promise<BridgeSessionView> {
+    this.requireGate().authorize(request.token)
     // Validation against the product's own list lives in the engine, which is
     // where the list is read — unlike permission modes, whose set is static per
     // product and can be checked here without asking anything.
@@ -450,16 +515,19 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   @Remote('sessionFiles')
   async sessionFiles(request: BridgeFileSearchRequest): Promise<BridgeFileSearchResult> {
+    this.requireGate().authorize(request.token)
     return await this.requireEngine().searchFiles(request.bridgeSessionId, request.query)
   }
 
   @Remote('sessionRepository')
   async sessionRepository(request: BridgeSessionIdRequest): Promise<BridgeRepository | null> {
+    this.requireGate().authorize(request.token)
     return await this.requireEngine().describeRepository(request.bridgeSessionId)
   }
 
   @Remote('hostList')
   async hostList(request: BridgeHostListRequest): Promise<BridgeHostListing> {
+    this.requireGate().authorize(request.token)
     // Refused rather than answered emptily: the panel hides the route when the
     // catalog says the Profile does not serve it, so reaching here means something
     // is out of step and an empty listing would look like an empty disk.
@@ -480,26 +548,31 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   @Remote('workspaceList')
   async workspaceList(request: BridgeWorkspaceListRequest): Promise<BridgeWorkspaceListing> {
+    this.requireGate().authorize(request.token)
     return await this.requireEngine().listWorkspace(request.bridgeSessionId, request.path ?? '')
   }
 
   @Remote('workspaceFile')
   async workspaceFile(request: BridgeWorkspaceFileRequest): Promise<BridgeWorkspaceFile> {
+    this.requireGate().authorize(request.token)
     return await this.requireEngine().readWorkspaceFile(request.bridgeSessionId, request.path)
   }
 
   @Remote('workspaceDiff')
   async workspaceDiff(request: BridgeSessionIdRequest): Promise<BridgeWorkspaceDiff> {
+    this.requireGate().authorize(request.token)
     return await this.requireEngine().listDiff(request.bridgeSessionId)
   }
 
   @Remote('workspaceFileDiff')
   async workspaceFileDiff(request: BridgeWorkspaceFileRequest): Promise<readonly BridgeDiffHunk[]> {
+    this.requireGate().authorize(request.token)
     return await this.requireEngine().fileDiff(request.bridgeSessionId, request.path)
   }
 
   @Remote('workspaceWrite')
   async workspaceWrite(request: BridgeWorkspaceWriteRequest): Promise<BridgeWorkspaceFile> {
+    this.requireGate().authorize(request.token)
     this.assertWritable()
     return await this.requireEngine().writeWorkspaceFile(
       request.bridgeSessionId,
@@ -511,6 +584,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   @Remote('workspaceCreate')
   async workspaceCreate(request: BridgeWorkspaceCreateRequest): Promise<void> {
+    this.requireGate().authorize(request.token)
     this.assertWritable()
     await this.requireEngine().createWorkspaceEntry(
       request.bridgeSessionId,
@@ -521,18 +595,21 @@ export class LocalAgentBridgeService extends TypertRemoteService {
 
   @Remote('workspaceRename')
   async workspaceRename(request: BridgeWorkspaceRenameRequest): Promise<void> {
+    this.requireGate().authorize(request.token)
     this.assertWritable()
     await this.requireEngine().renameWorkspaceEntry(request.bridgeSessionId, request.from, request.to)
   }
 
   @Remote('workspaceDelete')
   async workspaceDelete(request: BridgeWorkspaceFileRequest): Promise<void> {
+    this.requireGate().authorize(request.token)
     this.assertWritable()
     await this.requireEngine().deleteWorkspaceEntry(request.bridgeSessionId, request.path)
   }
 
   @Remote('sessionUpload')
   async sessionUpload(request: BridgeUploadRequest): Promise<BridgeUploadResult> {
+    this.requireGate().authorize(request.token)
     return await this.requireEngine().receiveUploads(request.bridgeSessionId, request.files)
   }
 
@@ -540,6 +617,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   async interactionRespond(
     request: BridgeInteractionRespondRequest,
   ): Promise<BridgeInteractionRespondResult> {
+    this.requireGate().authorize(request.token)
     return await this.requireEngine().respondInteraction(request)
   }
 
@@ -650,6 +728,93 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   private requirePersistence(): BridgePersistence {
     if (this.persistence === null) throw new BridgeError('CONNECTION_LOST')
     return this.persistence
+  }
+
+  /**
+   * The lock, or a refusal.
+   *
+   * A call that arrives before init finished has no gate to ask, and the only
+   * safe answer to "may this proceed" from something that does not yet know the
+   * password is no.
+   */
+  private requireGate(): PrivacyGate {
+    if (this.gate === null) throw new BridgeError('PANEL_LOCKED')
+    return this.gate
+  }
+
+  /**
+   * What the browser may know before it has unlocked anything.
+   *
+   * Ungated on purpose, and it is the only such method that reveals state: the
+   * panel cannot decide between "ask for a password" and "ask to set one" without
+   * it. It carries no hash, no salt and no attempt count.
+   */
+  /**
+   * The lock as the browser is allowed to see it, including whether the token it
+   * just presented still works.
+   */
+  private privacyView(gate: PrivacyGate, token: string): BridgePrivacyState {
+    return {
+      ...gate.state(),
+      unlocked: gate.accepts(token),
+      minPasswordLength: this.config.panelPasswordMinLength,
+    }
+  }
+
+  @Remote('privacyState')
+  privacyState(request: BridgeCatalogRequest): BridgePrivacyState {
+    return this.privacyView(this.requireGate(), request.token)
+  }
+
+  /**
+   * Trade the password for a token.
+   *
+   * Ungated, necessarily — this is the door. The rate limiting and the slow hash
+   * that keep it from being a guessing gallery are inside the gate.
+   */
+  @Remote('privacyUnlock')
+  async privacyUnlock(request: BridgePrivacyUnlockRequest): Promise<BridgePrivacyUnlockResult> {
+    const gate = this.requireGate()
+    const token = await gate.unlock(request.password)
+    return { token, expiresAt: Date.now() + this.config.panelLockAbsoluteMs }
+  }
+
+  /**
+   * Set the password, or change it.
+   *
+   * Ungated by token and gated by the password itself: `current` must be right
+   * whenever one is already set. A live token is not proof of knowing the
+   * password — it outlives the moment it was issued, and an unattended tab is the
+   * case this whole feature exists for.
+   */
+  @Remote('privacyPassword')
+  async privacyPassword(request: BridgePrivacyPasswordRequest): Promise<BridgePrivacyState> {
+    const gate = this.requireGate()
+    await gate.setPassword(request.current, request.next)
+    // Every grant was just dropped, including this browser's, so the view is
+    // built with no token: it must report locked.
+    return this.privacyView(gate, '')
+  }
+
+  /** Remove the password. Requires it, for the same reason changing it does. */
+  @Remote('privacyClear')
+  async privacyClear(request: BridgePrivacyClearRequest): Promise<BridgePrivacyState> {
+    const gate = this.requireGate()
+    await gate.clearPassword(request.current)
+    return this.privacyView(gate, '')
+  }
+
+  /**
+   * Lock now, dropping every unlock everywhere.
+   *
+   * Gated, because locking is only meaningful to someone already inside and an
+   * unauthenticated caller able to do it is a denial of service with no upside.
+   */
+  @Remote('privacyLock')
+  privacyLock(request: BridgeCatalogRequest): void {
+    const gate = this.requireGate()
+    gate.authorize(request.token)
+    gate.lock()
   }
 
   private requireEngine(): BridgeSessionEngine {

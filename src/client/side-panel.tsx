@@ -24,7 +24,7 @@ import {
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { useEffect, useMemo, useState } from 'react'
 import { Code } from './code.tsx'
-import type { LocalAgentRemote } from './index.tsx'
+import type { GatedRemote } from './index.tsx'
 import { DiffBody, type DiffLayout } from './diff-view.tsx'
 import type {
   BridgeDiffEntry,
@@ -71,7 +71,7 @@ export function FilesPane({
   writable,
   t,
 }: {
-  remote: LocalAgentRemote
+  remote: GatedRemote
   bridgeSessionId: string
   /** Whether this Profile serves writes; false hides the controls entirely. */
   writable: boolean
@@ -511,7 +511,7 @@ export function DiffPane({
   bridgeSessionId,
   t,
 }: {
-  remote: LocalAgentRemote
+  remote: GatedRemote
   bridgeSessionId: string
   t: Translate
 }) {

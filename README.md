@@ -165,6 +165,9 @@ config block, so keep every key when changing one — see
 | `allowExperimentalVersions` | `false` | Permit product versions classified `unknown`. |
 | `allowHostBrowsing` | `true` | Let the composer's file button browse the Host beyond the working directory. Off omits the route entirely. |
 | `allowWorkspaceWrites` | `true` | Let the side panel create, rename, delete and edit files in the working directory. Off hides those controls. |
+| `panelLockAbsoluteMs` | `28800000` (8h) | How long one unlock of the panel lasts, regardless of use. |
+| `panelLockIdleMs` | `1800000` (30 min) | How long one unlock survives with no call made through it. |
+| `panelPasswordMinLength` | `8` | Shortest panel password the Host will accept. |
 | `enableFakeProvider` | `false` | Expose the local verification fixture. Leave off; it shows up in the product picker. |
 | `eventRetention` | `2000` | Maximum retained bridge events per session. |
 | `longPollMaxMs` | `25000` | Maximum Client long-poll duration. |
@@ -190,6 +193,13 @@ Four things do cross that line, each deliberately and each switchable off:
 | Workspace writes | Creates, renames, deletes and edits inside the working directory | `allowWorkspaceWrites: false` |
 | Uploads | Writes only into `.dsh-bridge-uploads/`, under a name the Host rebuilds | Use the working-directory tab instead |
 | Dictation | Chromium sends the audio to a vendor service to transcribe — the browser's doing, not the plugin's | Do not use the button |
+
+A fifth thing goes the other way: **Settings -> Privacy** puts a password in front of
+this panel, enforced on the Host so it cannot be walked around with `curl`. It covers
+this plugin's surface only — a plugin has no seat in front of DSH's own routes — and
+over plain HTTP the password travels in cleartext. To gate the Harness itself, put a
+proxy in front of it: [`examples/proxy/Caddyfile`](examples/proxy/Caddyfile) is a
+working one.
 
 **Keep the Harness bound to `127.0.0.1`.** Remote access requires a private network
 or an authenticated reverse proxy providing TLS, user or device authentication,

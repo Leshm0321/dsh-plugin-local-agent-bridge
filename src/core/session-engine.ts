@@ -175,6 +175,17 @@ function isRecoverableNativeSession(record: PersistedBridgeSession): boolean {
 }
 
 /** Host-owned durable session state machine shared by every native provider. */
+/**
+ * A wire request with its unlock token removed.
+ *
+ * The engine sits downstream of the lock: by the time a request reaches it the
+ * gate has already decided, and carrying the token further would invite a second
+ * check in a place that cannot fail closed. Stating the absence in the signature
+ * also keeps the engine's tests honest — they construct what the engine actually
+ * needs, not a token that means nothing to it.
+ */
+type EngineRequest<T> = Omit<T, 'token'>
+
 export class BridgeSessionEngine {
   private readonly persistence: BridgePersistence
   private readonly providers: ReadonlyMap<ProviderId, NativeProviderAdapter>
@@ -215,7 +226,7 @@ export class BridgeSessionEngine {
       .map(sessionView)
   }
 
-  async createSession(request: BridgeSessionCreateRequest): Promise<BridgeSessionView> {
+  async createSession(request: EngineRequest<BridgeSessionCreateRequest>): Promise<BridgeSessionView> {
     this.assertActive()
     const provider = this.providers.get(request.providerId)
     if (provider === undefined || request.providerId === 'fake' && !this.providers.has('fake')) {
@@ -347,7 +358,7 @@ export class BridgeSessionEngine {
     return sessionView(runtime.record)
   }
 
-  async read(request: BridgeSessionReadRequest, signal?: AbortSignal): Promise<BridgeSessionReadResult> {
+  async read(request: EngineRequest<BridgeSessionReadRequest>, signal?: AbortSignal): Promise<BridgeSessionReadResult> {
     const runtime = this.requireSession(request.bridgeSessionId)
     const afterSequence = request.afterSequence ?? 0
     if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) {
@@ -434,7 +445,7 @@ export class BridgeSessionEngine {
   }
 
   async respondInteraction(
-    request: BridgeInteractionRespondRequest,
+    request: EngineRequest<BridgeInteractionRespondRequest>,
   ): Promise<BridgeInteractionRespondResult> {
     const runtime = this.requireSession(request.bridgeSessionId)
     const pending = runtime.record.pendingInteraction

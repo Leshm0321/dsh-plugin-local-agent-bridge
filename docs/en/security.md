@@ -76,6 +76,55 @@ text.
 A native session locator is opaque to the bridge. It is passed to the product's
 own resume path and is never parsed, joined onto a path, or used to open a file.
 
+## The panel's own lock
+
+Settings -> Privacy sets a password for the Local Agents panel. It is off until a
+password is set; the password's presence *is* the switch, so there is no config flag
+that could disagree with it.
+
+**It is enforced on the Host.** Every one of the bridge's Remote methods calls the
+gate before doing anything, and refuses without a valid token. A password screen
+drawn only in the browser would be one `curl` away from nothing, which is worse
+than no lock because it looks like protection. Verified by driving `/api` directly:
+without a token, and with a made-up one, `catalog`, `sessionsList` and `hostList`
+all come back refused.
+
+| Rule | Why |
+| --- | --- |
+| The verifier is `scrypt` at 32 MB, ~0.15s per guess, with the cost parameters stored beside the hash | Over loopback a caller can try thousands of passwords a second, which turns any memorable password into none. Storing the parameters means raising them later still verifies an old password |
+| Five failures, then a lockout doubling from 30s to a 15-minute ceiling | The hash bounds the *rate*; the lockout bounds the *total*. Neither alone is enough. Measured: the sixth attempt is refused in 0.06s, before the hash runs |
+| Changing or removing the password requires the current one, even while unlocked | A live token is not proof of knowing the password. It outlives the moment it was issued, and an unattended tab is the case this feature exists for |
+| Tokens live in memory only | A Host restart locks the panel again. The password survives; the unlock does not |
+| Setting or changing the password drops every unlock, everywhere | Otherwise a password change would leave other browsers holding the old grant |
+| One unlock lasts 8 hours, or 30 minutes idle | Both configurable — `panelLockAbsoluteMs`, `panelLockIdleMs`. Both enforced on the Host, so a browser cannot extend its own permission |
+| The browser asks the Host whether its token still works, rather than reading an error code | A failure's `code` is the *carrier's*, not the bridge's — matching on it reads the wrong field. `privacyState` answers the actual question |
+
+**What it defends against**, and the reason it exists: someone who can reach the
+page. A housemate opening the URL, a colleague at an unattended desk, a tab left
+open on a shared machine.
+
+**What it does not defend against.** Two things, both stated on the screen itself
+rather than only here:
+
+- **A network attacker.** Over plain HTTP the password crosses the wire in
+  cleartext. On a loopback address that is fine. Anywhere else, this is a
+  convenience fence and the deployment still needs the TLS and authenticated access
+  layer this document has always required.
+- **The rest of the Harness.** The lock covers this plugin's surface, because that
+  is the only surface this plugin owns. A plugin has no seat in front of DSH's own
+  routes: `/api` belongs to `dsh-client-connection`, registering a duplicate path
+  throws, the fallback seat is already claimed by the SPA, and there is no
+  middleware hook. To password-gate the Harness itself, put a proxy in front of it —
+  [`examples/proxy/Caddyfile`](../../examples/proxy/Caddyfile) is a working one, and
+  it provides the TLS the point above needs.
+
+**A forgotten password** is recovered by deleting the `secrets` record in the
+plugin's storage domain on the Host (`local_agent_bridge.json`). Whoever can read
+that file could always delete it — a lock kept by a process cannot outrank the
+machine the process runs on — so this is a limit being stated, not a hole being
+left. It is also why the verifier being a one-way hash matters: the file discloses
+no password even though it can be removed.
+
 ## Browsing the Host filesystem
 
 The composer's file button can list any directory on the machine the Harness runs

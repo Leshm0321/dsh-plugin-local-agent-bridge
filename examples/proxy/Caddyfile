@@ -1,0 +1,53 @@
+# Password-gating the whole Harness, which the plugin cannot do for you.
+#
+# The plugin's own lock (Settings -> Privacy) covers the Local Agents panel and is
+# enforced on the Host, so it cannot be walked around. It does not cover the rest
+# of the Harness: a plugin has no seat in front of DSH's HTTP routes — the
+# `/api` transport belongs to another plugin, registering a duplicate path throws,
+# the fallback seat is already taken by the SPA, and there is no middleware hook.
+# Gating the Harness therefore has to happen in front of it, which is this file.
+#
+# What this gives you:
+#   - One password for everything served at this address, checked before any
+#     request reaches DSH.
+#   - TLS, so the password and everything after it is not sent in the clear. This
+#     is the part the plugin's lock cannot provide and the reason it tells you so.
+#   - WebSocket forwarding, which the Harness needs: its browser transport uses
+#     /api/events.mux and /api/events.host. Caddy proxies upgrades by default, so
+#     there is nothing extra to write here — but if you adapt this to nginx, that
+#     is the line people forget.
+#
+# Usage:
+#   1. Hash your password:  caddy hash-password
+#      It prints a bcrypt hash. Paste it below. Do not put the password itself
+#      here; this file is meant to be readable.
+#   2. Replace harness.example.internal with a name that resolves to this machine.
+#      For a Tailscale or WireGuard address, use that name — the point is that the
+#      address is reachable only from your own network.
+#   3. caddy run --config Caddyfile
+#   4. Leave DSH bound to 127.0.0.1. Caddy reaches it over loopback; nothing else
+#      can. If you change the bind address, this whole file stops being a fence.
+#
+# What this is not: a multi-user system. One shared password identifies nobody. If
+# you need to know who did what, put an OIDC or mTLS proxy here instead — the shape
+# of the file is the same, the auth directive is what changes.
+
+harness.example.internal {
+	# A private CA is fine here and avoids a public DNS challenge. Swap for a real
+	# certificate if this name is publicly resolvable.
+	tls internal
+
+	basic_auth {
+		# operator <bcrypt hash from `caddy hash-password`>
+		operator $2a$14$REPLACE_THIS_WITH_YOUR_OWN_HASH_OR_NOBODY_IS_KEPT_OUT
+	}
+
+	# Loopback only. DSH must not be listening anywhere else.
+	reverse_proxy 127.0.0.1:3080 {
+		# The Harness reads the Host header to decide whether a request looks like a
+		# rebinding attack, so it has to see the name the browser used. Caddy passes
+		# it through by default; this is here so that stays true if someone adds
+		# header_up rules below it.
+		header_up Host {host}
+	}
+}

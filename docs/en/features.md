@@ -429,6 +429,35 @@ start and completion 1ms apart — from which the first version of this view com
 reported, and the only rate it gives is output tokens over turn duration, whose
 denominator the bridge stamps itself.
 
+## The lock
+
+
+Settings -> Privacy sets a password for this panel. Enabled by setting one, disabled
+by removing it — the password's presence is the switch, so there is nothing else to
+keep in sync with it.
+
+Locked, the panel shows a password field **in place of** itself, not over it: the
+body is not in the DOM at all. That is a consequence rather than the mechanism. The
+mechanism is on the Host, where every one of the bridge's Remote methods refuses
+without a valid token — so the field is not what keeps anyone out, and removing it
+would make the panel unusable rather than open.
+
+One unlock lasts 8 hours, or 30 minutes idle, both counted on the Host. `Lock now`
+in the settings page drops every unlock everywhere, not just this browser's: locking
+from a machine you are walking away from should not leave another one open. A Host
+restart locks it too — the password is stored, the unlock is not.
+
+Guessing is bounded twice, because one bound is not enough: the verifier is `scrypt`
+at ~0.15s a guess, and five failures start a lockout that doubles from 30 seconds to
+a 15-minute ceiling. While the lockout stands, even the right password is refused.
+
+The screen says what it does not cover, because the moment someone sets a password
+is the moment they form a belief about it. It covers this panel, not the rest of the
+Harness, and over plain HTTP the password travels in cleartext — see
+[the panel's own lock](security.md#the-panels-own-lock) for the reasoning and
+[`examples/proxy/Caddyfile`](../../examples/proxy/Caddyfile) for gating the Harness
+itself.
+
 ## Motion
 
 

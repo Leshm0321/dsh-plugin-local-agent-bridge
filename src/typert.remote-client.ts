@@ -3,6 +3,7 @@ import type {
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
 import type {
+  BridgeCatalogRequest,
   BridgeCatalogResult,
   BridgeCompletionsResult,
   BridgeDirectoryAddRequest,
@@ -17,6 +18,12 @@ import type {
   BridgeFileSearchRequest,
   BridgeFileSearchResult,
   BridgePermissionModeRequest,
+  BridgePrivacyClearRequest,
+  BridgePrivacyPasswordRequest,
+  BridgePrivacyState,
+  BridgePrivacyUnlockRequest,
+  BridgePrivacyUnlockResult,
+  BridgeSessionsListRequest,
   BridgeInteractionRespondResult,
   BridgeSendResult,
   BridgeSessionArchiveRequest,
@@ -45,8 +52,8 @@ import { LOCAL_AGENT_BRIDGE_INVOCATIONS } from './typert.shared.ts'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$6c6f63616c4167656e74427269646765 {
-    catalog: () => Promise<RemoteResult<BridgeCatalogResult>>
-    sessionsList: (includeArchived: boolean) => Promise<RemoteResult<BridgeSessionView[]>>
+    catalog: (request: BridgeCatalogRequest) => Promise<RemoteResult<BridgeCatalogResult>>
+    sessionsList: (request: BridgeSessionsListRequest) => Promise<RemoteResult<BridgeSessionView[]>>
     sessionCreate: (request: BridgeSessionCreateRequest) => Promise<RemoteResult<BridgeSessionView>>
     sessionRead: (
       request: BridgeSessionReadRequest,
@@ -80,11 +87,16 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     workspaceCreate: (request: BridgeWorkspaceCreateRequest) => Promise<RemoteResult<void>>
     workspaceRename: (request: BridgeWorkspaceRenameRequest) => Promise<RemoteResult<void>>
     workspaceDelete: (request: BridgeWorkspaceFileRequest) => Promise<RemoteResult<void>>
+    privacyState: (request: BridgeCatalogRequest) => Promise<RemoteResult<BridgePrivacyState>>
+    privacyUnlock: (request: BridgePrivacyUnlockRequest) => Promise<RemoteResult<BridgePrivacyUnlockResult>>
+    privacyPassword: (request: BridgePrivacyPasswordRequest) => Promise<RemoteResult<BridgePrivacyState>>
+    privacyClear: (request: BridgePrivacyClearRequest) => Promise<RemoteResult<BridgePrivacyState>>
+    privacyLock: (request: BridgeCatalogRequest) => Promise<RemoteResult<void>>
   }
 
   interface TypertRemoteMap {
-    'localAgentBridge/catalog': () => Promise<RemoteResult<BridgeCatalogResult>>
-    'localAgentBridge/sessionsList': (includeArchived: boolean) => Promise<RemoteResult<BridgeSessionView[]>>
+    'localAgentBridge/catalog': (request: BridgeCatalogRequest) => Promise<RemoteResult<BridgeCatalogResult>>
+    'localAgentBridge/sessionsList': (request: BridgeSessionsListRequest) => Promise<RemoteResult<BridgeSessionView[]>>
     'localAgentBridge/sessionCreate': (
       request: BridgeSessionCreateRequest,
     ) => Promise<RemoteResult<BridgeSessionView>>
@@ -160,6 +172,17 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'localAgentBridge/workspaceDelete': (
       request: BridgeWorkspaceFileRequest,
     ) => Promise<RemoteResult<void>>
+    'localAgentBridge/privacyState': (request: BridgeCatalogRequest) => Promise<RemoteResult<BridgePrivacyState>>
+    'localAgentBridge/privacyUnlock': (
+      request: BridgePrivacyUnlockRequest,
+    ) => Promise<RemoteResult<BridgePrivacyUnlockResult>>
+    'localAgentBridge/privacyPassword': (
+      request: BridgePrivacyPasswordRequest,
+    ) => Promise<RemoteResult<BridgePrivacyState>>
+    'localAgentBridge/privacyClear': (
+      request: BridgePrivacyClearRequest,
+    ) => Promise<RemoteResult<BridgePrivacyState>>
+    'localAgentBridge/privacyLock': (request: BridgeCatalogRequest) => Promise<RemoteResult<void>>
   }
 
   interface TypertRemoteNamespaceMap {

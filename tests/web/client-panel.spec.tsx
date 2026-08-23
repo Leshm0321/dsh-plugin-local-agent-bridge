@@ -363,6 +363,23 @@ class RemoteFixture {
     else waiter.resolve({ ok: true, value })
   }
 
+  /**
+   * No password set, so the panel is open. The lock's own behaviour is covered in
+   * `tests/unit/privacy.spec.ts` against the gate itself; here it exists so the
+   * panel has an answer and can get on with what these tests are about.
+   */
+  readonly privacyState = vi.fn(async (_request: { token: string }) => ({
+    ok: true as const,
+    value: {
+      configured: false,
+      unlocked: true,
+      lockedOutUntil: null as number | null,
+      absoluteTimeoutMs: 8 * 60 * 60_000,
+      idleTimeoutMs: 30 * 60_000,
+      minPasswordLength: 8,
+    },
+  }))
+
   remote(): LocalAgentRemote {
     return this as unknown as LocalAgentRemote
   }
@@ -520,8 +537,8 @@ describe('LocalAgentPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send' }))
 
     await waitFor(() => {
-      expect(fixture.sessionCreate).toHaveBeenCalledWith({ providerId: 'codex', workspaceId: 'workspace-1' })
-      expect(fixture.sessionSend).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', text: 'next prompt' })
+      expect(fixture.sessionCreate).toHaveBeenCalledWith({ token: '', providerId: 'codex', workspaceId: 'workspace-1' })
+      expect(fixture.sessionSend).toHaveBeenCalledWith({ token: '', bridgeSessionId: 'session-1', text: 'next prompt' })
     })
   })
 
@@ -537,6 +554,7 @@ describe('LocalAgentPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Allow once' }))
     await waitFor(() => {
       expect(fixture.interactionRespond).toHaveBeenCalledWith({
+        token: '',
         bridgeSessionId: 'session-1',
         interactionId: 'approval-1',
         resolution: { kind: 'approval', action: 'allow' },
@@ -556,6 +574,7 @@ describe('LocalAgentPanel', () => {
 
     await waitFor(() => {
       expect(questionFixture.interactionRespond).toHaveBeenLastCalledWith({
+        token: '',
         bridgeSessionId: 'session-1',
         interactionId: 'question-1',
         resolution: { kind: 'question', answers: { mode: ['Fast'] } },
@@ -727,7 +746,7 @@ describe('LocalAgentPanel', () => {
     // Surrounding whitespace is trimmed before the path reaches the Host, and it
     // goes to the bridge's own store rather than the Harness registry.
     await waitFor(() => {
-      expect(fixture.directoryAdd).toHaveBeenCalledWith({ path: '/host/projects/Fixture workspace' })
+      expect(fixture.directoryAdd).toHaveBeenCalledWith({ token: '', path: '/host/projects/Fixture workspace' })
     })
     // The new workspace is selected, so the operator can create a session next.
     await waitFor(() => {
@@ -748,7 +767,7 @@ describe('LocalAgentPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: en['workspace.add.submit'] }))
 
     // It reaches the bridge's own store...
-    await waitFor(() => { expect(fixture.directoryAdd).toHaveBeenCalledWith({ path: '/host/projects/private' }) })
+    await waitFor(() => { expect(fixture.directoryAdd).toHaveBeenCalledWith({ token: '', path: '/host/projects/private' }) })
     // ...and nothing reaches the Harness registry, which is the whole point: a
     // Harness workspace cannot be hidden once it exists.
     expect(harnessRegistrations).toEqual([])
@@ -777,7 +796,7 @@ describe('LocalAgentPanel', () => {
     })
     fireEvent.click(toggle)
     await waitFor(() => {
-      expect(fixture.directoryPublish).toHaveBeenCalledWith({ directoryId: 'workspace-1', published: true })
+      expect(fixture.directoryPublish).toHaveBeenCalledWith({ token: '', directoryId: 'workspace-1', published: true })
     })
     await waitFor(() => {
       expect(screen.getByRole('switch', { name: new RegExp(en['workspace.publish']) }).getAttribute('aria-checked')).toBe('true')
@@ -794,7 +813,7 @@ describe('LocalAgentPanel', () => {
     })
     fireEvent.click(screen.getByRole('switch', { name: new RegExp(en['workspace.publish']) }))
     await waitFor(() => {
-      expect(fixture.directoryPublish).toHaveBeenLastCalledWith({ directoryId: 'workspace-1', published: false })
+      expect(fixture.directoryPublish).toHaveBeenLastCalledWith({ token: '', directoryId: 'workspace-1', published: false })
     })
   })
 
@@ -813,7 +832,7 @@ describe('LocalAgentPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: new RegExp(en['workspace.remove']) }))
 
     await waitFor(() => {
-      expect(fixture.directoryRemove).toHaveBeenCalledWith({ directoryId: 'workspace-1' })
+      expect(fixture.directoryRemove).toHaveBeenCalledWith({ token: '', directoryId: 'workspace-1' })
     })
     // The selection cannot survive the directory it pointed at.
     await waitFor(() => {
@@ -851,7 +870,7 @@ describe('LocalAgentPanel', () => {
 
     // Choosing registers the directory the browser is currently showing.
     fireEvent.click(screen.getByRole('button', { name: en['browse.useThis'] }))
-    await waitFor(() => { expect(fixture.directoryAdd).toHaveBeenCalledWith({ path: '/host/projects' }) })
+    await waitFor(() => { expect(fixture.directoryAdd).toHaveBeenCalledWith({ token: '', path: '/host/projects' }) })
   })
 
   it('falls back to the Host chooser when browsing is not the composed capability', async () => {
@@ -865,7 +884,7 @@ describe('LocalAgentPanel', () => {
     })
 
     fireEvent.click(await screen.findByRole('button', { name: en['workspace.browse'] }))
-    await waitFor(() => { expect(fixture.directoryAdd).toHaveBeenCalledWith({ path: '/host/picked' }) })
+    await waitFor(() => { expect(fixture.directoryAdd).toHaveBeenCalledWith({ token: '', path: '/host/picked' }) })
     expect(pickCalls).toBe(1)
     // The probe failing must not surface as an error to the operator.
     expect(screen.queryByText(/needs the browse capability/)).toBeNull()
@@ -923,7 +942,7 @@ describe('LocalAgentPanel', () => {
     fireEvent.change(composer, { target: { value: 'please read @main' } })
     const listbox = await screen.findByRole('listbox', { name: en['files.heading'] })
     await waitFor(() => {
-      expect(fixture.sessionFiles).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', query: 'main' })
+      expect(fixture.sessionFiles).toHaveBeenCalledWith({ token: '', bridgeSessionId: 'session-1', query: 'main' })
     })
     // Name first with the path beneath, since two files often share a name.
     expect(within(listbox).getByText('main.ts')).toBeTruthy()
@@ -1095,7 +1114,7 @@ describe('LocalAgentPanel', () => {
 
     fireEvent.click(within(await screen.findByRole('menu')).getByText(en['mode.bypass']))
     await waitFor(() => {
-      expect(fixture.sessionPermissionMode).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', mode: 'bypass' })
+      expect(fixture.sessionPermissionMode).toHaveBeenCalledWith({ token: '', bridgeSessionId: 'session-1', mode: 'bypass' })
     })
     // The trigger now reads as the unguarded mode, and says so when reopened.
     fireEvent.click(await screen.findByRole('button', { name: en['mode.bypass'] }))
@@ -1172,7 +1191,7 @@ describe('LocalAgentPanel', () => {
 
     fireEvent.keyDown(composer, { key: 'Enter' })
     await waitFor(() => {
-      expect(fixture.sessionSend).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', text: 'run the tests' })
+      expect(fixture.sessionSend).toHaveBeenCalledWith({ token: '', bridgeSessionId: 'session-1', text: 'run the tests' })
     })
     // Cleared optimistically, the way a shell prompt does.
     await waitFor(() => { expect(composer.value).toBe('') })
@@ -1213,7 +1232,7 @@ describe('LocalAgentPanel', () => {
 
     fireEvent.keyDown(composer, { key: 'Escape' })
     await waitFor(() => {
-      expect(fixture.sessionCancel).toHaveBeenCalledWith({ bridgeSessionId: 'session-1' })
+      expect(fixture.sessionCancel).toHaveBeenCalledWith({ token: '', bridgeSessionId: 'session-1' })
     })
 
     // Idle: nothing to interrupt, so Escape clears instead of cancelling again.
@@ -1480,7 +1499,7 @@ describe('LocalAgentPanel', () => {
     expect(await screen.findByText('Refactor the parser')).toBeTruthy()
     expect(screen.getByText('Investigate the flake')).toBeTruthy()
     // Scoped to the selected provider and workspace, not a global listing.
-    expect(fixture.nativeSessions).toHaveBeenCalledWith({ providerId: 'codex', workspaceId: 'workspace-1' })
+    expect(fixture.nativeSessions).toHaveBeenCalledWith({ token: '', providerId: 'codex', workspaceId: 'workspace-1' })
     // A branch is shown when the product reports one.
     expect(screen.getByText(/main/)).toBeTruthy()
 
@@ -1634,6 +1653,7 @@ describe('LocalAgentPanel', () => {
     // silently replaced by whatever the product falls back to.
     await waitFor(() => {
       expect(fixture.sessionModel).toHaveBeenCalledWith({
+        token: '',
         bridgeSessionId: 'session-1',
         model: 'fixture-fast',
         effort: 'low',
@@ -1653,6 +1673,7 @@ describe('LocalAgentPanel', () => {
     fireEvent.change(slider, { target: { value: '1' } })
     await waitFor(() => {
       expect(fixture.sessionModel).toHaveBeenLastCalledWith({
+        token: '',
         bridgeSessionId: 'session-1',
         model: 'fixture-fast',
         effort: 'high',
@@ -1715,7 +1736,7 @@ describe('LocalAgentPanel', () => {
     // The button opens with everything, so the operator can browse rather than
     // having to know what to search for.
     await waitFor(() => {
-      expect(fixture.sessionFiles).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', query: '' })
+      expect(fixture.sessionFiles).toHaveBeenCalledWith({ token: '', bridgeSessionId: 'session-1', query: '' })
     })
 
     // A folder keeps its trailing slash, which is how both products tell one
@@ -1881,6 +1902,7 @@ describe('LocalAgentPanel', () => {
     // stripped on this side.
     await waitFor(() => {
       expect(fixture.sessionUpload).toHaveBeenCalledWith({
+        token: '',
         bridgeSessionId: 'session-1',
         files: [{
           path: 'notes.md',
@@ -2014,7 +2036,7 @@ describe('LocalAgentPanel', () => {
 
     // The first level is read only once the tab is opened — this is the panel's
     // widest read of the Host, and an operator who never asks should not trigger it.
-    await waitFor(() => { expect(fixture.hostList).toHaveBeenCalledWith({}) })
+    await waitFor(() => { expect(fixture.hostList).toHaveBeenCalledWith({ token: '' }) })
 
     // Dot-prefixed entries stay hidden until asked for. `.ssh` is exactly the kind
     // of directory that should not be one stray click away.
@@ -2026,7 +2048,7 @@ describe('LocalAgentPanel', () => {
     // things.
     fireEvent.click(screen.getByText('Documents/'))
     await waitFor(() => {
-      expect(fixture.hostList).toHaveBeenLastCalledWith({ path: '/Users/operator/Documents' })
+      expect(fixture.hostList).toHaveBeenLastCalledWith({ token: '', path: '/Users/operator/Documents' })
     })
 
     // A file is what the operator came for, and it is referenced absolutely —
@@ -2360,7 +2382,9 @@ describe('LocalAgentPanel', () => {
     renderPanel(fixture.remote())
 
     // Scoped to the transcript: the sidebar's session row carries a status chip of
-    // its own, and it is not what this is about.
+    // its own, and it is not what this is about. Awaited because the panel now
+    // waits for the Host to say whether a password is set before rendering itself.
+    await waitFor(() => { expect(document.querySelector('.lab-stream')).not.toBeNull() })
     const transcript = document.querySelector('.lab-stream') as HTMLElement
     // A state the operator has to do something about keeps its row.
     expect(await within(transcript).findByText(en['status.orphaned'])).toBeTruthy()
@@ -2409,6 +2433,7 @@ describe('LocalAgentPanel', () => {
 
     await waitFor(() => {
       expect(fixture.sessionSend).toHaveBeenCalledWith({
+        token: '',
         bridgeSessionId: 'session-1',
         text: 'what is this',
         images: [{
@@ -2492,7 +2517,7 @@ describe('LocalAgentPanel', () => {
     expect(screen.queryByPlaceholderText(en['files.filter'])).toBeNull()
 
     fireEvent.click(screen.getByLabelText(en['panel.showSide']))
-    await waitFor(() => { expect(fixture.workspaceList).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', path: '' }) })
+    await waitFor(() => { expect(fixture.workspaceList).toHaveBeenCalledWith({ token: '', bridgeSessionId: 'session-1', path: '' }) })
 
     // Directories first, and a dotfile hidden until asked for.
     expect(await screen.findByText('src')).toBeTruthy()
@@ -2502,7 +2527,7 @@ describe('LocalAgentPanel', () => {
     // Reading a file shows it with its size and path.
     fireEvent.click(screen.getByText('README.md'))
     await waitFor(() => {
-      expect(fixture.workspaceFile).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', path: 'README.md' })
+      expect(fixture.workspaceFile).toHaveBeenCalledWith({ token: '', bridgeSessionId: 'session-1', path: 'README.md' })
     })
     expect(await screen.findByText(/answer = 42/)).toBeTruthy()
   })
@@ -2521,7 +2546,7 @@ describe('LocalAgentPanel', () => {
     expect(fixture.workspaceList).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByText('src'))
     await waitFor(() => {
-      expect(fixture.workspaceList).toHaveBeenLastCalledWith({ bridgeSessionId: 'session-1', path: 'src' })
+      expect(fixture.workspaceList).toHaveBeenLastCalledWith({ token: '', bridgeSessionId: 'session-1', path: 'src' })
     })
     expect(await screen.findByText('main.ts')).toBeTruthy()
   })
@@ -2566,6 +2591,7 @@ describe('LocalAgentPanel', () => {
     // overwrite a change the agent made in the meantime.
     await waitFor(() => {
       expect(fixture.workspaceWrite).toHaveBeenCalledWith({
+        token: '',
         bridgeSessionId: 'session-1',
         path: 'README.md',
         content: 'export const answer = 43\n',
@@ -2639,6 +2665,7 @@ describe('LocalAgentPanel', () => {
     fireEvent.click(screen.getByLabelText(en['files.confirm']))
     await waitFor(() => {
       expect(fixture.workspaceCreate).toHaveBeenCalledWith({
+        token: '',
         bridgeSessionId: 'session-1',
         path: 'src/extra.ts',
         directory: false,
@@ -2650,6 +2677,7 @@ describe('LocalAgentPanel', () => {
     fireEvent.click(screen.getByLabelText(en['files.confirm']))
     await waitFor(() => {
       expect(fixture.workspaceRename).toHaveBeenCalledWith({
+        token: '',
         bridgeSessionId: 'session-1',
         from: 'README.md',
         to: 'READ.md',
@@ -2658,7 +2686,7 @@ describe('LocalAgentPanel', () => {
 
     fireEvent.click(screen.getByLabelText(en['files.delete'].replace('{name}', 'README.md')))
     await waitFor(() => {
-      expect(fixture.workspaceDelete).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', path: 'README.md' })
+      expect(fixture.workspaceDelete).toHaveBeenCalledWith({ token: '', bridgeSessionId: 'session-1', path: 'README.md' })
     })
   })
 
@@ -2706,7 +2734,7 @@ describe('LocalAgentPanel', () => {
     fireEvent.click(screen.getByLabelText(en['panel.showSide']))
     fireEvent.click(await screen.findByRole('tab', { name: en['side.diff'] }))
 
-    await waitFor(() => { expect(fixture.workspaceDiff).toHaveBeenCalledWith({ bridgeSessionId: 'session-1' }) })
+    await waitFor(() => { expect(fixture.workspaceDiff).toHaveBeenCalledWith({ token: '', bridgeSessionId: 'session-1' }) })
     expect(await screen.findByText('src/main.ts')).toBeTruthy()
     expect(screen.getByText(en['diff.counts'].replace('{added}', '2').replace('{removed}', '1'))).toBeTruthy()
     // Untracked files are listed but flagged: they have no older version to compare.
@@ -2714,7 +2742,7 @@ describe('LocalAgentPanel', () => {
 
     fireEvent.click(screen.getByText('src/main.ts'))
     await waitFor(() => {
-      expect(fixture.workspaceFileDiff).toHaveBeenCalledWith({ bridgeSessionId: 'session-1', path: 'src/main.ts' })
+      expect(fixture.workspaceFileDiff).toHaveBeenCalledWith({ token: '', bridgeSessionId: 'session-1', path: 'src/main.ts' })
     })
     expect(await screen.findByText('@@ -1,3 +1,4 @@')).toBeTruthy()
     expect(screen.getByText('const second = 22')).toBeTruthy()

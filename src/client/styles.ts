@@ -753,6 +753,155 @@ body[data-ds-dark-theme] .lab-code {
 .lab-code .hljs-emphasis { font-style: italic; }
 .lab-code .hljs-strong { font-weight: 600; }
 
+/* ------------------------------------------------------------------- lock */
+
+/* The locked window is sized to what is on it. At the panel's full width and
+   height, one password field reads as a page that failed to load rather than as a
+   door — so the window shrinks to the shape of its content. */
+.lab-window--locked {
+  height: auto;
+  max-height: none;
+  width: min(100%, 420px);
+}
+
+.lab-lock {
+  display: flex;
+  justify-content: center;
+  padding: 40px 24px 48px;
+}
+
+.lab-lock-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  width: 100%;
+  max-width: 340px;
+}
+
+.lab-lock-title { margin: 0; font-size: 15px; font-weight: 600; }
+
+.lab-lock-note { margin: 0; font-size: 13px; color: var(--lab-text-2); }
+
+.lab-lock-input {
+  width: 100%;
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--lab-text);
+  background: var(--lab-surface-2);
+  border: var(--lab-hairline) solid var(--lab-line);
+  border-radius: var(--lab-r-control);
+  transition: border-color var(--lab-fast) var(--lab-ease), box-shadow var(--lab-fast) var(--lab-ease);
+}
+
+.lab-lock-input:focus-visible {
+  outline: none;
+  border-color: var(--lab-accent);
+  box-shadow: 0 0 0 3px var(--lab-accent-soft);
+}
+
+.lab-lock-error { margin: 0; font-size: 12px; color: var(--lab-danger); }
+
+/* While the Host has not yet said whether a password is set. */
+.lab-lock-pending { margin: 0; padding: 32px 24px; font-size: 13px; color: var(--lab-text-3); text-align: center; }
+
+.lab-lock-submit {
+  padding: 9px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lab-on-accent);
+  background: var(--lab-accent);
+  border: none;
+  border-radius: var(--lab-r-control);
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease), transform var(--lab-fast) var(--lab-ease);
+}
+
+.lab-lock-submit:active:not(:disabled) { transform: scale(.975); }
+.lab-lock-submit:disabled { opacity: .5; cursor: default; }
+
+/* The limit of what this lock covers, stated where the belief is formed. */
+.lab-lock-scope {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lab-text-3);
+}
+
+/* ------------------------------------------------- privacy settings page */
+
+.lab-settings { padding: 4px 0 16px; }
+
+.lab-privacy { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; max-width: 460px; }
+
+.lab-privacy-title { margin: 0; font-size: 14px; font-weight: 600; }
+
+.lab-privacy-note { margin: 0; font-size: 13px; line-height: 1.55; color: var(--lab-text-2); }
+
+/* Not styled as an error, because it is not one — it is the shape of the thing. */
+.lab-privacy-limit {
+  margin: 0;
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--lab-text-2);
+  background: var(--lab-surface-2);
+  border-left: 2px solid var(--lab-line-strong);
+  border-radius: var(--lab-r-control);
+}
+
+.lab-privacy-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; margin: 2px 0 0; }
+
+.lab-privacy-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+
+.lab-privacy-field > span { font-size: 12px; color: var(--lab-text-2); }
+
+.lab-privacy-field > input {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--lab-text);
+  background: var(--lab-surface-2);
+  border: var(--lab-hairline) solid var(--lab-line);
+  border-radius: var(--lab-r-control);
+  transition: border-color var(--lab-fast) var(--lab-ease), box-shadow var(--lab-fast) var(--lab-ease);
+}
+
+.lab-privacy-field > input:focus-visible {
+  outline: none;
+  border-color: var(--lab-accent);
+  box-shadow: 0 0 0 3px var(--lab-accent-soft);
+}
+
+.lab-privacy-error { margin: 0; font-size: 12px; color: var(--lab-danger); }
+.lab-privacy-done { margin: 0; font-size: 12px; color: var(--lab-text-2); }
+
+.lab-privacy-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 0; }
+
+.lab-privacy-actions > button {
+  padding: 8px 13px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--lab-text);
+  background: var(--lab-surface-2);
+  border: var(--lab-hairline) solid var(--lab-line);
+  border-radius: var(--lab-r-control);
+  cursor: pointer;
+  transition: background var(--lab-fast) var(--lab-ease), color var(--lab-fast) var(--lab-ease);
+}
+
+.lab-privacy-actions > button:hover:not(:disabled) { background: var(--lab-hover); }
+.lab-privacy-actions > button:disabled { opacity: .5; cursor: default; }
+.lab-privacy-actions > button:first-child {
+  color: var(--lab-on-accent);
+  background: var(--lab-accent);
+  border-color: transparent;
+}
+
+.lab-privacy-timeouts { margin: 0; font-size: 12px; color: var(--lab-text-3); }
+
 /* -------------------------------------------------------------- side panel */
 
 .lab-mirror { display: flex; transform: scaleX(-1); }

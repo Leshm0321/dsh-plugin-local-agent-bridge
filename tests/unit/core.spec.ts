@@ -194,6 +194,13 @@ describe('Typert descriptors', () => {
       'workspaceCreate',
       'workspaceRename',
       'workspaceDelete',
+      // The panel's own lock. The first four are reachable while locked — the
+      // panel cannot ask for a password without them — and `privacyLock` is not.
+      'privacyState',
+      'privacyUnlock',
+      'privacyPassword',
+      'privacyClear',
+      'privacyLock',
     ])
     expect(LOCAL_AGENT_BRIDGE_INVOCATIONS.every(item => item.invocation.kind === 'direct')).toBe(true)
     expect(LOCAL_AGENT_BRIDGE_INVOCATIONS.filter(item => 'cancellation' in item).map(item => item.method)).toEqual([
@@ -205,9 +212,13 @@ describe('Typert descriptors', () => {
     const create = LOCAL_AGENT_BRIDGE_INVOCATIONS.find(item => item.method === 'sessionCreate')
     const request = create?.parameters[0]
     expect(request).toBeDefined()
-    expect(request?.codec.schema.safeParse({ providerId: 'codex', workspaceId: 'workspace-1' }).success).toBe(true)
-    expect(request?.codec.schema.safeParse({ providerId: 'other', workspaceId: 'workspace-1' }).success).toBe(false)
+    // Every gated request carries the unlock token, so a payload without one is
+    // refused before the Host is reached — the wire and the gate agree.
+    expect(request?.codec.schema.safeParse({ providerId: 'codex', workspaceId: 'workspace-1' }).success).toBe(false)
+    expect(request?.codec.schema.safeParse({ token: '', providerId: 'codex', workspaceId: 'workspace-1' }).success).toBe(true)
+    expect(request?.codec.schema.safeParse({ token: '', providerId: 'other', workspaceId: 'workspace-1' }).success).toBe(false)
     expect(request?.codec.schema.safeParse({
+      token: '',
       providerId: 'codex',
       workspaceId: 'workspace-1',
       credential: 'must-not-pass',

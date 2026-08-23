@@ -13,6 +13,10 @@ import type {} from '@deepseek-ai/dsh-api-gateway/client'
 // this module extends below.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+// For the `settings.section` slot declaration only. A type-only import, so a
+// composition without the settings panel still loads this module — `slots.inject`
+// simply never fires and the Privacy page is not there to register.
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   IconArchiveOutline20,
   IconBranchOutline16,
@@ -34,6 +38,7 @@ import type {
   PropsRuntime,
   TranslateNS,
 } from '@deepseek-ai/dsh-client-ui-slots'
+import type { BridgeAuthorized } from '../types.ts'
 import type {
   RemoteResult,
   TypertRemoteNamespaceMap,
@@ -64,9 +69,10 @@ import type {
   NativeProviderView,
   PendingInteractionView,
 } from '../types.ts'
-import { en, type LocalAgentBridgeKey, zh } from './locales.ts'
+import { en, type LocalAgentBridgeKey, type LocalAgentTranslate, zh } from './locales.ts'
 import { Markdown } from './markdown.tsx'
 import { useFoldHeight, useTrackWidth } from './motion.ts'
+import { LockScreen, PrivacySection, usePanelLock, withToken } from './lock.tsx'
 import { buildTrace } from './trace.ts'
 import { DiffPane, FilesPane } from './side-panel.tsx'
 import { TraceView, formatDuration } from './trace-view.tsx'
@@ -149,9 +155,24 @@ const ROW_MODIFIER: Record<TimelineRow['kind'], string> = {
  * This panel's translate function, typed to its own key union. Named in full
  * because `unwrap<T>` right below uses `T` as a generic parameter.
  */
-type PanelTranslate = TranslateNS<'local-agent-bridge'>
+type PanelTranslate = LocalAgentTranslate
 
 export type LocalAgentRemote = TypertRemoteNamespaceMap['localAgentBridge']
+
+/**
+ * One Remote method with the unlock token taken out of its request.
+ *
+ * The token is a transport concern: the panel's components should call
+ * `sessionSend({ bridgeSessionId, text })` the way they always did, and something
+ * one layer up should be responsible for it travelling. Omitting it from the
+ * types is what makes forgetting it impossible rather than merely discouraged.
+ */
+type WithoutToken<F> = F extends (request: infer R, ...rest: infer Rest) => infer Ret
+  ? R extends BridgeAuthorized ? (request: Omit<R, 'token'>, ...rest: Rest) => Ret : F
+  : F
+
+/** The face every component below the lock is given. */
+export type GatedRemote = { [K in keyof LocalAgentRemote]: WithoutToken<LocalAgentRemote[K]> }
 
 /**
  * Registering a Workspace is a DSH-core capability, not a bridge one: the
@@ -2034,7 +2055,7 @@ function InteractionCard({
   t,
 }: {
   interaction: PendingInteractionView
-  remote: LocalAgentRemote
+  remote: GatedRemote
   onResolved: () => void
   t: PanelTranslate
 }) {
@@ -2096,7 +2117,42 @@ function InteractionCard({
   )
 }
 
-export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: LocalAgentPanelProps) {
+interface LocalAgentPrivacyFace {
+  readonly remote: LocalAgentRemote
+  readonly t: PanelTranslate
+}
+
+/**
+ * The settings page, which owns its own lock state.
+ *
+ * A second `usePanelLock` rather than one shared with the panel: the two mount
+ * independently — settings can be open with the panel closed — and both read the
+ * same Host, so the only thing sharing would buy is a coupling between two slots
+ * that have no other reason to know about each other. The token they hold is the
+ * same one, because it lives in storage rather than in either component.
+ */
+function LocalAgentPrivacyPage({ remote, t }: InjectFace<LocalAgentPrivacyFace>) {
+  const lock = usePanelLock(remote)
+  return (
+    <div className="lab-root lab-settings">
+      <PrivacySection lock={lock} t={t} />
+    </div>
+  )
+}
+
+export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, workspaces }: LocalAgentPanelProps) {
+  /**
+   * The lock is read from the raw face, because its own methods take a password
+   * rather than a token — an injected one would be an unknown property to a strict
+   * schema and the call would be refused.
+   */
+  const lock = usePanelLock(hostRemote)
+  /**
+   * Everything else goes through the proxy, so the token rides along on calls
+   * that never mention it. Rebuilt when the token changes, which is what makes a
+   * fresh unlock take effect on the next call rather than on the next reload.
+   */
+  const remote = useMemo(() => withToken(hostRemote, lock.token), [hostRemote, lock.token])
   const [open, setOpen] = useState(false)
   const [catalog, setCatalog] = useState<BridgeCatalogResult>()
   const [sessions, setSessions] = useState<BridgeSessionView[]>([])
@@ -2145,8 +2201,8 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
 
   const refresh = async (): Promise<void> => {
     const [nextCatalog, nextSessions] = await Promise.all([
-      remote.catalog().then(unwrap),
-      remote.sessionsList(false).then(unwrap),
+      remote.catalog({}).then(unwrap),
+      remote.sessionsList({ includeArchived: false }).then(unwrap),
     ])
     setCatalog(nextCatalog)
     setSessions(nextSessions)
@@ -2155,14 +2211,26 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
     setSelectedId(current => current ?? nextSessions[0]?.bridgeSessionId)
   }
 
+  /**
+   * Load the catalog when the panel opens — and again the moment it is unlocked.
+   *
+   * Keyed on the token, not just on `open`, because every call in `refresh` is
+   * gated: run while locked, it fails, and the failure sticks in the error banner
+   * with nothing to retry it. Re-running when the token changes turns unlocking
+   * itself into the retry.
+   */
   useEffect(() => {
-    if (!open) return
+    if (!open || lock.locked || lock.pending) return
     setError(undefined)
     void refresh().catch(cause => { setError(cause instanceof Error ? cause.message : String(cause)) })
-  }, [open])
+  }, [open, lock.locked, lock.pending, lock.token])
 
   useEffect(() => {
-    if (!open || selectedId === undefined) {
+    // A locked panel polls nothing. This is also the path a token *expiry* takes
+    // while the panel sits open: the poll's failure handler asks the lock to
+    // re-check, `locked` flips, and this effect tears the poll down rather than
+    // retrying a call that can no longer succeed.
+    if (!open || selectedId === undefined || lock.locked || lock.pending) {
       setSnapshot(undefined)
       return
     }
@@ -2190,6 +2258,10 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
         } catch (cause) {
           if (controller.signal.aborted) return
           setError(cause instanceof Error ? cause.message : String(cause))
+          // Asks the Host whether this token still works rather than reading the
+          // failure's code, which is the carrier's and not the bridge's. A call
+          // that failed for an unrelated reason simply comes back still unlocked.
+          lock.onRejected()
           await delay(retryMs, controller.signal).catch(() => {})
           retryMs = Math.min(retryMs * 2, 5_000)
         }
@@ -2197,7 +2269,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
     }
     void poll()
     return () => { controller.abort() }
-  }, [open, remote, selectedId])
+  }, [open, remote, selectedId, lock.locked, lock.pending])
 
   // Re-read when the session changes and whenever it returns to idle: a turn is
   // what makes Claude Code able to report its commands at all, and the operator
@@ -2449,7 +2521,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
       // an agent to work in must not put it in the Harness sidebar, which has no
       // way to hide a workspace once registered.
       const added = unwrap(await remote.directoryAdd({ path: target }))
-      setCatalog(unwrap(await remote.catalog()))
+      setCatalog(unwrap(await remote.catalog({})))
       if (added.status === 'ok') setWorkspaceId(added.id)
       setWorkspacePath('')
     } catch (cause) {
@@ -2513,7 +2585,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
     setError(undefined)
     try {
       unwrap(await remote.directoryPublish({ directoryId, published }))
-      setCatalog(unwrap(await remote.catalog()))
+      setCatalog(unwrap(await remote.catalog({})))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
@@ -2528,7 +2600,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
     setError(undefined)
     try {
       unwrap(await remote.directoryRemove({ directoryId }))
-      const next = unwrap(await remote.catalog())
+      const next = unwrap(await remote.catalog({}))
       setCatalog(next)
       // A session cannot be created against a directory that is gone.
       setWorkspaceId(current => current === directoryId
@@ -3004,6 +3076,30 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
       </button>
       {open && (
         <div className="lab-root lab-scrim" role="dialog" aria-modal="true" aria-label={t('panel.name')}>
+          {/* In place of the window, not over it. There is nothing behind it to
+              look at, and a screen drawn over a rendered panel is the shape that
+              looks like protection without being it. */}
+          {lock.pending || lock.locked
+            ? (
+              <section className="lab-window lab-window--locked">
+                <header className="lab-titlebar">
+                  <div className="lab-titlebar-lead">
+                    <BridgeIcon />
+                    <h1 className="lab-title">{t('panel.name')}</h1>
+                  </div>
+                  <div className="lab-titlebar-actions">
+                    <ActionButton icon aria-label={t('panel.close')} title={t('panel.close')} onClick={() => { setOpen(false) }}>
+                      <IconCloseOutline16 />
+                    </ActionButton>
+                  </div>
+                </header>
+                {/* Neither the panel nor a password field while the answer is
+                    unknown: showing the panel would be a guess that no password is
+                    set, and showing the field would be a guess that one is. */}
+                {lock.pending ? <p className="lab-lock-pending">{t('lock.checking')}</p> : <LockScreen lock={lock} t={t} />}
+              </section>
+            )
+            : (
           <section className="lab-window">
             <header className="lab-titlebar">
               {/* The sidebar toggle sits on the same side as the sidebar it
@@ -3606,6 +3702,7 @@ export function LocalAgentPanel({ wide, remote, speechLocale, t, workspaces }: L
               </div>
             )}
           </section>
+            )}
         </div>
       )}
     </>
@@ -3650,5 +3747,24 @@ export function apply(ctx: ClientContext): void {
         },
       }),
     }, LocalAgentPanel))
+
+    /**
+     * The Privacy page in the Harness's own Settings panel.
+     *
+     * Registered separately from the sidebar entry because it is a different
+     * seat with a different lifetime — and because a composition without a
+     * settings panel should lose this page, not the whole plugin. `slots.inject`
+     * waits for the slot rather than demanding it, so that happens by itself.
+     */
+    scope.slots.inject('settings.section', () => scope.slots.register({
+      name: 'settings.section',
+      id: 'local-agent-bridge-privacy',
+      order: 40,
+      label: () => scope.locale.bind(NS)('privacy.title'),
+      inject: (): LocalAgentPrivacyFace => ({
+        remote: scope.remote.localAgentBridge,
+        t: scope.locale.bind(NS),
+      }),
+    }, LocalAgentPrivacyPage))
   })
 }

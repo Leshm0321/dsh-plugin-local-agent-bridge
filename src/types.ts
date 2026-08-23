@@ -69,12 +69,80 @@ export interface BridgeWorkspaceView {
   readonly published: boolean
 }
 
-export interface BridgeDirectoryAddRequest {
+/**
+ * The unlock token every gated request carries.
+ *
+ * It is an argument rather than a header because there is nowhere else to put it:
+ * the Gateway hands a Remote method `namespace`, `method`, `args` and a signal,
+ * and nothing about the caller. So the token travels in the payload, and the six
+ * root request types below extend this one so that every request derived from
+ * them carries it without being edited.
+ *
+ * The empty string is the honest value when no password is set — the field is
+ * required so a request cannot omit it by accident, and the Host decides what an
+ * empty one means rather than the browser deciding not to send it.
+ */
+export interface BridgeAuthorized {
+  readonly token: string
+}
+
+/** `catalog` takes no arguments of its own, but is gated like everything else. */
+export type BridgeCatalogRequest = BridgeAuthorized
+
+export interface BridgeSessionsListRequest extends BridgeAuthorized {
+  readonly includeArchived: boolean
+}
+
+/**
+ * What the browser may know about the lock before it has passed it.
+ *
+ * No hash, no salt, no attempt count. `lockedOutUntil` is here because a
+ * countdown is the difference between "wrong password" and "stop typing", and
+ * `minPasswordLength` because a form should not offer a password the Host will
+ * refuse.
+ */
+export interface BridgePrivacyState {
+  readonly configured: boolean
+  /**
+   * Whether the token on this very request is currently accepted.
+   *
+   * Reported rather than inferred. A browser that decided it was locked by
+   * matching an error code would be reading the carrier's code, not the Host's,
+   * and would be wrong in exactly the cases that matter.
+   */
+  readonly unlocked: boolean
+  readonly lockedOutUntil: number | null
+  readonly absoluteTimeoutMs: number
+  readonly idleTimeoutMs: number
+  readonly minPasswordLength: number
+}
+
+export interface BridgePrivacyUnlockRequest {
+  readonly password: string
+}
+
+export interface BridgePrivacyUnlockResult {
+  readonly token: string
+  /** When this token stops working regardless of use, so the panel can say so. */
+  readonly expiresAt: number
+}
+
+export interface BridgePrivacyPasswordRequest {
+  /** The password in force, or null when setting one for the first time. */
+  readonly current: string | null
+  readonly next: string
+}
+
+export interface BridgePrivacyClearRequest {
+  readonly current: string
+}
+
+export interface BridgeDirectoryAddRequest extends BridgeAuthorized {
   /** Absolute Host path; resolved and validated on the Host. */
   readonly path: string
 }
 
-export interface BridgeDirectoryRequest {
+export interface BridgeDirectoryRequest extends BridgeAuthorized {
   readonly directoryId: string
 }
 
@@ -145,6 +213,12 @@ export type BridgeErrorCode =
   | 'CONNECTION_LOST'
   | 'CLEANUP_FAILED'
   | 'INVALID_REQUEST'
+  // The panel's own lock. Deliberately distinct from HOST_AUTH_REQUIRED: that one
+  // means a *product* login expired on the Host and the fix is a terminal there,
+  // and reporting one as the other would send the operator to fix the wrong thing.
+  | 'PANEL_LOCKED'
+  | 'PASSWORD_REJECTED'
+  | 'PASSWORD_ATTEMPTS_EXCEEDED'
 
 /**
  * How much the agent may do without asking, named after the modes the Claude
@@ -570,7 +644,7 @@ export interface BridgeNativeSession {
   readonly branch: string | null
 }
 
-export interface BridgeNativeSessionsRequest {
+export interface BridgeNativeSessionsRequest extends BridgeAuthorized {
   readonly providerId: ProviderId
   readonly workspaceId: string
 }
@@ -669,7 +743,7 @@ export interface BridgeHostListing {
   readonly truncated: boolean
 }
 
-export interface BridgeHostListRequest {
+export interface BridgeHostListRequest extends BridgeAuthorized {
   /** Absolute directory to list; omitted lists the Host home directory. */
   readonly path?: string
 }
@@ -787,7 +861,7 @@ export interface BridgeCatalogResult {
   readonly workspaceWrites: boolean
 }
 
-export interface BridgeSessionCreateRequest {
+export interface BridgeSessionCreateRequest extends BridgeAuthorized {
   readonly providerId: ProviderId
   readonly workspaceId: string
   readonly title?: string
@@ -806,7 +880,7 @@ export interface BridgeSessionCreateRequest {
   readonly permissionMode?: BridgePermissionMode
 }
 
-export interface BridgeSessionIdRequest {
+export interface BridgeSessionIdRequest extends BridgeAuthorized {
   readonly bridgeSessionId: string
 }
 
