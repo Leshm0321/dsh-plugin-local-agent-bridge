@@ -166,6 +166,7 @@ config block, so keep every key when changing one — see
 | `allowExperimentalVersions` | `false` | Permit product versions classified `unknown`. |
 | `allowHostBrowsing` | `true` | Let the composer's file button browse the Host beyond the working directory. Off omits the route entirely. |
 | `allowWorkspaceWrites` | `true` | Let the side panel create, rename, delete and edit files in the working directory. Off hides those controls. |
+| `enableDictation` | `false` | Offer dictation in the composer. Off omits the button. The only route here whose audio leaves the machine, by the browser's doing, so it is off unless a Profile asks. |
 | `panelLockAbsoluteMs` | `28800000` (8h) | How long one unlock of the panel lasts, regardless of use. |
 | `panelLockIdleMs` | `1800000` (30 min) | How long one unlock survives with no call made through it. |
 | `panelPasswordMinLength` | `8` | Shortest panel password the Host will accept. |
@@ -193,7 +194,7 @@ Four things do cross that line, each deliberately and each switchable off:
 | Host filesystem browsing | Lists any directory on the Host; names and kinds only, never contents | `allowHostBrowsing: false` |
 | Workspace writes | Creates, renames, deletes and edits inside the working directory | `allowWorkspaceWrites: false` |
 | Uploads | Writes only into `.dsh-bridge-uploads/`, under a name the Host rebuilds | Use the working-directory tab instead |
-| Dictation | Chromium sends the audio to a vendor service to transcribe — the browser's doing, not the plugin's | Do not use the button |
+| Dictation | Chromium sends the audio to a vendor service to transcribe — the browser's doing, not the plugin's | `enableDictation: false`, which is the default |
 
 A fifth thing goes the other way: **Settings -> Privacy** puts a password in front of
 this panel, enforced on the Host so it cannot be walked around with `curl`. It covers

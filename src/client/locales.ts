@@ -137,6 +137,11 @@ export const zh = {
   'dictate.start': '语音输入',
   'dictate.stop': '停止语音输入',
   'dictate.note': '由浏览器完成识别；Chrome 会将音频上传到它自己的服务转写。',
+  'dictate.warn.title': '语音输入会把音频送出这台机器',
+  'dictate.warn.body': '面板里其它一切都留在主机上。语音输入不是：识别由浏览器完成，Chrome 会把你说话的音频上传到它自己的服务转写。这是浏览器的行为，本插件既看不到也拦不住这段音频。要彻底移除这个按钮，在 Profile 配置里设 enableDictation: false。',
+  'dictate.warn.ack': '我明白音频会由浏览器上传给厂商服务',
+  'dictate.warn.cancel': '取消',
+  'dictate.warn.confirm': '开始语音输入',
 
   // Working directory's repository, and what the session has spent — the two
   // facts a terminal status line shows without being asked.
@@ -502,6 +507,11 @@ export const en = {
   'dictate.start': 'Dictate',
   'dictate.stop': 'Stop dictating',
   'dictate.note': 'Transcribed by the browser; Chrome uploads the audio to its own service.',
+  'dictate.warn.title': 'Dictation sends audio off this machine',
+  'dictate.warn.body': 'Everything else in this panel stays on the Host. Dictation does not: recognition is the browser\'s, and Chrome uploads the audio of your speech to its own service to transcribe it. That is the browser\'s doing — this plugin neither sees nor can stop that audio. To remove the button entirely, set enableDictation: false in the Profile config.',
+  'dictate.warn.ack': 'I understand the browser uploads the audio to a vendor service',
+  'dictate.warn.cancel': 'Cancel',
+  'dictate.warn.confirm': 'Start dictating',
 
   'repo.noUpstream': 'no upstream',
   'repo.detached': 'Detached HEAD — not on a branch',

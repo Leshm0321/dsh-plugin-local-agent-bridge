@@ -5,6 +5,7 @@
     allowExperimentalVersions: false
     allowHostBrowsing: true
     allowWorkspaceWrites: true
+    enableDictation: false
     enableFakeProvider: false
     eventRetention: 2000
     longPollMaxMs: 25000

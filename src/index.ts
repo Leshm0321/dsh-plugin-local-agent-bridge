@@ -91,6 +91,17 @@ export interface Config {
    * Profile with remote users should decide about it deliberately.
    */
   allowWorkspaceWrites?: boolean
+  /**
+   * Whether the composer offers dictation at all.
+   *
+   * Off by default, and the only capability here that is. Everything else in this
+   * panel stays on the Host; a browser's speech recognition does not — Chromium
+   * ships the audio to a vendor service to transcribe it. That is the browser's
+   * doing rather than this plugin's, but the button is ours, and a plugin whose
+   * whole claim is that the browser talks to no vendor should not hand out that
+   * one exception unasked. A Profile that wants it says so.
+   */
+  enableDictation?: boolean
   enableFakeProvider?: boolean
   /**
    * How long one unlock lasts regardless of use.
@@ -114,6 +125,7 @@ interface ResolvedConfig {
   readonly allowExperimentalVersions: boolean
   readonly allowHostBrowsing: boolean
   readonly allowWorkspaceWrites: boolean
+  readonly enableDictation: boolean
   readonly enableFakeProvider: boolean
   readonly panelLockAbsoluteMs: number
   readonly panelLockIdleMs: number
@@ -156,6 +168,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     allowExperimentalVersions: z.boolean().default(false),
     allowHostBrowsing: z.boolean().default(true),
     allowWorkspaceWrites: z.boolean().default(true),
+    enableDictation: z.boolean().default(false),
     enableFakeProvider: z.boolean().default(false),
     panelLockAbsoluteMs: z.number().min(60_000).max(30 * 24 * 60 * 60_000).default(8 * 60 * 60_000),
     panelLockIdleMs: z.number().min(60_000).max(24 * 60 * 60_000).default(30 * 60_000),
@@ -167,6 +180,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
     allowExperimentalVersions: false,
     allowHostBrowsing: true,
     allowWorkspaceWrites: true,
+    enableDictation: false,
     enableFakeProvider: false,
     panelLockAbsoluteMs: 8 * 60 * 60_000,
     panelLockIdleMs: 30 * 60_000,
@@ -211,6 +225,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
       allowExperimentalVersions: config.allowExperimentalVersions ?? false,
       allowHostBrowsing: config.allowHostBrowsing ?? true,
       allowWorkspaceWrites: config.allowWorkspaceWrites ?? true,
+      enableDictation: config.enableDictation ?? false,
       enableFakeProvider: config.enableFakeProvider ?? false,
       panelLockAbsoluteMs: config.panelLockAbsoluteMs ?? 8 * 60 * 60_000,
       panelLockIdleMs: config.panelLockIdleMs ?? 30 * 60_000,
@@ -347,6 +362,7 @@ export class LocalAgentBridgeService extends TypertRemoteService {
       workspaces: await this.listDirectories(),
       hostBrowsing: this.config.allowHostBrowsing,
       workspaceWrites: this.config.allowWorkspaceWrites,
+      dictation: this.config.enableDictation,
     }
   }
 

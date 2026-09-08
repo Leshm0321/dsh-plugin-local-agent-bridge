@@ -34,6 +34,7 @@ import {
   IconSendOutline16,
   IconSparkle16,
   IconStopFill16,
+  RiskConfirmation,
   useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
@@ -2252,6 +2253,9 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
   /** Sessions that finished while the panel was shut, and so are news on return. */
   const [settled, setSettled] = useState<readonly string[]>([])
   const [notifyArmed, setNotifyArmed] = useState(notificationsArmed)
+  const [dictationWarning, setDictationWarning] = useState(false)
+  const [dictationAcked, setDictationAcked] = useState(false)
+  const [dictationTold, setDictationTold] = useState(false)
   /**
    * Sessions seen running. Kept current while the panel is open so that, the moment
    * it shuts, it already holds exactly what was left in flight — and read by the
@@ -3645,6 +3649,28 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                 )}
                 </div>
 
+                <RiskConfirmation
+                  open={dictationWarning}
+                  title={t('dictate.warn.title')}
+                  description={t('dictate.warn.body')}
+                  acknowledgeLabel={t('dictate.warn.ack')}
+                  cancelLabel={t('dictate.warn.cancel')}
+                  closeLabel={t('dictate.warn.cancel')}
+                  confirmLabel={t('dictate.warn.confirm')}
+                  acknowledged={dictationAcked}
+                  onAcknowledgedChange={setDictationAcked}
+                  onCancel={() => { setDictationWarning(false); setDictationAcked(false) }}
+                  onConfirm={() => {
+                    setDictationWarning(false)
+                    setDictationAcked(false)
+                    // Told once per panel lifetime, not once ever: nothing is stored
+                    // on this side, and a reload is a fair moment to be reminded that
+                    // pressing this sends audio off the machine.
+                    setDictationTold(true)
+                    dictation.toggle()
+                  }}
+                />
+
                 <form className="lab-composer" onSubmit={send}>
                   {paletteOpen && draftTrigger !== null && (
                     <CompletionPalette
@@ -3761,9 +3787,10 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                           />
                         )}
                       </span>
-                      {/* Only where the browser has the API. A dead button would
-                          teach nothing, and the note says where the audio goes. */}
-                      {dictation.supported && (
+                      {/* Only where the Profile asked for it and the browser has the
+                          API. A dead button would teach nothing, and the note says
+                          where the audio goes. */}
+                      {catalog?.dictation === true && dictation.supported && (
                         <button
                           type="button"
                           className={dictation.listening ? 'lab-icon-button lab-icon-button--live' : 'lab-icon-button'}
@@ -3771,7 +3798,12 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                           aria-label={dictation.listening ? t('dictate.stop') : t('dictate.start')}
                           title={`${dictation.listening ? t('dictate.stop') : t('dictate.start')} — ${t('dictate.note')}`}
                           disabled={selectedId === undefined}
-                          onClick={dictation.toggle}
+                          onClick={() => {
+                            // Stopping needs no warning; only the press that would
+                            // start sending audio does, and only the first one.
+                            if (dictation.listening || dictationTold) dictation.toggle()
+                            else setDictationWarning(true)
+                          }}
                         >
                           <MicIcon />
                         </button>

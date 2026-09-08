@@ -52,12 +52,50 @@ const ICON_STUBS = vi.hoisted(() => [
  * hook that does nothing would let the panel regress to popovers that never
  * close while the suite stayed green.
  */
-const HOOK_STUBS = vi.hoisted(() => ['useDismissOnOutsidePointer'])
+const HOOK_STUBS = vi.hoisted(() => ['RiskConfirmation', 'useDismissOnOutsidePointer'])
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => {
   const react = await import('react')
   return {
     ...Object.fromEntries(ICON_STUBS.map(name => [name, () => null])),
+    /**
+     * Stands in for the real confirmation, keeping only the part under test: the
+     * primary action stays unavailable until the acknowledgement is ticked.
+     */
+    RiskConfirmation: ({
+      open, title, description, acknowledgeLabel, cancelLabel, confirmLabel,
+      acknowledged, onAcknowledgedChange, onCancel, onConfirm,
+    }: {
+      open: boolean
+      title: string
+      description: string
+      acknowledgeLabel: string
+      cancelLabel: string
+      confirmLabel: string
+      acknowledged: boolean
+      onAcknowledgedChange: (next: boolean) => void
+      onCancel: () => void
+      onConfirm: () => void
+    }) => open
+      ? react.createElement('div', { role: 'dialog', 'aria-label': title }, [
+        react.createElement('p', { key: 'title' }, title),
+        react.createElement('p', { key: 'body' }, description),
+        react.createElement('label', { key: 'ack' }, [
+          react.createElement('input', {
+            key: 'box',
+            type: 'checkbox',
+            'aria-label': acknowledgeLabel,
+            checked: acknowledged,
+            onChange: () => { onAcknowledgedChange(!acknowledged) },
+          }),
+          acknowledgeLabel,
+        ]),
+        react.createElement('button', { key: 'cancel', type: 'button', onClick: onCancel }, cancelLabel),
+        react.createElement('button', {
+          key: 'confirm', type: 'button', disabled: !acknowledged, onClick: onConfirm,
+        }, confirmLabel),
+      ])
+      : null,
     useDismissOnOutsidePointer: (
       root: { current: HTMLElement | null },
       open: boolean,
@@ -131,6 +169,7 @@ const catalog: BridgeCatalogResult = {
   workspaces: [{ id: 'workspace-1', title: 'Fixture workspace', status: 'ok', published: false }],
   hostBrowsing: true,
   workspaceWrites: true,
+  dictation: true,
 }
 
 function event(
@@ -1949,6 +1988,35 @@ describe('LocalAgentPanel', () => {
     expect(await screen.findByText(en['quota.used'].replace('{percent}', '87'))).toBeTruthy()
   })
 
+  it('omits dictation entirely unless the Profile asked for it', async () => {
+    class FakeRecognition {
+      lang = ''
+      interimResults = false
+      continuous = false
+      onresult: ((event: unknown) => void) | null = null
+      onerror: (() => void) | null = null
+      onend: (() => void) | null = null
+      start(): void {}
+      stop(): void {}
+      abort(): void {}
+    }
+    vi.stubGlobal('webkitSpeechRecognition', FakeRecognition)
+
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.catalog.mockResolvedValue({ ok: true, value: { ...catalog, dictation: false } })
+    fixture.pushRead(snapshot({ events: [], latestSequence: 0 }))
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    // The browser can dictate; this Profile did not ask for it. The one route whose
+    // audio leaves the machine is not offered unasked, so there is no button to warn
+    // about — and nothing to explain away in a tooltip.
+    expect(screen.queryByLabelText(en['dictate.start'])).toBeNull()
+    vi.unstubAllGlobals()
+  })
+
+
   it('offers dictation only where the browser has the API', async () => {
     const fixture = new RemoteFixture()
     fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
@@ -1983,7 +2051,16 @@ describe('LocalAgentPanel', () => {
     const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
     fireEvent.change(composer, { target: { value: 'read this' } })
 
+    // The first press warns instead of starting: the audio is about to leave the
+    // machine, and nothing else in this panel does that.
     fireEvent.click(screen.getByLabelText(en['dictate.start']))
+    expect(FakeRecognition.last).toBeUndefined()
+    expect(screen.getByText(en['dictate.warn.title'])).toBeTruthy()
+    // And the confirm stays shut until the acknowledgement is actually ticked.
+    expect((screen.getByRole('button', { name: en['dictate.warn.confirm'] }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByLabelText(en['dictate.warn.ack']))
+    fireEvent.click(screen.getByRole('button', { name: en['dictate.warn.confirm'] }))
+
     // The panel's own language, so recognition expects what is being spoken.
     expect(FakeRecognition.last?.lang).toBe('en-US')
 

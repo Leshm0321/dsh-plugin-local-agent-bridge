@@ -410,6 +410,7 @@ const catalogSchema = z.object({
   workspaces: z.array(workspaceSchema),
   hostBrowsing: z.boolean(),
   workspaceWrites: z.boolean(),
+  dictation: z.boolean(),
 }).strict()
 
 const createRequestSchema = z.object({

@@ -859,6 +859,12 @@ export interface BridgeCatalogResult {
    * see `allowWorkspaceWrites` in the Profile config.
    */
   readonly workspaceWrites: boolean
+  /**
+   * Whether this Profile offers dictation in the composer. Off by default and off
+   unless asked for: it is the one route in the panel whose audio leaves the machine,
+   * by the browser's doing — see `enableDictation` in the Profile config.
+   */
+  readonly dictation: boolean
 }
 
 export interface BridgeSessionCreateRequest extends BridgeAuthorized {

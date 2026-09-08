@@ -117,6 +117,7 @@ dsh plugin --profile web add github:Leshm0321/dsh-plugin-local-agent-bridge
 | `allowExperimentalVersions` | `false` | 允许被分类为 `unknown` 的产品版本。 |
 | `allowHostBrowsing` | `true` | 允许输入框的文件按钮浏览工作目录之外的宿主机目录。关闭则不显示该入口。 |
 | `allowWorkspaceWrites` | `true` | 允许侧栏在工作目录内新建、重命名、删除和编辑文件。关闭则不显示这些控件。 |
+| `enableDictation` | `false` | 在输入框提供语音输入。关闭则不显示该按钮。这是此处唯一会让音频离开本机的路径（由浏览器所为），所以除非 Profile 明确要求，默认不提供。 |
 | `panelLockAbsoluteMs` | `28800000`（8 小时） | 面板一次解锁的最长有效期，与是否使用无关。 |
 | `panelLockIdleMs` | `1800000`（30 分钟） | 一次解锁在没有任何调用的情况下能存活多久。 |
 | `panelPasswordMinLength` | `8` | 主机接受的面板密码最短长度。 |
@@ -138,7 +139,7 @@ dsh plugin --profile web add github:Leshm0321/dsh-plugin-local-agent-bridge
 | 浏览宿主机目录 | 列出宿主机任意目录；只有名称和类型，绝不返回文件内容 | `allowHostBrowsing: false` |
 | 工作目录写入 | 在工作目录内新建、重命名、删除、编辑 | `allowWorkspaceWrites: false` |
 | 上传 | 只写入 `.dsh-bridge-uploads/`，文件名由宿主机重新构建 | 改用「工作目录」页签，不写入任何文件 |
-| 语音识别 | Chromium 会把音频发给厂商服务转写 —— 这是浏览器的行为，不是本插件的 | 不使用该按钮 |
+| 语音识别 | Chromium 会把音频发给厂商服务转写 —— 这是浏览器的行为，不是本插件的 | `enableDictation: false`，也就是默认值 |
 
 还有第五件事是往反方向的：**设置 → 隐私**可以给这个面板加一道密码，由主机侧强制，`curl` 绕不过。它只覆盖本插件的接口面——插件在 DSH 自己的路由前面没有座位——而且在明文 HTTP 上密码是明文传输的。要给 Harness 本身加密码，在它前面放一层代理：[`examples/proxy/Caddyfile`](examples/proxy/Caddyfile) 是一份能直接用的。
 
