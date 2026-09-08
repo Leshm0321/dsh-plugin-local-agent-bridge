@@ -281,6 +281,10 @@ type TimelineNode =
     readonly answer: TimelineRow | null
     /** Turn duration, or null while it is still running. */
     readonly durationMs: number | null
+    /** Time this turn spent blocked on an interaction that has since been answered. */
+    readonly waitedMs: number
+    /** When the interaction it is blocked on right now was raised, else null. */
+    readonly waitingSince: number | null
     /** When the turn started, for counting up while it runs. */
     readonly startedAt: number
     readonly running: boolean
@@ -464,10 +468,23 @@ function timeline(events: readonly BridgeEvent[], t: PanelTranslate): TimelineRo
 function groupTimeline(rows: readonly TimelineRow[], events: readonly BridgeEvent[]): TimelineNode[] {
   const startedAt = new Map<string, number>()
   const completedAt = new Map<string, number>()
+  // A turn that stops to ask is not a turn that is working, and reporting the two as
+  // one number made an approval left sitting look like four minutes of compute. The
+  // answered windows are summed; the one still open is carried as its opening stamp,
+  // because its length is only known as of now and has to keep ticking.
+  const waitedMs = new Map<string, number>()
+  const waitingSince = new Map<string, number>()
   for (const event of events) {
     if (event.bridgeTurnId === null) continue
     if (event.type === 'bridge/turn-started') startedAt.set(event.bridgeTurnId, event.timestamp)
     else if (event.type === 'bridge/turn-completed') completedAt.set(event.bridgeTurnId, event.timestamp)
+    else if (event.type === 'bridge/interaction-requested') waitingSince.set(event.bridgeTurnId, event.timestamp)
+    else if (event.type === 'bridge/interaction-resolved') {
+      const opened = waitingSince.get(event.bridgeTurnId)
+      if (opened === undefined) continue
+      waitedMs.set(event.bridgeTurnId, (waitedMs.get(event.bridgeTurnId) ?? 0) + Math.max(0, event.timestamp - opened))
+      waitingSince.delete(event.bridgeTurnId)
+    }
   }
 
   const nodes: TimelineNode[] = []
@@ -510,6 +527,8 @@ function groupTimeline(rows: readonly TimelineRow[], events: readonly BridgeEven
         work: [],
         answer: null,
         durationMs: null,
+        waitedMs: 0,
+        waitingSince: null,
         startedAt: startedAt.get(turnId) ?? 0,
         running: false,
       })
@@ -538,6 +557,10 @@ function groupTimeline(rows: readonly TimelineRow[], events: readonly BridgeEven
       answer,
       running: started !== undefined && completed === undefined,
       durationMs: started === undefined || completed === undefined ? null : Math.max(0, completed - started),
+      waitedMs: waitedMs.get(turnId) ?? 0,
+      // An interaction still open on a turn that already completed is stale bookkeeping,
+      // not a wait anyone is in: the turn is over and nothing is ticking.
+      waitingSince: completed === undefined ? waitingSince.get(turnId) ?? null : null,
       startedAt: started ?? 0,
     }
   })
@@ -770,13 +793,22 @@ function TurnGroup({
   // Re-rendered on a timer only while a turn is in flight, so an idle transcript
   // costs nothing.
   const [now, setNow] = useState(() => Date.now())
+  const ticking = node.running || node.waitingSince !== null
   useEffect(() => {
-    if (!node.running) return
+    if (!ticking) return
     const timer = setInterval(() => { setNow(Date.now()) }, 1_000)
     return () => { clearInterval(timer) }
-  }, [node.running])
+  }, [ticking])
 
   const elapsed = node.durationMs ?? Math.max(0, now - node.startedAt)
+  // Wall-clock minus the time it stood waiting for a person. Clamped because the two
+  // come from different clocks — the events' and this browser's — and a turn that
+  // waited for nearly all of its life must not read as negative work.
+  const waited = node.waitedMs + (node.waitingSince === null ? 0 : Math.max(0, now - node.waitingSince))
+  const worked = Math.max(0, elapsed - waited)
+  // Sub-second waits are noise: an auto-answered interaction is not something the
+  // reader needs a second number for.
+  const showWaited = waited >= 1_000
   // Anything at all is foldable, because folding leaves the summary chip rather than
   // a blank space. Whether it *starts* folded is the separate question above.
   //
@@ -796,10 +828,15 @@ function TurnGroup({
           >
             <span className={open ? 'lab-turn-caret lab-turn-caret--open' : 'lab-turn-caret'}>›</span>
             <span className="lab-turn-label">
-              {node.running
-                ? t('turn.working', { value: formatDuration(elapsed) })
-                : t('turn.processed', { value: formatDuration(elapsed) })}
+              {node.waitingSince !== null
+                ? t('turn.waiting', { value: formatDuration(waited) })
+                : node.running
+                  ? t('turn.working', { value: formatDuration(worked) })
+                  : t('turn.processed', { value: formatDuration(worked) })}
             </span>
+            {showWaited && node.waitingSince === null && (
+              <span className="lab-turn-waited">{t('turn.waited', { value: formatDuration(waited) })}</span>
+            )}
             <span className="lab-turn-count">{t('turn.steps', { count: node.work.length })}</span>
           </button>
           {work.mounted && (
@@ -3427,14 +3464,6 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                   hidden={view !== 'chat'}
                 >
                   {error !== undefined && <div className="lab-error-banner">{error}</div>}
-                  {snapshot?.pendingInteraction !== null && snapshot?.pendingInteraction !== undefined && (
-                    <InteractionCard
-                      interaction={snapshot.pendingInteraction}
-                      remote={remote}
-                      onResolved={() => { setError(undefined) }}
-                      t={t}
-                    />
-                  )}
                   <div className="lab-stream">
                     {nodes.map((node, index) => node.kind === 'row'
                       ? (
@@ -3456,6 +3485,23 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                       ))}
                   </div>
                 </div>
+
+                {/* Outside the transcript scroll container, and outside the view
+                    switch, because a pending interaction blocks the turn: it has to
+                    be reachable without scrolling and without first going back to
+                    the conversation tab. It used to open the stream, which put it
+                    above every turn — so on a long transcript the card asking for a
+                    decision sat off-screen above the one line saying one was due. */}
+                {snapshot?.pendingInteraction !== null && snapshot?.pendingInteraction !== undefined && (
+                  <div className="lab-interaction-dock">
+                    <InteractionCard
+                      interaction={snapshot.pendingInteraction}
+                      remote={remote}
+                      onResolved={() => { setError(undefined) }}
+                      t={t}
+                    />
+                  </div>
+                )}
                 </div>
 
                 <form className="lab-composer" onSubmit={send}>

@@ -542,6 +542,101 @@ describe('LocalAgentPanel', () => {
     })
   })
 
+  it('charges the time an approval sat unanswered to the wait, not to the work', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    const turn = (status: 'running' | 'completed', completedAt: number | null) => ({
+      turn: {
+        bridgeTurnId: 'turn-1',
+        bridgeSessionId: 'session-1',
+        status,
+        startedAt: 1_000,
+        completedAt,
+        stopReason: null,
+      },
+    })
+    fixture.pushRead(snapshot({
+      events: [
+        { ...event(1, { type: 'bridge/turn-started', data: turn('running', null) }), timestamp: 1_000 },
+        // Raised two seconds in, answered four minutes later, the turn ending a
+        // second after that: three seconds of work inside four minutes of wall clock.
+        { ...event(2, { type: 'bridge/interaction-requested', data: { interaction: interaction('approval') } }), timestamp: 3_000 },
+        { ...event(3, { type: 'bridge/interaction-resolved', data: { interactionId: 'approval-1', outcome: 'allowed' } }), timestamp: 243_000 },
+        {
+          ...event(4, {
+            type: 'bridge/tool-completed',
+            data: {
+              itemId: 't1',
+              toolName: 'write',
+              summary: 'wrote probe.txt',
+              status: 'completed',
+              detail: { input: '{}', output: 'ok', truncated: false },
+            },
+          }),
+          timestamp: 243_500,
+        },
+        { ...event(5, { type: 'bridge/turn-completed', data: turn('completed', 244_000) }), timestamp: 244_000 },
+      ],
+      latestSequence: 5,
+    }))
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    // 243s of wall clock, 240s of it waiting on a person: the fold reports the 3s it
+    // actually worked, and names the wait rather than absorbing it.
+    expect(await screen.findByText('processed in 3.0s')).toBeTruthy()
+    expect(screen.getByText('4m00s of it waiting on you')).toBeTruthy()
+    expect(screen.queryByText('processed in 4m03s')).toBeNull()
+  })
+
+  it('reports a turn stopped on an open approval as waiting rather than working', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      session: { ...session, status: 'awaiting-approval' },
+      pendingInteraction: interaction('approval'),
+      events: [
+        {
+          ...event(1, {
+            type: 'bridge/turn-started',
+            data: {
+              turn: {
+                bridgeTurnId: 'turn-1',
+                bridgeSessionId: 'session-1',
+                status: 'running' as const,
+                startedAt: 1_000,
+                completedAt: null,
+                stopReason: null,
+              },
+            },
+          }),
+          timestamp: 1_000,
+        },
+        {
+          ...event(2, {
+            type: 'bridge/tool-completed',
+            data: {
+              itemId: 't1',
+              toolName: 'write',
+              summary: 'wants to write probe.txt',
+              status: 'completed',
+              detail: { input: '{}', output: '', truncated: false },
+            },
+          }),
+          timestamp: 1_500,
+        },
+        { ...event(3, { type: 'bridge/interaction-requested', data: { interaction: interaction('approval') } }), timestamp: 2_000 },
+      ],
+      latestSequence: 3,
+    }))
+    renderPanel(fixture.remote())
+
+    // The readout says who is being waited on. "working" would be a lie: nothing is.
+    expect(await screen.findByText(/waiting on you/)).toBeTruthy()
+    expect(screen.queryByText(/^working /)).toBeNull()
+  })
+
+
   it('submits one-turn approval and question responses', async () => {
     const fixture = new RemoteFixture()
     fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })

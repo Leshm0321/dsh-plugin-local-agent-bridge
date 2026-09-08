@@ -1176,6 +1176,7 @@ body[data-ds-dark-theme] .lab-code {
 .lab-turn-caret--open { transform: rotate(90deg); }
 .lab-turn-label { font-family: var(--lab-mono); }
 .lab-turn-count { color: var(--lab-text-3); }
+.lab-turn-waited { font-size: 11px; color: var(--lab-text-3); flex: none; }
 
 /* Indented and ruled, so the work reads as belonging to the summary above it rather
    than as more conversation. */
@@ -1267,6 +1268,17 @@ body[data-ds-dark-theme] .lab-code {
 /* min-height: 0 is what lets the scroll container actually scroll inside a flex
    column rather than growing past it. */
 .lab-content > .lab-timeline { flex: 1 1 auto; min-height: 0; }
+/* The interaction dock is the content column's own last row: flex: none so the
+   transcript gives up the space rather than the card being squeezed, and its own
+   scroll so a question with many inputs cannot push the composer off the panel. */
+.lab-content > .lab-interaction-dock {
+  flex: none;
+  max-height: 42%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: var(--lab-hairline) solid var(--lab-line);
+  padding: 12px clamp(14px, 3vw, 32px) 0;
+}
 
 .lab-timeline {
   min-height: 0;
@@ -1396,7 +1408,7 @@ body[data-ds-dark-theme] .lab-code {
   background: color-mix(in srgb, var(--lab-warn) 7%, var(--lab-surface));
   border-radius: var(--lab-r-card);
   padding: 13px;
-  margin: 0 auto 14px;
+  margin: 0 auto 12px;
   max-width: 860px;
   box-shadow: 0 2px 12px -4px color-mix(in srgb, var(--lab-warn) 30%, transparent);
 }
