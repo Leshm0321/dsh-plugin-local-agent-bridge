@@ -558,6 +558,7 @@ export const PANEL_STYLES = `
 .lab-trace-summary { display: flex; gap: 12px; flex-wrap: wrap; }
 .lab-trace-figure { font-size: 11px; font-family: var(--lab-mono); color: var(--lab-text-3); white-space: nowrap; }
 .lab-trace-search { max-width: 260px; }
+.lab-session-filter { margin-bottom: 6px; }
 
 /* The strip: one row per lane, each a full-width track with spans positioned as
    percentages of the trace's own duration. */

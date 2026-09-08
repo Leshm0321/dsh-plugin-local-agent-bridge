@@ -172,6 +172,52 @@ describe('BridgeSessionEngine with FakeProviderAdapter', () => {
     await engine.dispose()
   })
 
+  it('names a session after its first ask, and leaves a given name alone', async () => {
+    const { engine, memory } = await createEngine()
+    const session = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id })
+    // Until something is said, every session in one directory shares one title.
+    expect(session.title).toBe('Fixture - Fixture workspace')
+
+    await engine.send(session.bridgeSessionId, 'explain the retry policy')
+    await waitFor(engine, session.bridgeSessionId, result => result.session.status === 'idle')
+    expect(memory.snapshot(session.bridgeSessionId).title).toBe('explain the retry policy')
+
+    // Only the first ask names it; the second must not rename it under the operator.
+    await engine.send(session.bridgeSessionId, 'now do the same for timeouts')
+    await waitFor(engine, session.bridgeSessionId, result => result.session.status === 'idle')
+    expect(memory.snapshot(session.bridgeSessionId).title).toBe('explain the retry policy')
+
+    // A title given at creation is the operator's, and outranks the first ask.
+    const named = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id, title: 'Retry work' })
+    await engine.send(named.bridgeSessionId, 'explain the retry policy')
+    await waitFor(engine, named.bridgeSessionId, result => result.session.status === 'idle')
+    expect(memory.snapshot(named.bridgeSessionId).title).toBe('Retry work')
+    await engine.dispose()
+  })
+
+  it('takes a session title from prose, cut to a row, and never from a bare attachment', async () => {
+    const { engine, memory } = await createEngine()
+
+    const long = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id })
+    await engine.send(long.bridgeSessionId, 'a'.repeat(200))
+    await waitFor(engine, long.bridgeSessionId, result => result.session.status === 'idle')
+    const cut = memory.snapshot(long.bridgeSessionId).title
+    expect(cut).toHaveLength(60)
+    expect(cut.endsWith('…')).toBe(true)
+
+    // An input that is nothing but appended image references has no ask in it, so the
+    // placeholder is better than a path — and the next real ask still gets to name it.
+    const attached = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id })
+    await engine.send(attached.bridgeSessionId, '@.dsh-bridge-uploads/shot.png')
+    await waitFor(engine, attached.bridgeSessionId, result => result.session.status === 'idle')
+    expect(memory.snapshot(attached.bridgeSessionId).title).toBe('Fixture - Fixture workspace')
+    await engine.send(attached.bridgeSessionId, 'what is in that screenshot')
+    await waitFor(engine, attached.bridgeSessionId, result => result.session.status === 'idle')
+    expect(memory.snapshot(attached.bridgeSessionId).title).toBe('what is in that screenshot')
+    await engine.dispose()
+  })
+
+
   it('removes credential canaries before events or persisted records cross the Host boundary', async () => {
     const { engine, memory } = await createEngine()
     const session = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id })

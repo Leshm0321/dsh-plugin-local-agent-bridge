@@ -542,6 +542,39 @@ describe('LocalAgentPanel', () => {
     })
   })
 
+  it('filters a session list only once it is long enough to need it', async () => {
+    const many = Array.from({ length: 6 }, (_, index) => ({
+      ...session,
+      bridgeSessionId: `session-${index + 1}`,
+      title: index === 5 ? 'explain the retry policy' : `unrelated work ${index}`,
+    }))
+
+    const few = new RemoteFixture()
+    few.sessionsList.mockResolvedValue({ ok: true, value: many.slice(0, 5) })
+    few.pushRead(snapshot({}))
+    renderPanel(few.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    // Five rows are scannable; the input would only cost a row of a narrow column.
+    expect(screen.queryByPlaceholderText(en['sessions.filter'])).toBeNull()
+
+    cleanup()
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: many })
+    fixture.pushRead(snapshot({}))
+    renderPanel(fixture.remote())
+
+    const filter = await screen.findByPlaceholderText(en['sessions.filter'])
+    expect(screen.getByRole('button', { name: /unrelated work 3/ })).toBeTruthy()
+    fireEvent.change(filter, { target: { value: 'retry' } })
+    expect(screen.getByRole('button', { name: /explain the retry policy/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /unrelated work 3/ })).toBeNull()
+
+    // A filter that matches nothing says so, rather than showing an empty column.
+    fireEvent.change(filter, { target: { value: 'nothing here' } })
+    expect(screen.getByText(en['sessions.filterEmpty'])).toBeTruthy()
+  })
+
+
   it('charges the time an approval sat unanswered to the wait, not to the work', async () => {
     const fixture = new RemoteFixture()
     fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })

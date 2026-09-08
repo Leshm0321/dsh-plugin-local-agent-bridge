@@ -230,6 +230,8 @@ export const zh = {
   'panel.expandSidebar': '展开侧栏',
 
   // Session list and toolbar.
+  'sessions.filter': '筛选会话',
+  'sessions.filterEmpty': '没有会话匹配这个筛选。',
   'sessions.heading': '会话',
   'sessions.empty': '选择或新建一个会话',
   'session.cancel': '中止当前轮',
@@ -577,6 +579,8 @@ export const en = {
   'panel.collapseSidebar': 'Collapse sidebar',
   'panel.expandSidebar': 'Expand sidebar',
 
+  'sessions.filter': 'Filter sessions',
+  'sessions.filterEmpty': 'No session matches this filter.',
   'sessions.heading': 'Sessions',
   'sessions.empty': 'Select or create a session',
   'session.cancel': 'Cancel turn',

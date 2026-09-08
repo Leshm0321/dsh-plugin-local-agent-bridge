@@ -96,6 +96,9 @@ const NS = 'local-agent-bridge'
  * Statuses in which the Host has work in flight for this session, so the turn
  * can be cancelled and the session badge should read as active.
  */
+/** Sessions a list must hold before it earns a filter above it. */
+const SESSION_FILTER_FROM = 5
+
 const BUSY_STATUSES: readonly BridgeSessionStatus[] = [
   'running',
   'awaiting-approval',
@@ -2225,6 +2228,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
   const [sideOpen, setSideOpen] = useState(false)
   const [sideView, setSideView] = useState<'files' | 'diff'>('files')
   const [traceQuery, setTraceQuery] = useState('')
+  const [sessionQuery, setSessionQuery] = useState('')
   const attachRoot = useRef<HTMLSpanElement>(null)
   const [repository, setRepository] = useState<BridgeRepository | null>(null)
   const [attachSource, setAttachSource] = useState<AttachSource>('workspace')
@@ -2457,6 +2461,16 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
    * twenty tool calls it took to reach.
    */
   const nodes = useMemo(() => groupTimeline(rows, snapshot?.events ?? []), [rows, snapshot?.events])
+  // The filter appears only once the list is long enough to need one: in a column
+  // this narrow a permanently parked input costs a row that the directories and the
+  // new-session form have better uses for.
+  const sessionFilterShown = sessions.length > SESSION_FILTER_FROM
+  const visibleSessions = useMemo(() => {
+    const needle = sessionQuery.trim().toLowerCase()
+    if (!sessionFilterShown || needle === '') return sessions
+    return sessions.filter(session => [session.title, session.workspaceTitle, session.providerId]
+      .some(field => field.toLowerCase().includes(needle)))
+  }, [sessions, sessionQuery, sessionFilterShown])
   /**
    * Whether the newest row may still grow. Drives the typewriter reveal, which must
    * not animate a finished answer or a row restored from a transcript.
@@ -3379,8 +3393,20 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                 )}
 
                 <p className="lab-section-label">{t('sessions.heading')}</p>
+                {sessionFilterShown && (
+                  <input
+                    type="search"
+                    className="lab-input lab-session-filter"
+                    value={sessionQuery}
+                    placeholder={t('sessions.filter')}
+                    onChange={event => { setSessionQuery(event.target.value) }}
+                  />
+                )}
                 <div className="lab-sessions">
-                  {sessions.map(session => (
+                  {sessionFilterShown && visibleSessions.length === 0 && (
+                    <p className="lab-browse-note">{t('sessions.filterEmpty')}</p>
+                  )}
+                  {visibleSessions.map(session => (
                     <button
                       key={session.bridgeSessionId}
                       type="button"

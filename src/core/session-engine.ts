@@ -100,6 +100,39 @@ interface RuntimeSession {
   waiters: Set<() => void>
 }
 
+/**
+ * What a session is called before anything has been said in it.
+ *
+ * Recomputed rather than flagged, so a session carrying exactly this string is
+ * known to be unnamed without the record growing a field to say so — and a title
+ * the operator set themselves can never be mistaken for one.
+ * @param providerId - the product the session drives.
+ * @param workspaceTitle - the working directory's title, already redacted.
+ * @returns the placeholder title.
+ */
+function placeholderSessionTitle(providerId: ProviderId, workspaceTitle: string): string {
+  const product = providerId === 'claude' ? 'Claude Code' : providerId === 'codex' ? 'Codex' : 'Fixture'
+  return `${product} - ${workspaceTitle}`.slice(0, 256)
+}
+
+/**
+ * Name a session after the first thing asked of it.
+ *
+ * Mechanical, not summarised: this bridge calls no model, so the title is the
+ * opening line as typed, cut at a length a list row can show. Attached image
+ * references are dropped — they are appended plumbing, never the ask.
+ * @param text - the first input delivered to the session.
+ * @returns a title, or null when there is no prose to take one from.
+ */
+function titleFromFirstInput(text: string): string | null {
+  const line = text
+    .split('\n')
+    .map(candidate => candidate.trim())
+    .find(candidate => candidate.length > 0 && !candidate.startsWith('@'))
+  if (line === undefined) return null
+  return line.length <= 60 ? line : `${line.slice(0, 59).trimEnd()}…`
+}
+
 function sessionView(record: PersistedBridgeSession): BridgeSessionView {
   return {
     bridgeSessionId: record.bridgeSessionId,
@@ -238,12 +271,16 @@ export class BridgeSessionEngine {
     }
     const now = Date.now()
     const bridgeSessionId = randomUUID()
-    const title = redactText(request.title?.trim() || `${provider.id === 'claude' ? 'Claude Code' : provider.id === 'codex' ? 'Codex' : 'Fixture'} - ${workspace.title}`, 256)
+    const workspaceTitle = redactText(workspace.title, 256)
+    const requested = request.title?.trim()
+    const title = requested === undefined || requested === ''
+      ? placeholderSessionTitle(provider.id, workspaceTitle)
+      : redactText(requested, 256)
     const record: PersistedBridgeSession = {
       bridgeSessionId,
       providerId: provider.id,
       workspaceId: workspace.id,
-      workspaceTitle: redactText(workspace.title, 256),
+      workspaceTitle,
       title,
       status: 'idle',
       createdAt: now,
@@ -401,6 +438,16 @@ export class BridgeSessionEngine {
     const text = normalizeInput(
       saved.paths.length === 0 ? rawText : [rawText, ...saved.paths.map(path => `@${path}`)].join('\n'),
     )
+
+    // The first thing asked of a session is the best name it will ever get, and
+    // without it a list row reads `Claude Code - repo` for every session in that
+    // repo. Applied only while the title is still the placeholder, so an operator's
+    // own name is never overwritten, and taken here rather than per delivery branch
+    // because a first input can arrive started, steered or queued.
+    if (runtime.record.title === placeholderSessionTitle(runtime.record.providerId, runtime.record.workspaceTitle)) {
+      const derived = titleFromFirstInput(text)
+      if (derived !== null) runtime.record.title = redactText(derived, 256)
+    }
 
     if (runtime.activeRun === null) {
       const bridgeTurnId = randomUUID()
