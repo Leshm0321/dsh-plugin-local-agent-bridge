@@ -20,6 +20,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // simply never fires and the Privacy page is not there to register.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
+  IconAlarmClockOutline16,
   IconArchiveOutline20,
   IconBranchOutline16,
   IconCloseOutline16,
@@ -96,6 +97,25 @@ const NS = 'local-agent-bridge'
  * Statuses in which the Host has work in flight for this session, so the turn
  * can be cancelled and the session badge should read as active.
  */
+/** How often a closed panel looks in on the turns it left running. */
+const AWAY_WATCH_MS = 6_000
+
+/**
+ * Whether this browser will show a notification right now.
+ *
+ * The browser's own grant is the whole state. Nothing is kept on this side: the
+ * panel leaves no browser-storage residue by design — a guarantee a source grep
+ * holds this file to — so a stored mute is not available to it, and the browser's
+ * own site settings stay the one place a grant is given or taken back. Permission
+ * is never
+ * requested implicitly either: an unprompted dialog on first load is the thing
+ * operators learn to dismiss, so `default` reads as off until the bell is pressed.
+ * @returns true when this browser has granted notification permission.
+ */
+function notificationsArmed(): boolean {
+  return typeof Notification !== 'undefined' && Notification.permission === 'granted'
+}
+
 /** Sessions a list must hold before it earns a filter above it. */
 const SESSION_FILTER_FROM = 5
 
@@ -2229,6 +2249,15 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
   const [sideView, setSideView] = useState<'files' | 'diff'>('files')
   const [traceQuery, setTraceQuery] = useState('')
   const [sessionQuery, setSessionQuery] = useState('')
+  /** Sessions that finished while the panel was shut, and so are news on return. */
+  const [settled, setSettled] = useState<readonly string[]>([])
+  const [notifyArmed, setNotifyArmed] = useState(notificationsArmed)
+  /**
+   * Sessions seen running. Kept current while the panel is open so that, the moment
+   * it shuts, it already holds exactly what was left in flight — and read by the
+   * away watch as the list of what it is still waiting on.
+   */
+  const watching = useRef<Set<string>>(new Set())
   const attachRoot = useRef<HTMLSpanElement>(null)
   const [repository, setRepository] = useState<BridgeRepository | null>(null)
   const [attachSource, setAttachSource] = useState<AttachSource>('workspace')
@@ -2245,6 +2274,21 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
   const [showHidden, setShowHidden] = useState(false)
   const sequence = useRef(0)
 
+  /**
+   * Whether the bell can still do anything.
+   *
+   * Only an unasked browser can be: a granted one is already on, and a refused one
+   * cannot be talked round from script. In both of those the control stays as a
+   * readout, and its tooltip says where the answer actually lives.
+   */
+  const notifyDecided = typeof Notification === 'undefined' || Notification.permission !== 'default'
+
+  /** Ask this browser for permission to say when a turn has finished. */
+  const askToNotify = async (): Promise<void> => {
+    if (notifyDecided) return
+    setNotifyArmed(await Notification.requestPermission() === 'granted')
+  }
+
   const refresh = async (): Promise<void> => {
     const [nextCatalog, nextSessions] = await Promise.all([
       remote.catalog({}).then(unwrap),
@@ -2256,6 +2300,62 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
     setWorkspaceId(current => current ?? nextCatalog.workspaces.find(workspace => workspace.status === 'ok')?.id)
     setSelectedId(current => current ?? nextSessions[0]?.bridgeSessionId)
   }
+
+  /**
+   * Keep the running set current, and clear the news, while the panel is open.
+   *
+   * An operator looking at the panel is not owed a badge for what they can see
+   * finish, so a session settling in view is simply dropped from the watch.
+   */
+  useEffect(() => {
+    if (!open) return
+    watching.current = new Set(sessions.filter(entry => BUSY_STATUSES.includes(entry.status)).map(entry => entry.bridgeSessionId))
+    setSettled([])
+  }, [open, sessions])
+
+  /**
+   * Look in on the turns a shut panel left running.
+   *
+   * A closed panel otherwise does nothing at all — no catalog, no long poll — which
+   * is the right default and also why a turn could finish with the operator having
+   * no way to know. So this is the narrowest watch that answers it: it starts only
+   * when something was actually in flight, asks for the session list alone rather
+   * than holding a poll open, and stops the moment nothing is left running.
+   */
+  useEffect(() => {
+    if (open || lock.locked || lock.pending || watching.current.size === 0) return
+    let live = true
+    const look = async (): Promise<void> => {
+      const list = await remote.sessionsList({ includeArchived: false }).then(unwrap)
+      if (!live) return
+      const busy = new Set(list.filter(entry => BUSY_STATUSES.includes(entry.status)).map(entry => entry.bridgeSessionId))
+      const finished = list.filter(entry => watching.current.has(entry.bridgeSessionId) && !busy.has(entry.bridgeSessionId))
+      if (finished.length === 0) return
+      for (const entry of finished) watching.current.delete(entry.bridgeSessionId)
+      setSettled(current => [...current, ...finished.map(entry => entry.bridgeSessionId)])
+      if (!notificationsArmed()) return
+      for (const entry of finished) {
+        // The product and the directory, never the session title: the title is the
+        // operator's own opening line, and an OS notification is a surface this
+        // plugin does not control — a lock screen, a shared display. Which session
+        // finished is answerable without quoting what was asked of it.
+        try {
+          new Notification(t('notify.title'), {
+            body: t('notify.body', { product: entry.providerId, workspace: entry.workspaceTitle }),
+            tag: `local-agent-bridge:${entry.bridgeSessionId}`,
+          })
+        } catch {
+          // A browser that grants permission and then refuses construction has
+          // nothing to be done about it, and must not break the watch.
+        }
+      }
+    }
+    const timer = setInterval(() => { void look().catch(() => {
+      // A failed look is retried by the next tick. Nothing is surfaced: the panel is
+      // shut, so there is nowhere to surface it and nothing the operator asked for.
+    }) }, AWAY_WATCH_MS)
+    return () => { live = false; clearInterval(timer) }
+  }, [open, lock.locked, lock.pending, remote, t])
 
   /**
    * Load the catalog when the panel opens — and again the moment it is unlocked.
@@ -3129,6 +3229,11 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
         onClick={() => { setOpen(true) }}
       >
         <BridgeIcon />{wide && <span>{t('panel.name')}</span>}
+        {settled.length > 0 && (
+          <span className="lab-trigger-badge" aria-label={t('notify.pending', { count: settled.length })}>
+            {settled.length > 9 ? '9+' : settled.length}
+          </span>
+        )}
       </button>
       {open && (
         <div className="lab-root lab-scrim" role="dialog" aria-modal="true" aria-label={t('panel.name')}>
@@ -3194,6 +3299,16 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                     <span className="lab-mirror"><IconPanelLeftOutline16 /></span>
                   </ActionButton>
                 )}
+                <ActionButton
+                  icon
+                  aria-label={notifyArmed ? t('notify.armed') : t('notify.on')}
+                  title={notifyArmed ? t('notify.armed') : notifyDecided ? t('notify.blocked') : t('notify.on')}
+                  aria-pressed={notifyArmed}
+                  disabled={notifyDecided}
+                  onClick={() => { void askToNotify() }}
+                >
+                  <span className={notifyArmed ? undefined : 'lab-bell-off'}><IconAlarmClockOutline16 /></span>
+                </ActionButton>
                 <ActionButton icon aria-label={t('panel.refresh')} title={t('panel.refresh')} onClick={() => { void refresh() }}>
                   <IconRefreshOutline16 />
                 </ActionButton>

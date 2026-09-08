@@ -144,6 +144,27 @@ export const PANEL_STYLES = `
   font: inherit;
   transition: background var(--lab-fast) var(--lab-ease);
 }
+/* The badge rides the trigger, which is the only part of this plugin a shut panel
+   still shows. Positioned rather than laid out, so the collapsed sidebar's
+   icon-only trigger keeps its size. */
+.lab-trigger { position: relative; }
+.lab-trigger-badge {
+  position: absolute;
+  top: 2px;
+  left: 20px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--lab-warn);
+  color: var(--lab-surface);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+  pointer-events: none;
+}
+.lab-bell-off { opacity: 0.45; }
 .lab-trigger:hover { background: var(--lab-hover); }
 .lab-trigger:active { background: var(--lab-active); }
 

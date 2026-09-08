@@ -26,6 +26,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
  * find the directory row" — several layers away from the cause.
  */
 const ICON_STUBS = vi.hoisted(() => [
+  'IconAlarmClockOutline16',
   'IconArchiveOutline20',
   'IconBranchOutline16',
   'IconCloseOutline16',
@@ -541,6 +542,48 @@ describe('LocalAgentPanel', () => {
       expect(fixture.sessionSend).toHaveBeenCalledWith({ token: '', bridgeSessionId: 'session-1', text: 'next prompt' })
     })
   })
+
+  it('watches the turns a shut panel left running, and badges what finished', async () => {
+    const running = { ...session, status: 'running' as const }
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [running] })
+    fixture.pushRead(snapshot({ session: running }))
+    renderPanel(fixture.remote())
+
+    // Open, with a turn in flight: the trigger carries no news, because the operator
+    // is looking at the thing the news would be about.
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    expect(screen.queryByLabelText(/session\(s\) finished/)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: en['panel.close'] }))
+    // Shut, and the turn settles while nobody is watching.
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [{ ...session, status: 'idle' as const }] })
+
+    const badge = await screen.findByLabelText(/1 session\(s\) finished/, {}, { timeout: 10_000 })
+    expect(badge.textContent).toBe('1')
+
+    // Reopening is reading the news, so it stops being news.
+    fireEvent.click(badge.closest('button') as HTMLButtonElement)
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    await waitFor(() => { expect(screen.queryByLabelText(/session\(s\) finished/)).toBeNull() })
+  }, 15_000)
+
+  it('leaves a shut panel entirely idle when it had nothing running', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({}))
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByRole('button', { name: en['panel.close'] }))
+    const asked = fixture.sessionsList.mock.calls.length
+
+    // Nothing was in flight, so there is nothing to look in on: the watch must not
+    // start, or a closed panel would poll the Host forever for no reason.
+    await new Promise(resolve => setTimeout(resolve, 1_000))
+    expect(fixture.sessionsList.mock.calls.length).toBe(asked)
+  })
+
 
   it('filters a session list only once it is long enough to need it', async () => {
     const many = Array.from({ length: 6 }, (_, index) => ({

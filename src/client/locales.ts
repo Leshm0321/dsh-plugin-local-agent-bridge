@@ -230,6 +230,12 @@ export const zh = {
   'panel.expandSidebar': '展开侧栏',
 
   // Session list and toolbar.
+  'notify.title': '本机 Agent',
+  'notify.body': '{product} · {workspace} 的这一轮结束了。',
+  'notify.pending': '本地 Agent — {count} 个会话已结束',
+  'notify.on': '结束时通知我',
+  'notify.armed': '结束时会通知你 — 在浏览器站点设置里关闭',
+  'notify.blocked': '浏览器已拒绝通知权限',
   'sessions.filter': '筛选会话',
   'sessions.filterEmpty': '没有会话匹配这个筛选。',
   'sessions.heading': '会话',
@@ -579,6 +585,12 @@ export const en = {
   'panel.collapseSidebar': 'Collapse sidebar',
   'panel.expandSidebar': 'Expand sidebar',
 
+  'notify.title': 'Local Agent',
+  'notify.body': 'The turn in {product} · {workspace} has finished.',
+  'notify.pending': 'Local Agent — {count} session(s) finished',
+  'notify.on': 'Notify me when a turn finishes',
+  'notify.armed': 'You will be notified when a turn finishes — turn it off in the browser site settings',
+  'notify.blocked': 'The browser has refused notification permission',
   'sessions.filter': 'Filter sessions',
   'sessions.filterEmpty': 'No session matches this filter.',
   'sessions.heading': 'Sessions',

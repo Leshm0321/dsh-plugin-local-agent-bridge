@@ -149,6 +149,7 @@ served, the path field still works and the panel says so.
 | **Trace** | Where the time went and what each step did, derived from events the panel already holds |
 | **Composer** | Working directory and context above; permission mode, a file button and dictation below-left; usage allowance, model and send below-right. `/` for commands and skills, `@` for files, paste for images |
 | **Side panel** | The project's files with syntax colour, and what is uncommitted as a unified or side-by-side diff |
+| **Sessions** | Named after the first thing asked of them, filtered once the list grows, and badged on the sidebar entry when a turn finishes while the panel is shut |
 
 [Features](docs/en/features.md) covers all of it — including which parts each product can
 actually honour, and what the panel does where the two differ.
