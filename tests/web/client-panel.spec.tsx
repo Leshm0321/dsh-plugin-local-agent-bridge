@@ -33,6 +33,7 @@ const ICON_STUBS = vi.hoisted(() => [
   'IconCheckOutline16',
   'IconCodeOutline16',
   'IconEditOutline16',
+  'IconEllipsisOutline16',
   'IconDataOutline16',
   'IconFolderClose16',
   'IconFolderOpen16',
@@ -52,12 +53,31 @@ const ICON_STUBS = vi.hoisted(() => [
  * hook that does nothing would let the panel regress to popovers that never
  * close while the suite stayed green.
  */
-const HOOK_STUBS = vi.hoisted(() => ['RiskConfirmation', 'useDismissOnOutsidePointer'])
+const HOOK_STUBS = vi.hoisted(() => ['Menu', 'RiskConfirmation', 'useDismissOnOutsidePointer'])
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => {
   const react = await import('react')
   return {
     ...Object.fromEntries(ICON_STUBS.map(name => [name, () => null])),
+    /**
+     * Stands in for the anchored dropdown, keeping the part under test: the anchor
+     * is always rendered, and the rows exist only while it is open.
+     */
+    Menu: ({ open, anchor, items, onSelect }: {
+      open: boolean
+      anchor: unknown
+      items: readonly { id: string; label: unknown; type?: string }[]
+      onSelect: (id: string) => void
+    }) => react.createElement('span', {}, [
+      react.createElement('span', { key: 'anchor' }, anchor as never),
+      open
+        ? react.createElement('span', { key: 'list', role: 'menu' }, items
+          .filter(item => item.type !== 'separator')
+          .map(item => react.createElement('button', {
+            key: item.id, type: 'button', role: 'menuitem', onClick: () => { onSelect(item.id) },
+          }, item.label as never)))
+        : null,
+    ]),
     /**
      * Stands in for the real confirmation, keeping only the part under test: the
      * primary action stays unavailable until the acknowledgement is ticked.
@@ -144,6 +164,7 @@ const session: BridgeSessionView = {
   lastTurnId: null,
   queuedInputCount: 0,
   archived: false,
+  pinned: false,
   persistenceVersion: 1,
   contextUsage: null,
   permissionMode: 'auto',
@@ -236,6 +257,14 @@ class RemoteFixture {
   }))
   readonly sessionCancel = vi.fn(async () => ({ ok: true as const, value: undefined }))
   readonly sessionArchive = vi.fn(async () => ({ ok: true as const, value: { ...session, archived: true } }))
+  readonly sessionRename = vi.fn(async (_request: { bridgeSessionId: string; title: string }) => ({
+    ok: true as const,
+    value: session,
+  }))
+  readonly sessionPin = vi.fn(async (_request: { bridgeSessionId: string; pinned: boolean }) => ({
+    ok: true as const,
+    value: session,
+  }))
   readonly interactionRespond = vi.fn(async () => ({ ok: true as const, value: { accepted: true as const } }))
   readonly sessionCompletions = vi.fn(async () => ({
     ok: true as const,
@@ -624,6 +653,124 @@ describe('LocalAgentPanel', () => {
   })
 
 
+  it('gathers sessions under their directory and folds a group away', async () => {
+    const other = { ...session, bridgeSessionId: 'session-2', workspaceId: 'workspace-2', workspaceTitle: 'Other repo', title: 'other work' }
+    const sibling = { ...session, bridgeSessionId: 'session-3', title: 'sibling work' }
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session, sibling, other] })
+    fixture.pushRead(snapshot({}))
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    const list = within(document.querySelector('.lab-sessions') as HTMLElement)
+    // The directory says itself once, at the head of its group.
+    const head = list.getByRole('button', { name: /Fixture workspace/ })
+    expect(head.getAttribute('aria-expanded')).toBe('true')
+    expect(list.getByText('sibling work')).toBeTruthy()
+    expect(list.getByRole('button', { name: /Other repo/ })).toBeTruthy()
+
+    fireEvent.click(head)
+    // Folded: its rows are gone, and the other directory is untouched.
+    expect(head.getAttribute('aria-expanded')).toBe('false')
+    expect(list.queryByText('sibling work')).toBeNull()
+    expect(list.getByText('other work')).toBeTruthy()
+  })
+
+  it('renames a session from its row, and clears the name back to the placeholder', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({}))
+    fixture.sessionRename.mockResolvedValue({ ok: true, value: { ...session, title: 'retry policy work' } })
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(en['session.actions']) }))
+    fireEvent.click(screen.getByRole('menuitem', { name: en['session.rename'] }))
+
+    // Seeded with the current title, so a small correction is a small edit.
+    const field = screen.getByLabelText(en['session.rename']) as HTMLInputElement
+    expect(field.value).toBe(session.title)
+    fireEvent.change(field, { target: { value: 'retry policy work' } })
+    fireEvent.keyDown(field, { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(fixture.sessionRename).toHaveBeenCalledWith({
+        token: '',
+        bridgeSessionId: 'session-1',
+        title: 'retry policy work',
+      })
+    })
+    const list = within(document.querySelector('.lab-sessions') as HTMLElement)
+    await waitFor(() => { expect(list.getByText('retry policy work')).toBeTruthy() })
+  })
+
+  it('abandons a rename on Escape without asking the Host', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({}))
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(en['session.actions']) }))
+    fireEvent.click(screen.getByRole('menuitem', { name: en['session.rename'] }))
+    const field = screen.getByLabelText(en['session.rename'])
+    fireEvent.change(field, { target: { value: 'discard me' } })
+    fireEvent.keyDown(field, { key: 'Escape' })
+
+    // Escape closes the edit; the blur that follows must not then commit it.
+    fireEvent.blur(field)
+    await waitFor(() => { expect(screen.queryByLabelText(en['session.rename'])).toBeNull() })
+    expect(fixture.sessionRename).not.toHaveBeenCalled()
+    const list = within(document.querySelector('.lab-sessions') as HTMLElement)
+    expect(list.getByText(session.title)).toBeTruthy()
+  })
+
+  it('pins a session to the head of its group and lets it fall back', async () => {
+    const older = { ...session, bridgeSessionId: 'session-2', title: 'older work', updatedAt: 1 }
+    const newer = { ...session, bridgeSessionId: 'session-3', title: 'newer work', updatedAt: 9 }
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [newer, older] })
+    fixture.pushRead(snapshot({}))
+    fixture.sessionPin.mockResolvedValue({ ok: true, value: { ...older, pinned: true } })
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    const names = () => within(document.querySelector('.lab-sessions') as HTMLElement)
+      .getAllByText(/work$/).map(node => node.textContent)
+    expect(names()).toEqual(['newer work', 'older work'])
+
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`${en['session.actions']} — older work`) }))
+    fireEvent.click(screen.getByRole('menuitem', { name: en['session.pin'] }))
+
+    await waitFor(() => {
+      expect(fixture.sessionPin).toHaveBeenCalledWith({ token: '', bridgeSessionId: 'session-2', pinned: true })
+    })
+    // Moved without a refetch, by the Host's own rule: pinned first, then recency.
+    await waitFor(() => { expect(names()).toEqual(['older work', 'newer work']) })
+    // And the row menu now offers the way back.
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`${en['session.actions']} — older work`) }))
+    expect(screen.getByRole('menuitem', { name: en['session.unpin'] })).toBeTruthy()
+  })
+
+  it('archives a row the reader is not looking at without emptying the pane they are', async () => {
+    const other = { ...session, bridgeSessionId: 'session-2', title: 'not selected' }
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session, other] })
+    fixture.pushRead(snapshot({}))
+    renderPanel(fixture.remote())
+
+    // session-1 is the selection; archiving the other row must leave it alone.
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`${en['session.actions']} — not selected`) }))
+    fireEvent.click(screen.getByRole('menuitem', { name: en['session.archive'] }))
+
+    await waitFor(() => {
+      expect(within(document.querySelector('.lab-sessions') as HTMLElement).queryByText('not selected')).toBeNull()
+    })
+    expect(screen.getByPlaceholderText(en['composer.placeholder'])).toBeTruthy()
+  })
+
+
   it('filters a session list only once it is long enough to need it', async () => {
     const many = Array.from({ length: 6 }, (_, index) => ({
       ...session,
@@ -646,10 +793,10 @@ describe('LocalAgentPanel', () => {
     renderPanel(fixture.remote())
 
     const filter = await screen.findByPlaceholderText(en['sessions.filter'])
-    expect(screen.getByRole('button', { name: /unrelated work 3/ })).toBeTruthy()
+    expect(screen.getByText('unrelated work 3')).toBeTruthy()
     fireEvent.change(filter, { target: { value: 'retry' } })
-    expect(screen.getByRole('button', { name: /explain the retry policy/ })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /unrelated work 3/ })).toBeNull()
+    expect(screen.getByText('explain the retry policy')).toBeTruthy()
+    expect(screen.queryByText('unrelated work 3')).toBeNull()
 
     // A filter that matches nothing says so, rather than showing an empty column.
     fireEvent.change(filter, { target: { value: 'nothing here' } })

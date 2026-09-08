@@ -388,6 +388,8 @@ export interface BridgeSessionView {
   readonly lastTurnId: string | null
   readonly queuedInputCount: number
   readonly archived: boolean
+  /** Whether this session is held at the top of its working directory's group. */
+  readonly pinned: boolean
   readonly persistenceVersion: number
   /**
    * Latest context usage the product reported, or null before it has said
@@ -907,6 +909,15 @@ export interface BridgeModelRequest extends BridgeSessionIdRequest {
 
 export interface BridgeSessionArchiveRequest extends BridgeSessionIdRequest {
   readonly archived?: boolean
+}
+
+export interface BridgeSessionRenameRequest extends BridgeSessionIdRequest {
+  /** The new title. Empty clears it back to the placeholder. */
+  readonly title: string
+}
+
+export interface BridgeSessionPinRequest extends BridgeSessionIdRequest {
+  readonly pinned: boolean
 }
 
 export interface BridgeSessionReadRequest extends BridgeSessionIdRequest {

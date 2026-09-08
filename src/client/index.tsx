@@ -26,6 +26,7 @@ import {
   IconCloseOutline16,
   IconCodeOutline16,
   IconDataOutline16,
+  IconEllipsisOutline16,
   IconFolderClose16,
   IconFolderOpenOutline16,
   IconPanelLeftOutline16,
@@ -34,6 +35,7 @@ import {
   IconSendOutline16,
   IconSparkle16,
   IconStopFill16,
+  Menu,
   RiskConfirmation,
   useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -2314,6 +2316,11 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
   const [sideView, setSideView] = useState<'files' | 'diff'>('files')
   const [traceQuery, setTraceQuery] = useState('')
   const [sessionQuery, setSessionQuery] = useState('')
+  /** Working directories whose group the reader has folded shut. */
+  const [foldedGroups, setFoldedGroups] = useState<readonly string[]>([])
+  const [rowMenuFor, setRowMenuFor] = useState<string>()
+  const [renamingId, setRenamingId] = useState<string>()
+  const [renameDraft, setRenameDraft] = useState('')
   /** Sessions that finished while the panel was shut, and so are news on return. */
   const [settled, setSettled] = useState<readonly string[]>([])
   const [notifyArmed, setNotifyArmed] = useState(notificationsArmed)
@@ -2639,6 +2646,26 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
     return sessions.filter(session => [session.title, session.workspaceTitle, session.providerId]
       .some(field => field.toLowerCase().includes(needle)))
   }, [sessions, sessionQuery, sessionFilterShown])
+
+  /**
+   * The visible sessions, gathered under the directory each one runs in.
+   *
+   * A flat list said the same directory over and over in every row's meta line and
+   * still left the reader scanning for the two sessions that belonged together.
+   * Group order follows first appearance, so the Host's ordering — pinned first,
+   * then most recently touched — decides which directory leads, and the rows inside
+   * keep it too.
+   */
+  const sessionGroups = useMemo(() => {
+    const groups = new Map<string, { id: string; title: string; entries: BridgeSessionView[] }>()
+    for (const entry of visibleSessions) {
+      const held = groups.get(entry.workspaceId)
+      if (held === undefined) {
+        groups.set(entry.workspaceId, { id: entry.workspaceId, title: entry.workspaceTitle, entries: [entry] })
+      } else held.entries.push(entry)
+    }
+    return [...groups.values()]
+  }, [visibleSessions])
   /**
    * Whether the newest row may still grow. Drives the typewriter reveal, which must
    * not animate a finished answer or a row restored from a transcript.
@@ -2911,11 +2938,50 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
    * untouched; only this bridge's view of it is archived.
    * @param bridgeSessionId - the session to archive.
    */
+  /** The Host's order, reapplied locally so a pin moves the row without a refetch. */
+  const inHostOrder = (entries: readonly BridgeSessionView[]): BridgeSessionView[] => [...entries]
+    .sort((left, right) => Number(right.pinned) - Number(left.pinned) || right.updatedAt - left.updatedAt)
+
+  /**
+   * Give a session a name, or clear it back to the placeholder.
+   * @param bridgeSessionId - the session to rename.
+   * @param title - the new title; empty clears it.
+   */
+  const renameSession = async (bridgeSessionId: string, title: string): Promise<void> => {
+    setRenamingId(undefined)
+    try {
+      const renamed = unwrap(await remote.sessionRename({ bridgeSessionId, title }))
+      setSessions(current => current.map(item => item.bridgeSessionId === bridgeSessionId ? renamed : item))
+      setSnapshot(current => current === undefined || current.session.bridgeSessionId !== bridgeSessionId
+        ? current
+        : { ...current, session: renamed })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  /**
+   * Hold a session at the top of its group, or let it fall back into order.
+   * @param bridgeSessionId - the session to pin or unpin.
+   * @param pinned - whether it should be held.
+   */
+  const pinSession = async (bridgeSessionId: string, pinned: boolean): Promise<void> => {
+    try {
+      const changed = unwrap(await remote.sessionPin({ bridgeSessionId, pinned }))
+      setSessions(current => inHostOrder(current.map(item => item.bridgeSessionId === bridgeSessionId ? changed : item)))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
   const archiveSelected = async (bridgeSessionId: string): Promise<void> => {
     try {
       unwrap(await remote.sessionArchive({ bridgeSessionId, archived: true }))
       setSessions(current => current.filter(item => item.bridgeSessionId !== bridgeSessionId))
-      setSelectedId(undefined)
+      // Only when the archived one was the selection. Reachable from a row menu now,
+      // and archiving a row the reader is not looking at must not empty the pane
+      // they are.
+      setSelectedId(current => current === bridgeSessionId ? undefined : current)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
@@ -3642,23 +3708,105 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                   {sessionFilterShown && visibleSessions.length === 0 && (
                     <p className="lab-browse-note">{t('sessions.filterEmpty')}</p>
                   )}
-                  {visibleSessions.map(session => (
-                    <button
-                      key={session.bridgeSessionId}
-                      type="button"
-                      className="lab-session"
-                      aria-current={selectedId === session.bridgeSessionId}
-                      onClick={() => { setSelectedId(session.bridgeSessionId) }}
-                    >
-                      <span className="lab-session-head">
-                        <span className="lab-session-name">{session.title}</span>
-                        <span className={BUSY_STATUSES.includes(session.status) ? 'lab-chip lab-chip--busy' : 'lab-chip'}>
-                          {t(`status.${session.status}`)}
-                        </span>
-                      </span>
-                      <span className="lab-session-meta">{session.workspaceTitle} · {session.providerId}</span>
-                    </button>
-                  ))}
+                  {sessionGroups.map((group) => {
+                    const folded = foldedGroups.includes(group.id)
+                    return (
+                      <div key={group.id} className="lab-session-group">
+                        {/* The directory says itself once, at the head, instead of in
+                            every row's meta line. */}
+                        <button
+                          type="button"
+                          className="lab-group-head"
+                          aria-expanded={!folded}
+                          onClick={() => {
+                            setFoldedGroups(current => folded
+                              ? current.filter(id => id !== group.id)
+                              : [...current, group.id])
+                          }}
+                        >
+                          <span className={folded ? 'lab-group-caret' : 'lab-group-caret lab-group-caret--open'}>›</span>
+                          <span className="lab-group-name" title={group.title}>{group.title}</span>
+                          <span className="lab-group-count">{group.entries.length}</span>
+                        </button>
+                        {!folded && group.entries.map(session => (
+                          <div
+                            key={session.bridgeSessionId}
+                            className={selectedId === session.bridgeSessionId ? 'lab-session-row lab-session-row--on' : 'lab-session-row'}
+                          >
+                            {renamingId === session.bridgeSessionId
+                              ? (
+                                <input
+                                  autoFocus
+                                  className="lab-input lab-session-rename"
+                                  value={renameDraft}
+                                  aria-label={t('session.rename')}
+                                  onChange={event => { setRenameDraft(event.target.value) }}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter') void renameSession(session.bridgeSessionId, renameDraft)
+                                    // Escape abandons the edit; the blur that follows
+                                    // must not then commit it, so the id goes first.
+                                    if (event.key === 'Escape') setRenamingId(undefined)
+                                  }}
+                                  onBlur={() => { void renameSession(session.bridgeSessionId, renameDraft) }}
+                                />
+                              )
+                              : (
+                                <button
+                                  type="button"
+                                  className="lab-session"
+                                  aria-current={selectedId === session.bridgeSessionId}
+                                  onClick={() => { setSelectedId(session.bridgeSessionId) }}
+                                >
+                                  <span className="lab-session-head">
+                                    {session.pinned && <span className="lab-session-pin" aria-label={t('session.pinned')}>●</span>}
+                                    <span className="lab-session-name">{session.title}</span>
+                                    <span className={BUSY_STATUSES.includes(session.status) ? 'lab-chip lab-chip--busy' : 'lab-chip'}>
+                                      {t(`status.${session.status}`)}
+                                    </span>
+                                  </span>
+                                  <span className="lab-session-meta">{session.providerId}</span>
+                                </button>
+                              )}
+                            {/* Portalled: the list scrolls inside a column whose
+                                overflow would crop an in-place card. */}
+                            <Menu
+                              portal
+                              compact
+                              open={rowMenuFor === session.bridgeSessionId}
+                              onClose={() => { setRowMenuFor(undefined) }}
+                              anchor={(
+                                <button
+                                  type="button"
+                                  className="lab-session-more"
+                                  aria-label={`${t('session.actions')} — ${session.title}`}
+                                  aria-haspopup="menu"
+                                  onClick={() => {
+                                    setRowMenuFor(current => current === session.bridgeSessionId ? undefined : session.bridgeSessionId)
+                                  }}
+                                >
+                                  <IconEllipsisOutline16 />
+                                </button>
+                              )}
+                              items={[
+                                { id: 'rename', label: t('session.rename') },
+                                { id: 'pin', label: session.pinned ? t('session.unpin') : t('session.pin') },
+                                { type: 'separator' as const, id: 'sep' },
+                                { id: 'archive', label: t('session.archive'), danger: true },
+                              ]}
+                              onSelect={(id) => {
+                                setRowMenuFor(undefined)
+                                if (id === 'rename') {
+                                  setRenameDraft(session.title)
+                                  setRenamingId(session.bridgeSessionId)
+                                } else if (id === 'pin') void pinSession(session.bridgeSessionId, !session.pinned)
+                                else if (id === 'archive') void archiveSelected(session.bridgeSessionId)
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
                 </div>
               </aside>
 

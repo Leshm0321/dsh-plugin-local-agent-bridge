@@ -27,6 +27,8 @@ import type {
   BridgeInteractionRespondResult,
   BridgeSendResult,
   BridgeSessionArchiveRequest,
+  BridgeSessionPinRequest,
+  BridgeSessionRenameRequest,
   BridgeSessionCreateRequest,
   BridgeSessionIdRequest,
   BridgeSessionReadRequest,
@@ -62,6 +64,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     sessionSend: (request: BridgeSessionSendRequest) => Promise<RemoteResult<BridgeSendResult>>
     sessionCancel: (request: BridgeSessionIdRequest) => Promise<RemoteResult<void>>
     sessionArchive: (request: BridgeSessionArchiveRequest) => Promise<RemoteResult<BridgeSessionView>>
+    sessionRename: (request: BridgeSessionRenameRequest) => Promise<RemoteResult<BridgeSessionView>>
+    sessionPin: (request: BridgeSessionPinRequest) => Promise<RemoteResult<BridgeSessionView>>
     interactionRespond: (
       request: BridgeInteractionRespondRequest,
     ) => Promise<RemoteResult<BridgeInteractionRespondResult>>
@@ -110,6 +114,12 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'localAgentBridge/sessionCancel': (request: BridgeSessionIdRequest) => Promise<RemoteResult<void>>
     'localAgentBridge/sessionArchive': (
       request: BridgeSessionArchiveRequest,
+    ) => Promise<RemoteResult<BridgeSessionView>>
+    'localAgentBridge/sessionRename': (
+      request: BridgeSessionRenameRequest,
+    ) => Promise<RemoteResult<BridgeSessionView>>
+    'localAgentBridge/sessionPin': (
+      request: BridgeSessionPinRequest,
     ) => Promise<RemoteResult<BridgeSessionView>>
     'localAgentBridge/interactionRespond': (
       request: BridgeInteractionRespondRequest,

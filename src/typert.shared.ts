@@ -156,6 +156,7 @@ const sessionSchema = z.object({
   lastTurnId: z.string().nullable(),
   queuedInputCount: z.number(),
   archived: z.boolean(),
+  pinned: z.boolean(),
   persistenceVersion: z.number(),
   contextUsage: contextUsageSchema.nullable(),
   permissionMode: permissionModeSchema,
@@ -436,6 +437,8 @@ const sendRequestSchema = sessionIdRequestSchema.extend({
   }).strict()).readonly().optional(),
 }).strict()
 const archiveRequestSchema = sessionIdRequestSchema.extend({ archived: z.boolean().optional() }).strict()
+const renameRequestSchema = sessionIdRequestSchema.extend({ title: z.string().max(256) }).strict()
+const pinRequestSchema = sessionIdRequestSchema.extend({ pinned: z.boolean() }).strict()
 const interactionResponseSchema = sessionIdRequestSchema.extend({
   interactionId: z.string(),
   resolution: z.union([
@@ -549,6 +552,8 @@ export const LOCAL_AGENT_BRIDGE_INVOCATIONS = [
   invocation('sessionSend', [parameter('request', sendRequestSchema)], sendResultSchema),
   invocation('sessionCancel', [parameter('request', sessionIdRequestSchema)], z.undefined()),
   invocation('sessionArchive', [parameter('request', archiveRequestSchema)], sessionSchema),
+  invocation('sessionRename', [parameter('request', renameRequestSchema)], sessionSchema),
+  invocation('sessionPin', [parameter('request', pinRequestSchema)], sessionSchema),
   invocation('interactionRespond', [parameter('request', interactionResponseSchema)], z.object({ accepted: z.literal(true) }).strict()),
   invocation('sessionCompletions', [parameter('request', sessionIdRequestSchema)], completionsResultSchema),
   invocation('nativeSessions', [parameter('request', nativeSessionsRequestSchema)], nativeSessionsResultSchema),

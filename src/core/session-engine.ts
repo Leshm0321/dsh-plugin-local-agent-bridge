@@ -146,6 +146,7 @@ function sessionView(record: PersistedBridgeSession): BridgeSessionView {
     lastTurnId: record.lastTurnId,
     queuedInputCount: record.queuedInputs.length,
     archived: record.archived,
+    pinned: record.pinned ?? false,
     persistenceVersion: record.persistenceVersion,
     contextUsage: record.contextUsage ?? null,
     // `auto` is the default both products ship with, and the mode a record
@@ -255,7 +256,11 @@ export class BridgeSessionEngine {
     return [...this.sessions.values()]
       .map(runtime => runtime.record)
       .filter(record => includeArchived || !record.archived)
-      .sort((left, right) => right.updatedAt - left.updatedAt)
+      // Pinned first, then most recently touched. Order is decided here rather
+      // than in the panel so every reader of this list agrees on it, and so a pin
+      // survives a reload with nothing on the browser side to remember.
+      .sort((left, right) => Number(right.pinned ?? false) - Number(left.pinned ?? false)
+        || right.updatedAt - left.updatedAt)
       .map(sessionView)
   }
 
@@ -392,6 +397,40 @@ export class BridgeSessionEngine {
     const runtime = this.requireSession(bridgeSessionId)
     runtime.record.archived = archived
     await this.touch(runtime)
+    return sessionView(runtime.record)
+  }
+
+  /**
+   * Give a session a name of the operator's own.
+   *
+   * Trimmed, redacted and capped like every other string entering a record. An
+   * empty title is a request to go back to being unnamed, not a session called
+   * nothing — so it resets to the placeholder, which the next input is then free
+   * to replace again.
+   * @param bridgeSessionId - the session to rename.
+   * @param title - the new title, or empty to clear it.
+   * @returns the renamed session.
+   */
+  async renameSession(bridgeSessionId: string, title: string): Promise<BridgeSessionView> {
+    const runtime = this.requireSession(bridgeSessionId)
+    const trimmed = title.trim()
+    runtime.record.title = trimmed === ''
+      ? placeholderSessionTitle(runtime.record.providerId, runtime.record.workspaceTitle)
+      : redactText(trimmed, 256)
+    await this.store(runtime)
+    return sessionView(runtime.record)
+  }
+
+  /**
+   * Hold a session at the top of its group, or let it fall back into order.
+   * @param bridgeSessionId - the session to pin or unpin.
+   * @param pinned - whether it should be held.
+   * @returns the session.
+   */
+  async pinSession(bridgeSessionId: string, pinned: boolean): Promise<BridgeSessionView> {
+    const runtime = this.requireSession(bridgeSessionId)
+    runtime.record.pinned = pinned
+    await this.store(runtime)
     return sessionView(runtime.record)
   }
 
@@ -1138,6 +1177,20 @@ export class BridgeSessionEngine {
 
   private async touch(runtime: RuntimeSession): Promise<void> {
     runtime.record.updatedAt = Date.now()
+    await this.store(runtime)
+  }
+
+  /**
+   * Persist a record without claiming the session was active.
+   *
+   * `updatedAt` is what orders the list, so it must mean "something happened in
+   * this session" and nothing else. Labelling one — a rename, a pin — is a change
+   * to the row, not activity in it, and bumping the clock for it moved the row to
+   * the top: unpinning in particular sent a session straight back to the head it
+   * had just been released from.
+   * @param runtime - the session whose record to write.
+   */
+  private async store(runtime: RuntimeSession): Promise<void> {
     runtime.record.persistenceVersion += 1
     await this.persistence.put(runtime.record)
   }

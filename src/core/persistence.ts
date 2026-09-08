@@ -39,6 +39,11 @@ export interface PersistedBridgeSession {
    * version deliberately does not move for that.
    */
   contextUsage?: BridgeContextUsage | null
+  /**
+   * Whether this session is held at the top of its group. Absent on records
+   * written before it existed, which is the same as not pinned.
+   */
+  pinned?: boolean
   /** Permission mode; absent on records written before it existed. */
   permissionMode?: BridgePermissionMode
   /** Requested model, or absent/null for the product's own default. */

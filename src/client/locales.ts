@@ -257,6 +257,11 @@ export const zh = {
   'session.cancel': '中止当前轮',
   'handoff.to': '交给 {name}',
   'handoff.hint': '在同一个工作目录里用 {name} 新开一个会话，并把上一条提问带进输入框 — 不会自动发送。',
+  'session.actions': '这个会话的操作',
+  'session.rename': '重命名',
+  'session.pin': '置顶',
+  'session.unpin': '取消置顶',
+  'session.pinned': '已置顶',
   'session.archive': '归档',
 
   // Composer.
@@ -628,6 +633,11 @@ export const en = {
   'session.cancel': 'Cancel turn',
   'handoff.to': 'Hand to {name}',
   'handoff.hint': 'Start a session on {name} in the same directory, with the last thing you asked carried into the composer — not sent.',
+  'session.actions': 'Actions for this session',
+  'session.rename': 'Rename',
+  'session.pin': 'Pin to top',
+  'session.unpin': 'Unpin',
+  'session.pinned': 'Pinned',
   'session.archive': 'Archive',
 
   'composer.placeholder': 'Send to the native agent on the host…',

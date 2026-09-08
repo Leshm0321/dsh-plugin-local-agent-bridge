@@ -471,6 +471,54 @@ export const PANEL_STYLES = `
   cursor: pointer;
   transition: background var(--lab-fast) var(--lab-ease);
 }
+
+/* One directory, its sessions under it. The head carries the name the rows used to
+   repeat, and folds the group away when the reader is done with it. */
+.lab-session-group { display: grid; gap: 2px; }
+.lab-group-head {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--lab-text-3);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+.lab-group-head:hover { color: var(--lab-text-2); }
+.lab-group-caret { flex: none; transition: transform 140ms ease; }
+.lab-group-caret--open { transform: rotate(90deg); }
+.lab-group-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lab-group-count { flex: none; font-variant-numeric: tabular-nums; }
+
+/* The row is the button plus its menu trigger; the trigger only appears on hover or
+   focus, so an idle list stays as quiet as it was before it grew actions. */
+.lab-session-row { position: relative; display: flex; align-items: stretch; }
+.lab-session-row > .lab-session { flex: 1 1 auto; min-width: 0; }
+.lab-session-more {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--lab-text-3);
+  flex: none;
+  width: 24px;
+  border-radius: var(--lab-r-sm, 6px);
+  cursor: pointer;
+  opacity: 0;
+  display: grid;
+  place-items: center;
+}
+.lab-session-row:hover .lab-session-more,
+.lab-session-row--on .lab-session-more,
+.lab-session-more:focus-visible { opacity: 1; }
+.lab-session-more:hover { color: var(--lab-text); background: var(--lab-hover, transparent); }
+.lab-session-pin { flex: none; font-size: 8px; color: var(--lab-accent, var(--lab-text-3)); }
+.lab-session-rename { margin: 2px 0; }
 .lab-session:hover { background: var(--lab-hover); }
 .lab-session[aria-current='true'] {
   background: var(--lab-surface);

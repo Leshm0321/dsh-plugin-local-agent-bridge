@@ -173,6 +173,8 @@ describe('Typert descriptors', () => {
       'sessionSend',
       'sessionCancel',
       'sessionArchive',
+      'sessionRename',
+      'sessionPin',
       'interactionRespond',
       'sessionCompletions',
       'nativeSessions',

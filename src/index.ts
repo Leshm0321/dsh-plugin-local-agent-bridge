@@ -43,6 +43,8 @@ import type {
   BridgeInteractionRespondResult,
   BridgeSendResult,
   BridgeSessionArchiveRequest,
+  BridgeSessionPinRequest,
+  BridgeSessionRenameRequest,
   BridgeSessionCreateRequest,
   BridgeSessionIdRequest,
   BridgeHostListRequest,
@@ -475,6 +477,18 @@ export class LocalAgentBridgeService extends TypertRemoteService {
   async sessionArchive(request: BridgeSessionArchiveRequest): Promise<BridgeSessionView> {
     this.requireGate().authorize(request.token)
     return await this.requireEngine().archiveSession(request.bridgeSessionId, request.archived ?? true)
+  }
+
+  @Remote('sessionRename')
+  async sessionRename(request: BridgeSessionRenameRequest): Promise<BridgeSessionView> {
+    this.requireGate().authorize(request.token)
+    return await this.requireEngine().renameSession(request.bridgeSessionId, request.title)
+  }
+
+  @Remote('sessionPin')
+  async sessionPin(request: BridgeSessionPinRequest): Promise<BridgeSessionView> {
+    this.requireGate().authorize(request.token)
+    return await this.requireEngine().pinSession(request.bridgeSessionId, request.pinned)
   }
 
   @Remote('sessionCompletions')

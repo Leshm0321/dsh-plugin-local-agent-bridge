@@ -172,6 +172,85 @@ describe('BridgeSessionEngine with FakeProviderAdapter', () => {
     await engine.dispose()
   })
 
+  it('renames a session, and an empty name returns it to the placeholder', async () => {
+    const { engine, memory } = await createEngine()
+    const created = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id })
+
+    const named = await engine.renameSession(created.bridgeSessionId, '  retry policy work  ')
+    expect(named.title).toBe('retry policy work')
+    expect(memory.snapshot(created.bridgeSessionId).title).toBe('retry policy work')
+
+    // A name the operator set outranks the first ask, so sending now must not
+    // overwrite it.
+    await engine.send(created.bridgeSessionId, 'explain the retry policy')
+    await waitFor(engine, created.bridgeSessionId, result => result.session.status === 'idle')
+    expect(memory.snapshot(created.bridgeSessionId).title).toBe('retry policy work')
+
+    // Cleared is a request to be unnamed again, not a session called nothing — and
+    // the next ask is then free to name it.
+    const cleared = await engine.renameSession(created.bridgeSessionId, '   ')
+    expect(cleared.title).toBe('Fixture - Fixture workspace')
+    await engine.send(created.bridgeSessionId, 'and now timeouts')
+    await waitFor(engine, created.bridgeSessionId, result => result.session.status === 'idle')
+    expect(memory.snapshot(created.bridgeSessionId).title).toBe('and now timeouts')
+    await engine.dispose()
+  })
+
+  it('lists pinned sessions ahead of recency, and lets a pin be taken back', async () => {
+    const { engine, memory } = await createEngine()
+    const older = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id, title: 'older' })
+    const newer = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id, title: 'newer' })
+
+    // Touched rather than merely created: two creations land inside one millisecond,
+    // so recency only becomes a real ordering once something has happened in one.
+    await engine.send(newer.bridgeSessionId, 'a turn')
+    await waitFor(engine, newer.bridgeSessionId, result => result.session.status === 'idle')
+
+    // Most recently touched leads, which is the rule a pin has to beat.
+    expect(engine.list().map(entry => entry.title)).toEqual(['newer', 'older'])
+    expect(engine.list().every(entry => !entry.pinned)).toBe(true)
+
+    const pinned = await engine.pinSession(older.bridgeSessionId, true)
+    expect(pinned.pinned).toBe(true)
+    expect(memory.snapshot(older.bridgeSessionId).pinned).toBe(true)
+    expect(engine.list().map(entry => entry.title)).toEqual(['older', 'newer'])
+
+    // Order is decided here rather than in the panel, so it survives a reload with
+    // nothing on the browser side to remember.
+    await engine.pinSession(older.bridgeSessionId, false)
+    expect(engine.list().map(entry => entry.title)).toEqual(['newer', 'older'])
+    await engine.dispose()
+  })
+
+  it('does not count labelling a session as activity in it', async () => {
+    const { engine } = await createEngine()
+    const older = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id, title: 'older' })
+    const newer = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id, title: 'newer' })
+    await engine.send(newer.bridgeSessionId, 'a turn')
+    await waitFor(engine, newer.bridgeSessionId, result => result.session.status === 'idle')
+    const settled = engine.list().map(entry => entry.title)
+
+    // updatedAt orders the list, so it has to mean "something happened in this
+    // session" and nothing else. Renaming and pinning change the row, not the
+    // session — and bumping the clock for them sent an unpinned row straight back
+    // to the head it had just been released from.
+    await engine.renameSession(older.bridgeSessionId, 'renamed')
+    await engine.pinSession(older.bridgeSessionId, true)
+    await engine.pinSession(older.bridgeSessionId, false)
+    expect(engine.list().map(entry => entry.title)).toEqual(settled.map(title => title === 'older' ? 'renamed' : title))
+    await engine.dispose()
+  })
+
+  it('reads a record written before pinning existed as unpinned', async () => {
+    const { engine } = await createEngine()
+    const created = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id })
+    // The field is additive: an older record simply has no answer, which is the
+    // same as not pinned, and the domain version deliberately does not move for it.
+    expect(created.pinned).toBe(false)
+    await engine.dispose()
+  })
+
+
   it('names a session after its first ask, and leaves a given name alone', async () => {
     const { engine, memory } = await createEngine()
     const session = await engine.createSession({ providerId: 'fake', workspaceId: workspace.id })
