@@ -145,9 +145,9 @@ served, the path field still works and the panel says so.
 
 | | |
 | --- | --- |
-| **Conversation** | The transcript, as question / work / answer. A finished turn's tool calls and thinking fold into one line, markdown renders, and text reveals as it streams |
+| **Conversation** | The transcript, as question / work / answer. A finished turn's tool calls and thinking fold into one line, markdown renders, and text reveals as it streams. A session that has been asked nothing opens with what it will run as — product, directory, permission mode — and the three composer keys |
 | **Trace** | Where the time went and what each step did, derived from events the panel already holds |
-| **Composer** | Working directory and context above; permission mode, a file button and dictation below-left; usage allowance, model and send below-right. `/` for commands and skills, `@` for files, paste for images |
+| **Composer** | Working directory, spend and context above, each labelled; permission mode, a file button and dictation below-left; usage allowance, the model actually in force and send below-right. `/` for commands and skills, `@` for files, paste for images |
 | **Side panel** | The project's files with syntax colour, and what is uncommitted as a unified or side-by-side diff |
 | **Sessions** | Named after the first thing asked of them, filtered once the list grows, and badged on the sidebar entry when a turn finishes while the panel is shut |
 

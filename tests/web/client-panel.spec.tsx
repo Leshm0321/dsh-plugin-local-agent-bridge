@@ -1354,6 +1354,74 @@ describe('LocalAgentPanel', () => {
     expect(screen.getByText(en['create.heading'])).toBeTruthy()
   })
 
+  it('names the model the product resolved to instead of calling it a default', async () => {
+    // Claude Code cannot enumerate its models until some session has run a turn, so
+    // the picker is dead exactly when the turn that ran already knows the answer.
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.sessionModels.mockResolvedValue({ ok: true, value: { models: [], unavailable: true } })
+    fixture.pushRead(snapshot({
+      session: {
+        ...session,
+        model: null,
+        contextUsage: { usedTokens: 1_000, maxTokens: 200_000, model: 'claude-opus-5' },
+      },
+      events: [],
+      latestSequence: 0,
+    }))
+    renderPanel(fixture.remote())
+
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    expect(screen.getByText('claude-opus-5')).toBeTruthy()
+    expect(screen.queryByText(en['model.default'])).toBeNull()
+    cleanup()
+
+    // Before any turn there is nothing to resolve, and guessing would be worse than
+    // the generic answer.
+    const fresh = new RemoteFixture()
+    fresh.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fresh.sessionModels.mockResolvedValue({ ok: true, value: { models: [], unavailable: true } })
+    fresh.pushRead(snapshot({
+      session: { ...session, model: null, contextUsage: null },
+      events: [],
+      latestSequence: 0,
+    }))
+    renderPanel(fresh.remote())
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    expect(screen.getByText(en['model.default'])).toBeTruthy()
+  })
+
+  it('opens a session with the facts a first prompt depends on', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      session: { ...session, permissionMode: 'manual' },
+      events: [],
+      latestSequence: 0,
+    }))
+    renderPanel(fixture.remote())
+
+    const lead = await screen.findByText(en['opening.lead'])
+    // Scoped to the card: the product name also sits in the new-session form on the
+    // left, and that form describes the *next* session rather than this one — which
+    // is the whole reason this session states its own.
+    const opening = within(lead.parentElement as HTMLElement)
+    expect(opening.getByText('Codex 0.147.0')).toBeTruthy()
+    // Whether a tool call stops to ask is the difference between watching and
+    // walking away, so the mode in force is stated rather than left to the toolbar.
+    expect(opening.getByText(en['mode.manual'])).toBeTruthy()
+    expect(opening.getByText(new RegExp(en['opening.slash']))).toBeTruthy()
+
+    // And it is scaffolding, not transcript: the first turn replaces it.
+    fixture.pushRead(snapshot({
+      events: [event(1, { type: 'bridge/text-delta', data: { text: 'working', itemId: 'a' } })],
+      latestSequence: 1,
+    }))
+    await screen.findByText('working')
+    await waitFor(() => { expect(screen.queryByText(en['opening.lead'])).toBeNull() })
+  })
+
+
   it('shows context usage, and degrades to a raw count without a window', async () => {
     const fixture = new RemoteFixture()
     fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
@@ -1367,8 +1435,10 @@ describe('LocalAgentPanel', () => {
     }))
     renderPanel(fixture.remote())
 
-    // Counts are compacted so the status line stops resizing on every delta.
-    expect(await screen.findByText('43k / 200k (21%)')).toBeTruthy()
+    // Counts are compacted so the status line stops resizing on every delta, and
+    // each of the two numbers in that line says which question it answers — bare,
+    // side by side, they read as one soup.
+    expect(await screen.findByText('context 43k / 200k (21%)')).toBeTruthy()
     const meter = screen.getByRole('progressbar', { name: en['usage.title'] })
     expect(meter.getAttribute('aria-valuenow')).toBe('21')
     cleanup()
@@ -1382,7 +1452,7 @@ describe('LocalAgentPanel', () => {
       latestSequence: 0,
     }))
     renderPanel(noWindow.remote())
-    expect(await screen.findByText('900 tokens')).toBeTruthy()
+    expect(await screen.findByText('context 900')).toBeTruthy()
     expect(screen.queryByRole('progressbar')).toBeNull()
   })
 

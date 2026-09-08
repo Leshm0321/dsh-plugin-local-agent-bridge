@@ -1311,6 +1311,35 @@ body[data-ds-dark-theme] .lab-code {
 }
 .lab-stream { max-width: 860px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 
+/* The opening card. Quiet on purpose: it is scaffolding for the first prompt, not
+   a thing to read twice, and it is gone the moment a turn exists. */
+.lab-opening {
+  border: var(--lab-hairline) solid var(--lab-line);
+  border-radius: var(--lab-r-card);
+  padding: 16px 18px;
+  color: var(--lab-text-2);
+}
+.lab-opening-lead { margin: 0 0 12px; font-size: 13px; }
+.lab-opening-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 0 0 14px;
+  font-size: 12px;
+}
+.lab-opening-facts dt { color: var(--lab-text-3); }
+.lab-opening-facts dd { margin: 0; color: var(--lab-text); overflow-wrap: anywhere; }
+.lab-opening-keys { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; font-size: 12px; }
+.lab-opening-keys code {
+  font-family: var(--lab-mono);
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--lab-surface-2, var(--lab-surface));
+  border: var(--lab-hairline) solid var(--lab-line);
+}
+/* A model this panel did not choose reads as inherited rather than set. */
+.lab-model-name--inherited { color: var(--lab-text-3); }
+
 .lab-row-card {
   border-radius: var(--lab-r-card);
   padding: 10px 13px;

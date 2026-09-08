@@ -789,6 +789,54 @@ function DirectoryBrowser({
 }
 
 /**
+ * What a session shows before anything has happened in it.
+ *
+ * A blank transcript above a placeholder is not a starting point: it says the
+ * panel is idle without saying what it is idle *about*. So the facts a first
+ * prompt depends on, which are otherwise scattered or absent — the product and
+ * version actually behind this session, the directory it will run in, the
+ * permission mode in force — and the three composer keys nobody discovers by
+ * looking. The mode is the one worth stating plainly: whether a tool call will
+ * stop and ask is the difference between watching and walking away.
+ */
+function SessionOpening({
+  product,
+  version,
+  workspace,
+  mode,
+  t,
+}: {
+  product: string | null
+  version: string | null
+  workspace: string
+  mode: string
+  t: PanelTranslate
+}) {
+  return (
+    <div className="lab-opening">
+      <p className="lab-opening-lead">{t('opening.lead')}</p>
+      <dl className="lab-opening-facts">
+        {product !== null && (
+          <>
+            <dt>{t('opening.product')}</dt>
+            <dd>{version === null ? product : `${product} ${version}`}</dd>
+          </>
+        )}
+        <dt>{t('opening.where')}</dt>
+        <dd>{workspace}</dd>
+        <dt>{t('opening.mode')}</dt>
+        <dd>{mode}</dd>
+      </dl>
+      <ul className="lab-opening-keys">
+        <li><code>/</code> {t('opening.slash')}</li>
+        <li><code>@</code> {t('opening.at')}</li>
+        <li>{t('opening.paste')}</li>
+      </ul>
+    </div>
+  )
+}
+
+/**
  * A turn's work, foldable, with the answer beneath it.
  *
  * Open while the turn runs, because that is when watching it is the point, and
@@ -1419,6 +1467,7 @@ function ModelPicker({
   result,
   supported,
   model,
+  resolved,
   effort,
   disabled,
   t,
@@ -1427,6 +1476,11 @@ function ModelPicker({
   result: BridgeModelsResult
   supported: boolean
   model: string | null
+  /**
+   * The model the product reported actually using, when it has. Only meaningful
+   * while nothing has been chosen: it is what "product default" resolves to.
+   */
+  resolved: string | null
   effort: string | null
   disabled: boolean
   t: PanelTranslate
@@ -1439,16 +1493,24 @@ function ModelPicker({
   if (result.unavailable || result.models.length === 0) {
     return (
       <span className="lab-model" ref={root}>
-        <button type="button" className="lab-model-trigger" disabled title={t('model.unavailable')}>
+        <button
+          type="button"
+          className="lab-model-trigger"
+          disabled
+          title={resolved === null ? t('model.unavailable') : t('model.resolved', { name: resolved })}
+        >
           <IconSparkle16 size={14} />
-          <span className="lab-model-name">{t('model.default')}</span>
+          <span className={resolved === null ? 'lab-model-name' : 'lab-model-name lab-model-name--inherited'}>
+            {resolved ?? t('model.default')}
+          </span>
         </button>
       </span>
     )
   }
   const active = result.models.find(entry => entry.id === model)
+  const inherited = active === undefined && resolved !== null
   const label = active === undefined
-    ? t('model.default')
+    ? resolved ?? t('model.default')
     : effort === null ? active.displayName : `${active.displayName} · ${effortLabel(t, effort)}`
   return (
     <span className="lab-model" ref={root} onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }}>
@@ -1458,11 +1520,11 @@ function ModelPicker({
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={disabled}
-        title={t('model.label')}
+        title={inherited ? t('model.resolved', { name: resolved ?? '' }) : t('model.label')}
         onClick={() => { setOpen(current => !current) }}
       >
         <IconSparkle16 size={14} />
-        <span className="lab-model-name">{label}</span>
+        <span className={inherited ? 'lab-model-name lab-model-name--inherited' : 'lab-model-name'}>{label}</span>
       </button>
       {open && (
         <div className="lab-model-menu" role="menu" aria-label={t('model.label')}>
@@ -1475,7 +1537,9 @@ function ModelPicker({
           >
             <span className="lab-model-option-name">{t('model.default')}</span>
             {model === null && <span className="lab-model-check">✓</span>}
-            <span className="lab-model-option-hint">{t('model.defaultHint')}</span>
+            <span className="lab-model-option-hint">
+              {resolved === null ? t('model.defaultHint') : t('model.defaultResolved', { name: resolved })}
+            </span>
           </button>
           {result.models.map(entry => (
             <div key={entry.id} className="lab-model-group">
@@ -3610,6 +3674,15 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                 >
                   {error !== undefined && <div className="lab-error-banner">{error}</div>}
                   <div className="lab-stream">
+                    {snapshot !== undefined && nodes.length === 0 && (
+                      <SessionOpening
+                        product={sessionProvider?.displayName ?? null}
+                        version={sessionProvider?.version ?? null}
+                        workspace={snapshot.session.workspaceTitle}
+                        mode={t(`mode.${snapshot.session.permissionMode}`)}
+                        t={t}
+                      />
+                    )}
                     {nodes.map((node, index) => node.kind === 'row'
                       ? (
                         <TimelineEntry
@@ -3816,6 +3889,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                           result={models}
                           supported={sessionProvider?.selectableModels === true}
                           model={snapshot.session.model}
+                          resolved={snapshot.session.contextUsage?.model ?? null}
                           effort={snapshot.session.effort}
                           disabled={BUSY_STATUSES.includes(snapshot.session.status)}
                           t={t}
