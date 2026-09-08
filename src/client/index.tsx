@@ -199,13 +199,16 @@ interface WorkspaceRegistrar {
   pick(): Promise<string | null>
 }
 
+/** The Client service owning the Host's directory operations. */
+type UiWorkspaceOwner = NonNullable<ClientContext['uiWorkspace']>
+
 /**
  * One directory level as the Host reports it, derived from the UI Workspace
  * service rather than imported from `@deepseek-ai/dsh-api-remotes`, which the
  * service's own declarations already oblige us to depend on. Deriving it means
  * the panel cannot drift from what the Host actually returns.
  */
-type DirectoryListing = Awaited<ReturnType<ClientContext['uiWorkspace']['listDirectory']>>
+type DirectoryListing = Awaited<ReturnType<UiWorkspaceOwner['listDirectory']>>
 
 /**
  * An image waiting in the composer.
@@ -3726,6 +3729,20 @@ export function apply(ctx: ClientContext): void {
   // key parity fails the build rather than falling back at runtime. The
   // disposer releases the namespace on unload, leaving it free for a reload.
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'local-agent-bridge: dictionaries')
+
+  /**
+   * The Client owner of the Host's directory operations, or a rejection.
+   *
+   * A Profile that composes no directory picker leaves `remote.directoryPicker`
+   * unmet, so this owner never activates and the two directory routes have
+   * nowhere to land. That is a supported composition, not a fault.
+   */
+  const requireDirectoryOwner = (): UiWorkspaceOwner => {
+    const owner = ctx.get('uiWorkspace')
+    if (owner === undefined) throw new Error('this Profile composes no directory picker')
+    return owner
+  }
+
   ctx.inject(['slots', 'remote.localAgentBridge'], (scope) => {
     scope.slots.inject('sidebar.footer.action', () => scope.slots.register({
       name: 'sidebar.footer.action',
@@ -3744,8 +3761,18 @@ export function apply(ctx: ClientContext): void {
           // capability kind is not in host.describe, and both methods exist on
           // the service regardless — so the panel probes with a listing read,
           // which has no side effect, and falls back to the native chooser.
-          list: path => scope.uiWorkspace.listDirectory(path),
-          pick: () => scope.uiWorkspace.pickDirectory(),
+          //
+          // Read through `get` rather than the context proxy, and not through
+          // this fiber's inject list. The directory owner activates only where
+          // the Profile composes a picker, and cordis answers a plain
+          // `scope.uiWorkspace` on an unprovided service by throwing
+          // `without inject` — indistinguishable, at the probe, from a Host
+          // that refuses the route. Injecting it instead would take the whole
+          // panel down with the picker. So absence stays a rejection the probe
+          // reads as "this Profile does not serve browsing", and the path
+          // field carries on.
+          list: path => requireDirectoryOwner().listDirectory(path),
+          pick: () => requireDirectoryOwner().pickDirectory(),
         },
       }),
     }, LocalAgentPanel))
