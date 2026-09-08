@@ -1391,6 +1391,60 @@ describe('LocalAgentPanel', () => {
     expect(screen.getByText(en['model.default'])).toBeTruthy()
   })
 
+  it('hands a session to the other product carrying the last ask, without sending it', async () => {
+    const claude = {
+      ...catalog.providers[0]!,
+      id: 'claude' as const,
+      displayName: 'Claude Code',
+      version: '2.1.261',
+    }
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.catalog.mockResolvedValue({ ok: true, value: { ...catalog, providers: [...catalog.providers, claude] } })
+    fixture.pushRead(snapshot({
+      events: [
+        event(1, { type: 'bridge/user-message', data: { text: 'first ask', delivery: 'started' } }),
+        event(2, { type: 'bridge/user-message', data: { text: 'the ask that got stuck', delivery: 'started' } }),
+      ],
+      latestSequence: 2,
+    }))
+    const handed: BridgeSessionView = { ...session, bridgeSessionId: 'session-2', providerId: 'claude', title: 'Claude Code - Fixture workspace' }
+    fixture.sessionCreate.mockResolvedValue({ ok: true, value: handed })
+    renderPanel(fixture.remote())
+
+    await screen.findByText('the ask that got stuck')
+    fireEvent.click(screen.getByRole('button', { name: /Hand to Claude Code/ }))
+
+    // Same directory, the other product. A native session cannot be moved between
+    // two separate processes, so this is a fresh one alongside.
+    await waitFor(() => {
+      expect(fixture.sessionCreate).toHaveBeenCalledWith({
+        token: '',
+        providerId: 'claude',
+        workspaceId: session.workspaceId,
+      })
+    })
+
+    // Carried into the composer, not sent: one click must not spend the other
+    // product's allowance, and the prompt that got stuck is the one worth editing.
+    const composer = await screen.findByPlaceholderText(en['composer.placeholder']) as HTMLTextAreaElement
+    await waitFor(() => { expect(composer.value).toBe('the ask that got stuck') })
+    expect(fixture.sessionSend).not.toHaveBeenCalled()
+  })
+
+  it('offers no handoff where there is nowhere to hand a session to', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({}))
+    renderPanel(fixture.remote())
+
+    // One product installed is the common case, and there the move would be a dead
+    // button on every session.
+    await screen.findByPlaceholderText(en['composer.placeholder'])
+    expect(screen.queryByRole('button', { name: /Hand to/ })).toBeNull()
+  })
+
+
   it('explains the resume route without making the reader open it', async () => {
     const fixture = new RemoteFixture()
     fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })

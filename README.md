@@ -32,6 +32,9 @@ launching the `claude` executable resolved from the Host `PATH`.
   Code or Codex permission config.
 - **Continue what you started in a terminal.** Pick up an existing native session
   from the browser.
+- **Hand the work to the other product.** One click starts a session on the other
+  installed product, in the same directory, with your last ask carried into the
+  composer — not sent. Same machine, same repository, two agents.
 - **Chinese and English**, following the Harness language preference.
 - **Follows the Harness theme**, light and dark.
 

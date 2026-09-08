@@ -2726,6 +2726,14 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
     ? undefined
     : allProviders.find(provider => provider.id === snapshot.session.providerId)
   const sessionModes = sessionProvider?.permissionModes ?? []
+  /**
+   * Products this session could be handed to: ready, and not the one it is already
+   * on. Empty where only one product is installed, which is the common case and
+   * where offering the move would be noise.
+   */
+  const handoffTargets = snapshot === undefined
+    ? []
+    : allProviders.filter(provider => provider.health === 'ready' && provider.id !== snapshot.session.providerId)
   const readyWorkspaces = allWorkspaces.filter(workspace => workspace.status === 'ok')
 
   /**
@@ -2856,6 +2864,41 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
       }))
       setSessions(current => [created, ...current])
       setSelectedId(created.bridgeSessionId)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * Start the same work on the other product, in the same directory.
+   *
+   * A native session cannot be moved between products — they are separate
+   * processes with their own state — so this is the honest version of a handoff:
+   * a fresh session on the other product, in the same directory, with the last
+   * thing asked carried into the composer.
+   *
+   * Carried into the composer rather than sent. One click should not spend the
+   * other product's allowance on the reader's behalf, and the prompt that got
+   * stuck is usually the one worth editing before trying again.
+   * @param target - the product to start on.
+   */
+  const handOff = async (target: NativeProviderView['id']): Promise<void> => {
+    if (snapshot === undefined) return
+    const carried = [...rows].reverse().find(row => row.kind === 'user')?.text ?? ''
+    setBusy(true)
+    try {
+      const created = unwrap(await remote.sessionCreate({
+        providerId: target,
+        workspaceId: snapshot.session.workspaceId,
+      }))
+      setSessions(current => [created, ...current])
+      setSelectedId(created.bridgeSessionId)
+      setDraft(carried)
+      // The picker above follows, so a second handoff starts from where the
+      // reader now is rather than from where they were two sessions ago.
+      setProviderId(target)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -3638,6 +3681,19 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                       >
                         <IconStopFill16 /> {t('session.cancel')}
                       </ActionButton>
+                      {/* Only where there is somewhere to hand it to. With one
+                          product installed this is every session's dead button. */}
+                      {handoffTargets.map(target => (
+                        <ActionButton
+                          key={target.id}
+                          disabled={busy}
+                          title={t('handoff.hint', { name: target.displayName })}
+                          onClick={() => { void handOff(target.id) }}
+                        >
+                          {target.id === 'claude' ? <IconSparkle16 size={14} /> : <IconCodeOutline16 />}
+                          {t('handoff.to', { name: target.displayName })}
+                        </ActionButton>
+                      ))}
                       <ActionButton onClick={() => { void archiveSelected(snapshot.session.bridgeSessionId) }}>
                         <IconArchiveOutline20 size={16} /> {t('session.archive')}
                       </ActionButton>
