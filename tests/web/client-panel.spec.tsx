@@ -752,6 +752,32 @@ describe('LocalAgentPanel', () => {
   })
 
 
+  it('docks a pending interaction outside the transcript and outside the view switch', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      session: { ...session, status: 'awaiting-approval' },
+      pendingInteraction: interaction('approval'),
+      events: [event(1, { type: 'bridge/text-delta', data: { text: 'a long transcript', itemId: 'a' } })],
+      latestSequence: 1,
+    }))
+    renderPanel(fixture.remote())
+
+    const allow = await screen.findByRole('button', { name: 'Allow once' })
+    // Not inside the scrolling transcript. It used to open the stream, which on a
+    // long one put the card asking for a decision off-screen above the single line
+    // saying one was due.
+    expect(allow.closest('.lab-stream')).toBeNull()
+    expect(allow.closest('.lab-timeline')).toBeNull()
+    expect(allow.closest('.lab-interaction-dock')).not.toBeNull()
+
+    // And reachable from the trace, where it previously could be neither seen nor
+    // answered while the turn it blocks sat waiting.
+    fireEvent.click(screen.getByRole('tab', { name: en['view.trace'] }))
+    expect(screen.getByRole('button', { name: 'Allow once' })).toBeTruthy()
+  })
+
+
   it('submits one-turn approval and question responses', async () => {
     const fixture = new RemoteFixture()
     fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
