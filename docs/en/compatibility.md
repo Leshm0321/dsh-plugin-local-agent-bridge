@@ -4,7 +4,7 @@
 
 | Surface | Version | Policy |
 | --- | --- | --- |
-| DeepSeek Harness | `0.1.0-rc.7` | External Host + Client plugin APIs validated against commit `99f6f02fecdb7dff40c3fbc9470f5907c29f74ca`. |
+| DeepSeek Harness | `0.1.2-rc.1` | External Host + Client plugin APIs targeted at commit `a66e4702047846cdaa10c66c9d3df3951f5ea70d`. Build, typecheck, lint, and the automated suite pass against it; the browser and real-product runs recorded in `validation.md` still date from `0.1.0-rc.7`. |
 | Codex CLI/App Server | `0.147.x` | Supported. JSON Schema is pinned to generated `0.147.0` artifacts. |
 | Claude Code CLI | `>=2.1.220 <2.2.0` | Patch releases inside 2.1 are admitted; `2.2` requires revalidation. Validated with SDK `0.3.220`. |
 | Claude Agent SDK | `0.3.220` | Exact dependency pin. |

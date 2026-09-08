@@ -40,7 +40,7 @@ launching the `claude` executable resolved from the Host `PATH`.
 
 | | |
 | --- | --- |
-| DeepSeek Harness | `0.1.0-rc.7` |
+| DeepSeek Harness | `0.1.2-rc.1` |
 | Node.js | `^22.19.0` or `>=24.0.0` |
 | pnpm | `11.7.0` |
 | Claude Code CLI (optional) | `>=2.1.220 <2.2.0` |

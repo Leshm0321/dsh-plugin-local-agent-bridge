@@ -7,11 +7,13 @@ import type {
   KeyboardEvent,
   ReactNode,
 } from 'react'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 // Type-only: merges `locale` onto Context and declares the LocaleNamespaceMap
 // this module extends below.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // For the `settings.section` slot declaration only. A type-only import, so a
 // composition without the settings panel still loads this module — `slots.inject`
@@ -198,12 +200,12 @@ interface WorkspaceRegistrar {
 }
 
 /**
- * One directory level as the Host reports it, derived from the workspaces
- * service rather than imported. `@deepseek-ai/dsh-api-remotes` would be a new
- * peer dependency for one data shape, and deriving it means the panel cannot
- * drift from what the Host actually returns.
+ * One directory level as the Host reports it, derived from the UI Workspace
+ * service rather than imported from `@deepseek-ai/dsh-api-remotes`, which the
+ * service's own declarations already oblige us to depend on. Deriving it means
+ * the panel cannot drift from what the Host actually returns.
  */
-type DirectoryListing = Awaited<ReturnType<ClientContext['workspaces']['listDirectory']>>
+type DirectoryListing = Awaited<ReturnType<ClientContext['uiWorkspace']['listDirectory']>>
 
 /**
  * An image waiting in the composer.
@@ -3742,8 +3744,8 @@ export function apply(ctx: ClientContext): void {
           // capability kind is not in host.describe, and both methods exist on
           // the service regardless — so the panel probes with a listing read,
           // which has no side effect, and falls back to the native chooser.
-          list: path => scope.workspaces.listDirectory(path),
-          pick: () => scope.workspaces.pickDirectory(),
+          list: path => scope.uiWorkspace.listDirectory(path),
+          pick: () => scope.uiWorkspace.pickDirectory(),
         },
       }),
     }, LocalAgentPanel))

@@ -4,7 +4,7 @@
 
 | 面 | 版本 | 策略 |
 | --- | --- | --- |
-| DeepSeek Harness | `0.1.0-rc.7` | 对外的 Host 与 Client 插件 API 针对提交 `99f6f02fecdb7dff40c3fbc9470f5907c29f74ca` 验证过。 |
+| DeepSeek Harness | `0.1.2-rc.1` | 对外的 Host 与 Client 插件 API 面向提交 `a66e4702047846cdaa10c66c9d3df3951f5ea70d`。构建、类型检查、lint 与自动化测试套件在其上全部通过；`validation.md` 里记录的浏览器与真实产品验证仍是 `0.1.0-rc.7` 时期跑的。 |
 | Codex CLI / App Server | `0.147.x` | 支持。JSON Schema 锁定在生成自 `0.147.0` 的产物上。 |
 | Claude Code CLI | `>=2.1.220 <2.2.0` | 准许 2.1 之内的补丁版本；`2.2` 需要重新验证。以 SDK `0.3.220` 验证。 |
 | Claude Agent SDK | `0.3.220` | 精确锁定的依赖。 |

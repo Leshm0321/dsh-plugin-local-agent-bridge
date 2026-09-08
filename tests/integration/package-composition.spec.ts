@@ -27,7 +27,7 @@ describe('DSH package and Profile composition', () => {
     expect(manifest.private).toBe(true)
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.dsh?.client?.platform).toBe('web')
-    expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-runtime')
+    expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-renderer')
     expect(manifest.exports).toHaveProperty('.')
     expect(manifest.exports).toHaveProperty('./client')
     expect(manifest.files).toEqual(expect.arrayContaining([
