@@ -357,6 +357,11 @@ export const PANEL_STYLES = `
 .lab-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }
 .lab-field-label { font-size: 12px; color: var(--lab-text-2); }
 .lab-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; }
+/* The two start routes share the row and the width: neither is the other's
+   footnote. They wrap rather than squeeze when the column is narrow. */
+.lab-start-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.lab-start-actions > * { flex: 1 1 auto; justify-content: center; }
+.lab-start-note { margin: 2px 0 0; }
 .lab-row { display: flex; gap: 8px; }
 .lab-row > .lab-grow { flex: 1; }
 

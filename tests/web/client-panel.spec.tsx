@@ -1391,6 +1391,22 @@ describe('LocalAgentPanel', () => {
     expect(screen.getByText(en['model.default'])).toBeTruthy()
   })
 
+  it('explains the resume route without making the reader open it', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({}))
+    renderPanel(fixture.remote())
+
+    // The one thing here neither vendor's own app can do, and it used to explain
+    // itself only inside the sheet you had to already trust enough to open.
+    expect(await screen.findByText(en['resume.hint'])).toBeTruthy()
+    const resume = screen.getByRole('button', { name: en['resume.open'] })
+    const create = screen.getByRole('button', { name: en['create.submit'] })
+    // Two ways to start, sharing a row: not one action and its footnote.
+    expect(resume.parentElement).toBe(create.parentElement)
+  })
+
+
   it('opens a session with the facts a first prompt depends on', async () => {
     const fixture = new RemoteFixture()
     fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })

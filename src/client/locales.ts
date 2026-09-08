@@ -55,7 +55,7 @@ export const zh = {
   // Continuing a session the product already has on this Host.
   'resume.heading': '继续已有会话',
   'resume.hint': '接管这个工作区里已经存在的原生会话，包括你在终端里跑过的。',
-  'resume.open': '浏览已有会话…',
+  'resume.open': '继续已有会话…',
   'resume.title': '选择要继续的会话',
   'resume.loading': '正在向本机 Agent 询问…',
   'resume.empty': '这个工作区还没有可继续的会话。',
@@ -441,7 +441,7 @@ export const en = {
 
   'resume.heading': 'Continue a session',
   'resume.hint': 'Pick up a native session that already exists in this workspace, including ones you ran in a terminal.',
-  'resume.open': 'Browse existing sessions…',
+  'resume.open': 'Continue an existing session…',
   'resume.title': 'Choose a session to continue',
   'resume.loading': 'Asking the agent on this host…',
   'resume.empty': 'No session to continue in this workspace yet.',

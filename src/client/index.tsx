@@ -3458,21 +3458,31 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                         ))}
                       </select>
                     </label>
-                    <ActionButton
-                      primary
-                      disabled={busy || providerId === undefined || workspaceId === undefined}
-                      onClick={() => { void createSession() }}
-                    >
-                      {busy ? t('create.busy') : t('create.submit')}
-                    </ActionButton>
-                    {/* Listing costs a product round-trip — for Codex, starting
-                        the App Server — so it happens on request, not on open. */}
-                    <ActionButton
-                      disabled={busy || providerId === undefined || workspaceId === undefined}
-                      onClick={() => { void openNativeSessions() }}
-                    >
-                      {t('resume.open')}
-                    </ActionButton>
+                    {/* Two ways to start, side by side, because they are two ways to
+                        start. Stacked under the filled button the second read as an
+                        afterthought, and it is the one thing here neither vendor's own
+                        app can do: pick up the session you left in a terminal. */}
+                    <div className="lab-start-actions">
+                      <ActionButton
+                        primary
+                        disabled={busy || providerId === undefined || workspaceId === undefined}
+                        onClick={() => { void createSession() }}
+                      >
+                        {busy ? t('create.busy') : t('create.submit')}
+                      </ActionButton>
+                      {/* Listing costs a product round-trip — for Codex, starting
+                          the App Server — so it happens on request, not on open. */}
+                      <ActionButton
+                        disabled={busy || providerId === undefined || workspaceId === undefined}
+                        onClick={() => { void openNativeSessions() }}
+                      >
+                        {t('resume.open')}
+                      </ActionButton>
+                    </div>
+                    {/* Said here rather than only inside the sheet the button opens:
+                        a reader who never opens it never learns what it is for, and
+                        "browse" reads as looking rather than taking over. */}
+                    <p className="lab-card-hint lab-start-note">{t('resume.hint')}</p>
                   </div>
                 </div>
 
