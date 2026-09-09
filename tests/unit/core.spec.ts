@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { credentialLeakMarkers, redactText, redactValue } from '../../src/core/redaction.ts'
 import {
@@ -54,24 +56,73 @@ describe('redaction', () => {
 
 describe('version compatibility', () => {
   it('parses product output and pins the verified versions', () => {
-    expect(parseProductVersion('codex-cli 0.147.0')).toBe('0.147.0')
-    expect(parseProductVersion('Claude Code v2.1.220')).toBe('2.1.220')
+    expect(parseProductVersion('codex-cli 0.153.4')).toBe('0.153.4')
+    expect(parseProductVersion('Claude Code v2.1.266')).toBe('2.1.266')
     expect(parseProductVersion('unknown')).toBeNull()
-    expect(supportedVersionRange('codex')).toBe('0.147.x')
+    expect(supportedVersionRange('codex')).toBe('>=0.147.0 <0.154.0')
     expect(supportedVersionRange('claude')).toBe('>=2.1.220 <2.2.0')
     expect(supportedVersionRange('fake')).toBeNull()
   })
 
+  it('admits the Codex minors whose protocol was compared, and nothing outside them', () => {
+    // Both ends were run against the real product; the minors between rest on the
+    // schema comparison, and the boundaries are the whole point of a spanning range.
+    expect(compatibilityFor('codex', '0.147.0', false)).toBe('supported')
+    expect(compatibilityFor('codex', '0.150.2', false)).toBe('supported')
+    expect(compatibilityFor('codex', '0.153.4', false)).toBe('supported')
+    expect(compatibilityFor('codex', '0.146.9', false)).toBe('unsupported')
+    expect(compatibilityFor('codex', '0.154.0', false)).toBe('unsupported')
+    expect(compatibilityFor('codex', '0.154.0', true)).toBe('unknown')
+  })
+
   it('rejects unsupported versions unless experimental compatibility is enabled', () => {
     expect(compatibilityFor('codex', '0.147.9', false)).toBe('supported')
-    expect(compatibilityFor('codex', '0.148.0', false)).toBe('unsupported')
-    expect(compatibilityFor('codex', '0.148.0', true)).toBe('unknown')
+    expect(compatibilityFor('codex', '0.160.0', false)).toBe('unsupported')
+    expect(compatibilityFor('codex', '0.160.0', true)).toBe('unknown')
     expect(compatibilityFor('claude', null, false)).toBe('unknown')
     expect(compatibilityFor('claude', '2.1.220', false)).toBe('supported')
-    expect(compatibilityFor('claude', '2.1.234', false)).toBe('supported')
+    expect(compatibilityFor('claude', '2.1.266', false)).toBe('supported')
     expect(compatibilityFor('claude', '2.1.219', false)).toBe('unsupported')
     expect(compatibilityFor('claude', '2.2.0', false)).toBe('unsupported')
     expect(compatibilityFor('claude', '2.2.0', true)).toBe('unknown')
+  })
+})
+
+describe('Codex schema pin', () => {
+  /** The single version directory the adapter's schema imports resolve against. */
+  const pinnedVersion = (): string => {
+    const source = readFileSync(join(process.cwd(), 'src/providers/codex.ts'), 'utf8')
+    const versions = [...source.matchAll(/generated\/codex\/([^/]+)\/schema/g)].map(match => match[1] as string)
+    expect(versions.length).toBeGreaterThan(0)
+    // One pin, not several: two directories in the import list would mean the
+    // adapter validates one message against one release and its neighbour against
+    // another, which is a state no comparison has ever been run on.
+    expect([...new Set(versions)]).toHaveLength(1)
+    return versions[0] as string
+  }
+
+  it('imports every schema from one generated release, which is present and admitted', () => {
+    const version = pinnedVersion()
+    // The artifacts have to be in the tree, because the imports are resolved at
+    // build time and a missing directory is a build failure rather than a runtime one.
+    expect(readdirSync(join(process.cwd(), 'generated/codex', version, 'schema')).length).toBeGreaterThan(0)
+    // And the pin has to sit inside the admitted range: validating against a release
+    // this bridge refuses to run would be checking messages nobody can send it.
+    expect(compatibilityFor('codex', version, false)).toBe('supported')
+  })
+
+  it('ships the pinned schemas and regenerates into the same directory', () => {
+    const manifest = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+      files: string[]
+      scripts: Record<string, string>
+    }
+    const version = pinnedVersion()
+    // Published, or an installed copy has imports pointing at nothing.
+    expect(manifest.files).toContain(`generated/codex/${version}/schema/**/*.json`)
+    // And the regeneration script writes where the imports read, so a future bump
+    // cannot quietly leave the adapter on the previous release.
+    expect(manifest.scripts['generate:codex']).toContain(`generated/codex/${version}/schema`)
+    expect(manifest.scripts['generate:codex']).toContain(`generated/codex/${version}/ts`)
   })
 })
 

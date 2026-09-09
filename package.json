@@ -38,7 +38,7 @@
     "lib/**/*.js",
     "lib/**/*.d.ts",
     "lib/**/*.map",
-    "generated/codex/0.147.0/schema/**/*.json",
+    "generated/codex/0.153.4/schema/**/*.json",
     "cordis.patch.yml",
     "docs/**/*.md",
     "!docs/plans/**",
@@ -69,7 +69,7 @@
   },
   "scripts": {
     "clean": "rimraf lib coverage test-results playwright-report",
-    "generate:codex": "codex app-server generate-ts --experimental --out generated/codex/0.147.0/ts && codex app-server generate-json-schema --experimental --out generated/codex/0.147.0/schema",
+    "generate:codex": "codex app-server generate-ts --experimental --out generated/codex/0.153.4/ts && codex app-server generate-json-schema --experimental --out generated/codex/0.153.4/schema",
     "build:host": "tsdown --config tsdown.host.config.ts && tsc -p tsconfig.host.declarations.json && node scripts/verify-built-artifacts.mjs",
     "build:client": "tsc -p tsconfig.client.declarations.json && tsdown --config tsdown.client.config.ts",
     "build": "pnpm run clean && pnpm run build:host && pnpm run build:client",

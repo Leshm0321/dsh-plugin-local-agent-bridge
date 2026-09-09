@@ -32,7 +32,7 @@
 | Node.js | `^22.19.0` 或 `>=24.0.0` |
 | pnpm | `11.7.0` |
 | Claude Code CLI（可选） | `>=2.1.220 <2.2.0` |
-| Codex CLI（可选） | `0.147.x` |
+| Codex CLI（可选） | `>=0.147.0 <0.154.0` |
 | 宿主机系统 | Windows 10/11 x64、macOS 13+、Linux x64/arm64 |
 
 宿主机上必须至少安装 Claude Code 或 Codex 之一，且必须**已经完成登录**。本插件特意不提供登录界面；认证问题需要在终端中修复。
@@ -186,7 +186,7 @@ Windows 和 macOS 均已针对真实产品进行测试。Linux 与 macOS 共用�
 ## 许可证和条款
 
 
-本项目使用 MIT 许可证。Codex App Server schema 由 Codex `0.147.0` 生成；Codex 使用 Apache-2.0 许可证分发。Claude Agent SDK 声明 `SEE LICENSE IN README.md`，Anthropic 则说明 Agent SDK 受其商业条款约束。本项目不分发任何厂商二进制文件，也不授予对厂商服务的任何权利。
+本项目使用 MIT 许可证。Codex App Server schema 由 Codex `0.153.4` 生成；Codex 使用 Apache-2.0 许可证分发。Claude Agent SDK 声明 `SEE LICENSE IN README.md`，Anthropic 则说明 Agent SDK 受其商业条款约束。本项目不分发任何厂商二进制文件，也不授予对厂商服务的任何权利。
 
 Anthropic 的 Agent SDK 文档指出，第三方产品应使用受支持的 API 密钥认证方式，除非另行获准提供 `claude.ai` 登录或额度功能。本桥接器不提供 Claude 登录界面，但复用宿主机上已经认证的 Claude Code 安装并不等同于获得官方授权。**请将 Claude provider 视为私有、单用户、实验性集成**；在任何公开、商业、托管或多用户部署之前，请重新审查认证和分发条款。
 

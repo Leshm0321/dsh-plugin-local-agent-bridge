@@ -47,7 +47,7 @@ launching the `claude` executable resolved from the Host `PATH`.
 | Node.js | `^22.19.0` or `>=24.0.0` |
 | pnpm | `11.7.0` |
 | Claude Code CLI (optional) | `>=2.1.220 <2.2.0` |
-| Codex CLI (optional) | `0.147.x` |
+| Codex CLI (optional) | `>=0.147.0 <0.154.0` |
 | Host OS | Windows 10/11 x64, macOS 13+, Linux x64/arm64 |
 
 At least one of Claude Code or Codex must be installed **and already logged in**
@@ -263,7 +263,7 @@ claim it.
 ## Licensing and terms
 
 
-MIT. Codex App Server schemas were generated from Codex `0.147.0`; Codex is
+MIT. Codex App Server schemas were generated from Codex `0.153.4`; Codex is
 distributed under Apache-2.0. The Claude Agent SDK declares
 `SEE LICENSE IN README.md`, and Anthropic documents Agent SDK use under its
 Commercial Terms. This project distributes no vendor binaries and grants no

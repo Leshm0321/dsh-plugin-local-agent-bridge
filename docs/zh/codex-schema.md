@@ -1,10 +1,10 @@
 # Codex App Server schema 来源
 
-`generated/codex/0.147.0/schema/` 下的 JSON Schema 文件，由主机上安装的 Codex CLI `0.147.0` 通过实验性的 App Server 生成器产出：
+`generated/codex/0.153.4/schema/` 下的 JSON Schema 文件，由主机上安装的 Codex CLI `0.153.4` 通过实验性的 App Server 生成器产出：
 
 ```sh
-codex app-server generate-ts --experimental --out generated/codex/0.147.0/ts
-codex app-server generate-json-schema --experimental --out generated/codex/0.147.0/schema
+codex app-server generate-ts --experimental --out generated/codex/0.153.4/ts
+codex app-server generate-json-schema --experimental --out generated/codex/0.153.4/schema
 ```
 
 适配器导入这份生成的 JSON Schema，用作浏览器可见的 Codex 通知与请求白名单。投影之前先由 Ajv 校验载荷。未知通知被忽略，未知的 Server Request 被拒绝；所有 `account/login/*` 请求在路由之前就被拒掉。

@@ -10,8 +10,23 @@ import type {
 import { BridgeError } from './errors.ts'
 import { redactText } from './redaction.ts'
 
+/**
+ * The product versions this bridge admits.
+ *
+ * Codex spans two minors rather than pinning one, because the App Server protocol
+ * moved only additively across them: comparing the generated schemas at 0.147.0
+ * and 0.153.4 finds no message removed, no union variant dropped, and — matching
+ * unions by discriminator rather than by position — no field newly required
+ * anywhere this bridge reads. The one field that did become mandatory,
+ * `Thread.projectId`, is on responses this bridge never validates. Both ends were
+ * run against the real product; the minors between them were not, and are admitted
+ * on that schema comparison rather than on a smoke run.
+ *
+ * Claude Code stays inside 2.1: the Agent SDK is the protocol client here, and a
+ * major or minor step on either side is a pairing question rather than a range one.
+ */
 const VERSION_RANGES: Record<'codex' | 'claude', string> = {
-  codex: '0.147.x',
+  codex: '>=0.147.0 <0.154.0',
   claude: '>=2.1.220 <2.2.0',
 }
 

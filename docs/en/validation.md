@@ -111,8 +111,28 @@ confidential source. Reports retain only generic success facts.
 | 14 | DSH remains loopback-bound and docs reject bare public exposure | Manually verified | The real Web Profile printed `http://127.0.0.1:3080`. README and security operations require TLS plus authenticated private access and explicitly prohibit exposing the Harness port directly. |
 | 15 | Unload/Host exit leaves no managed Claude/Codex process tree | Automated + manually verified | Provider cleanup tests pass. After real Host shutdown, a process scan found zero Claude/Codex/Node/CMD processes whose command line referenced the isolated DSH install or disposable workspace. |
 | 16 | A fresh install passes build, tests, Profile loader, and browser E2E | Automated + manually verified | Verified on Windows and on macOS. On both, DSH CLI `0.1.0-rc.7` installed the linked plugin, composed the official bundles, booted the Web Profile, served the Client module, and completed browser flows; Windows also covered mobile layout. The remote Profile patch disabled `directory-picker` and inserted `directory-picker-browse` plus `ui-directory-picker-browse` on both, with `--dump-config` showing all three rows and no loader name-mismatch warning. The launch form for Windows, macOS, and Linux is additionally pinned by unit tests that run on any host. |
-| 17 | Unsupported versions are blocked explicitly | Automated + manually verified | Version parsing and admission tests enforce Codex `0.147.x` and Claude Code `>=2.1.220 <2.2.0`; unverified versions require explicit `allowExperimentalVersions`. The macOS run confirmed a real Codex `0.144.6` being refused. A rejected product is also *shown* as rejected: it stays listed but unselectable, and the panel names both the installed version and the admitted range. Previously the Client dropped every non-ready product, so the operator watched it vanish with no explanation. |
+| 17 | Unsupported versions are blocked explicitly | Automated + manually verified | Version parsing and admission tests enforce Codex `>=0.147.0 <0.154.0` and Claude Code `>=2.1.220 <2.2.0`; unverified versions require explicit `allowExperimentalVersions`. The macOS run confirmed a real Codex `0.144.6` being refused. A rejected product is also *shown* as rejected: it stays listed but unselectable, and the panel names both the installed version and the admitted range. Previously the Client dropped every non-ready product, so the operator watched it vanish with no explanation. |
 | 18 | README records exact versions, terms, upgrade procedure, and secure deployment prerequisites | Manually verified | README lists the DSH/Codex/Claude/SDK versions, MIT/vendor terms, one-component-at-a-time upgrade validation, loopback binding, TLS, authenticated private access, Host/Origin handling, idle expiry, and access logging. |
+
+## Codex 0.153.4 and Claude Code 2.1.266
+
+The Host was upgraded to Codex `0.153.4` and Claude Code `2.1.266`, and the Codex
+schema pin moved to `0.153.4`. What was checked on those versions, against the real
+products through a booted Web Profile:
+
+- Codex: session create, a streamed reply, a `shell` tool call with its arguments
+  rendered, and image input — a solid-red raster pasted into the composer came back
+  named, so the model reads the data URL rather than merely tolerating the field.
+- Claude Code: session create and a `Bash` tool call, on the pinned Agent SDK
+  `0.3.220`. The SDK's own latest was `0.3.266` at the time and was not adopted.
+- The schemas were compared rather than assumed: no message removed, no union
+  variant dropped, and — matching unions by discriminator rather than by position —
+  no field newly required anywhere this bridge reads. `Thread.projectId` did become
+  mandatory, on responses this bridge never validates.
+
+Not re-run on these versions: Codex-side approval and question prompts, steer,
+interrupt, MCP, connection loss, and login rejection. The minors between `0.147.0`
+and `0.153.4` were not run at all and are admitted on the schema comparison alone.
 
 ## Real browser notes
 
