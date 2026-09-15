@@ -50,7 +50,6 @@ class FakeClaudeRuntime {
         done.resolve({ exitCode: null, signal: 'SIGTERM' })
       })
       const handle = {
-        pid: 20_000 + this.handles.length,
         stdin,
         stdout,
         stderr: undefined,

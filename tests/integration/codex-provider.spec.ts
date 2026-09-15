@@ -43,7 +43,6 @@ class FakeCodexProcess {
     })
     this.server.start()
     this.handle = {
-      pid: 10_000 + runtime.processes.length,
       stdin: this.clientInput,
       stdout: this.clientOutput,
       stderr: undefined,

@@ -134,6 +134,28 @@ Not re-run on these versions: Codex-side approval and question prompts, steer,
 interrupt, MCP, connection loss, and login rejection. The minors between `0.147.0`
 and `0.153.4` were not run at all and are admitted on the schema comparison alone.
 
+## DeepSeek Harness 0.1.5-rc.2
+
+The pin moved from `0.1.2-rc.1` across three minors — `0.1.4` was never published.
+All 21 packages this plugin depends on still exist; nothing was removed the way
+`dsh-client-runtime` was at `0.1.2-rc.1`, and the vendored cordis stack did not move.
+
+One break, in test code only: `SubprocessHandle` dropped `pid`, and three test
+doubles were still setting it. Production code never read it, and the interface now
+names `terminate()` as the seam's only termination verb.
+
+Confirmed on a booted Web Profile rather than on the typecheck alone, because a
+service moving owners is invisible to the compiler: the panel loads, sessions group
+under their directories, product discovery answers, and the directory browser opens
+on the Host home with its breadcrumbs — that last one deliberately, since
+`ui-workspace` gained `layout` in its inject list and one more activation condition
+is one more way for Browse to degrade to the path field.
+
+Pinned to `next` rather than `latest`. `latest` points at `0.1.5-rc.1`, which does
+not resolve into a coherent graph: transitive ranges pull `rc.2` regardless, leaving
+`rc.1` direct pins with four unmet peers. On `rc.2` every resolved dsh package is
+`rc.2` and `pnpm peers check` is clean.
+
 ## Real browser notes
 
 - The official DSH Loader initially exposed three integration defects that automated component tests did not catch: raw Host decorators in the bundle, a Client Remote injection lifecycle cycle, and a question-schema failure caused by redacting the boolean `secret` field. All are fixed and covered by build or unit tests.

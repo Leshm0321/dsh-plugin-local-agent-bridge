@@ -101,6 +101,24 @@ pgrep -P "$(pgrep -f 'dsh web' | head -1)"
 这两个版本上**未**重跑的：Codex 侧的审批与提问弹窗、steer、interrupt、MCP、连接丢失、
 登录拒绝。`0.147.0` 与 `0.153.4` 之间的 minor 完全没跑，仅凭 schema 对比准入。
 
+## DeepSeek Harness 0.1.5-rc.2
+
+锁定版本从 `0.1.2-rc.1` 跨了三个 minor —— `0.1.4` 从未发布。插件依赖的 21 个包在新版
+全部存在，没有出现 `0.1.2-rc.1` 时 `dsh-client-runtime` 那样的删除，vendor 的 cordis
+一套也没动。
+
+只有一处破损，且只在测试代码里：`SubprocessHandle` 去掉了 `pid`，而三个测试替身还在
+设它。生产代码从未读取过它，新接口把 `terminate()` 定为「这个接缝唯一的终止动词」。
+
+除 typecheck 之外还在真实启动的 Web Profile 上确认过 —— 因为服务换归属对编译器是不可见
+的：面板加载、会话按工作目录分组、产品发现有应答、目录浏览能打开到主机 home 并带出面包
+屑。最后这一项是刻意验的：`ui-workspace` 的 inject 列表新增了 `layout`，多一个激活条件
+就多一条让 Browse 降级成手输路径的路。
+
+锁的是 `next` 而不是 `latest`。`latest` 指向 `0.1.5-rc.1`，而那一套装不出一致的依赖图：
+传递范围无论如何都会拉到 `rc.2`，于是按 `rc.1` 钉直接依赖会留下四个未满足的 peer。在
+`rc.2` 上，解析出的每一个 dsh 包都是 `rc.2`，`pnpm peers check` 干净。
+
 ## 真实浏览器验证记录
 
 - 官方 DSH Loader 最初暴露了三个自动化组件测试没抓到的集成缺陷：产物里残留的原始 Host 装饰器、客户端 Remote 注入的生命周期循环，以及因为脱敏了布尔字段 `secret` 而导致的 question schema 失败。三者都已修复，并由构建或单元测试覆盖。

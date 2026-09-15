@@ -4,7 +4,7 @@
 
 | Surface | Version | Policy |
 | --- | --- | --- |
-| DeepSeek Harness | `0.1.2-rc.1` | External Host + Client plugin APIs targeted at commit `a66e4702047846cdaa10c66c9d3df3951f5ea70d`. Build, typecheck, lint, and the automated suite pass against it; the browser and real-product runs recorded in `validation.md` still date from `0.1.0-rc.7`. |
+| DeepSeek Harness | `0.1.5-rc.2` | External Host + Client plugin APIs targeted at commit `fb2c4b9e698e30edb738bca4cf0618587db7d203`. Build, typecheck, lint, and the automated suite pass against it, and a booted Web Profile confirmed the panel loads and the directory browser still resolves. Pinned to the `next` tag rather than `latest`: `0.1.5-rc.1` is what `latest` points at and it does not resolve into a coherent graph — transitive ranges pull `rc.2`, leaving four unmet peers. |
 | Codex CLI/App Server | `>=0.147.0 <0.154.0` | Supported. JSON Schema is pinned to generated `0.153.4` artifacts. The range spans two minors because the schemas this bridge reads changed only additively between them: nothing removed, no union variant dropped, and no field newly required. `0.147.0` and `0.153.4` were each run against the real product; the minors between them rest on that comparison alone. |
 | Claude Code CLI | `>=2.1.220 <2.2.0` | Patch releases inside 2.1 are admitted; `2.2` requires revalidation. Validated with SDK `0.3.220`. |
 | Claude Agent SDK | `0.3.220` | Exact dependency pin. |

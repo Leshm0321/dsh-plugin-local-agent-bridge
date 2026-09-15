@@ -47,7 +47,6 @@ function runtime(replies: Readonly<Record<string, Reply>>, resolves = true): {
       const key = argv[1] ?? ''
       const reply = replies[key] ?? { exitCode: 128, stdout: '' }
       return {
-        pid: 1,
         stdin: undefined,
         stdout: undefined,
         stderr: undefined,
