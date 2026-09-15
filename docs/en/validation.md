@@ -99,7 +99,7 @@ confidential source. Reports retain only generic success facts.
 | 4 | Claude/Codex start from Host-installed executables | Automated + manually verified | Discovery/version tests pass, and the launch form is pinned for Windows, macOS, and Linux from any host. Real browser sessions on both Windows and macOS launched the installed `codex app-server --stdio` path and the official Claude Agent SDK configured with the installed Host `claude` executable. On macOS the managed child was observed as the resolved executable itself — `/Users/…/.local/bin/claude --output-format stream-json … --permission-prompt-tool stdio --resume=…` — confirming the Host PATH resolution, the captured native locator, and the stdio approval channel. |
 | 5 | Both providers create sessions and sustain at least three turns | Manually verified | Codex completed three continuous turns plus cancellation. Claude completed multiple continuous turns including resume after Host restart, tool use, AskUserQuestion, and cancellation. |
 | 6 | Text is displayed incrementally | Automated + manually verified | Provider integration tests assert delta projection. Fake Provider and real Claude runs produced multiple text deltas; Claude deltas now share one stable turn-level item ID so one answer renders as one streaming row. |
-| 7 | Browser can approve or reject at least one real tool request | Manually verified | A real Claude `Write` request in the disposable workspace entered `awaiting-approval`; `Allow once` completed the tool. Fake Provider and provider integration tests also cover allow, deny, and cancel resolutions. |
+| 7 | Browser can approve or reject at least one real tool request | Manually verified | A real Claude `Write` request in the disposable workspace entered `awaiting-approval`; `Allow once` completed the tool. Codex was later covered both ways on `0.153.4`: denied, and the file was confirmed absent from disk rather than merely unrendered; allowed on the retry, and it landed with the exact content. Fake Provider and provider integration tests also cover allow, deny, and cancel resolutions. |
 | 8b | Browser can continue a session the product already has | Automated + manually verified | The picker lists what the product enumerates for the workspace; the real Claude Code listing showed a session started in a terminal, with no transcript path in the rendered panel. Resume was proven end to end: a session told to remember a token through one bridge session was continued through a second one that had never been told, and answered with the token. `includeProgrammatic: false` was confirmed to hide bridge-created sessions — 1 session with the flag on, 0 with it off, in a directory holding only those. |
 | 8a | Browser can invoke each product's own commands and skills | Automated + manually verified | Typing `/` lists what the product reports: 57 entries from real Claude Code (after its first turn, since the SDK exposes them only on a live query) and 44 from real Codex `0.147.0` (immediately, using the session's workspace directory). Insertion uses each product's own syntax — `/name` for Claude Code, `namespace:skill` for Codex — and the bridge executes nothing itself. MCP servers are listed as non-invocable inventory. Codex reports an absolute `SKILL.md` path per skill; it is dropped on the Host and confirmed absent from the rendered panel. |
 | 8 | Browser can answer Claude AskUserQuestion; Codex equivalent when supported | Automated + manually verified | A real Claude AskUserQuestion displayed Alpha/Beta options, accepted the browser answer, and completed the turn. Codex request-user-input and MCP form mappings are covered by protocol tests; the tested Codex model answered a requested choice in text instead of invoking the optional tool. |
@@ -130,9 +130,10 @@ products through a booted Web Profile:
   no field newly required anywhere this bridge reads. `Thread.projectId` did become
   mandatory, on responses this bridge never validates.
 
-Not re-run on these versions: Codex-side approval and question prompts, steer,
-interrupt, MCP, connection loss, and login rejection. The minors between `0.147.0`
-and `0.153.4` were not run at all and are admitted on the schema comparison alone.
+The Codex-side prompts, MCP and connection loss were skipped in this round and
+covered later — see *Codex prompts, MCP and connection loss* below. The minors
+between `0.147.0` and `0.153.4` were not run at all and are admitted on the schema
+comparison alone.
 
 ## DeepSeek Harness 0.1.5-rc.2
 
@@ -180,6 +181,41 @@ Confirmed on a booted Web Profile: the panel opens, sessions group under their t
 directories, six row menus render, product discovery answers with both products, the
 composer's send button draws, and the directory browser opens on the Host home with
 its breadcrumbs and sixteen entries.
+
+## Codex prompts, MCP and connection loss
+
+Run against Codex `0.153.4` on DeepSeek Harness `0.1.6-alpha.1`, closing most of
+what the two upgrade rounds above had left open.
+
+**Approval, both ways.** Manual mode — which maps to Codex's `untrusted` policy —
+raised the card with the command verbatim, `/bin/zsh -lc 'printf %s approved >
+codex-approval.txt'`, and all three actions. Denied first: Codex reported the write
+as rejected by the approval system, and the file was confirmed absent from disk, so
+the refusal stopped the write rather than only the rendering. Allowed on the retry:
+the file landed with exactly `approved`. The Codex mode menu offers three modes, not
+five, which is the deliberate omission of `acceptEdits` and `plan` rather than an
+approximation of them.
+
+**MCP inventory.** The `/` palette separates commands and skills from MCP servers.
+Both servers configured on the Host appear, one of them carrying its version and
+tool list, both marked unsupported — and non-invocable in fact, not only in label:
+the entries carry `disabled`, where an ordinary skill in the same list does not.
+
+**Connection loss, three ways.** Killing the App Server while the session was idle
+changed nothing, correctly: no turn was in flight to fail. The next input then
+reconnected transparently, spawning a fresh App Server. Killed *under a running
+turn*, the session went to `failed` with "the connection to the native product was
+lost" in the transcript, and the partial output received before the cut was kept
+rather than discarded. Failure is not terminal: the next input recovered the session
+to idle with the composer never disabled.
+
+**Still not triggered from a browser:** `item/tool/requestUserInput` and
+`mcpServer/elicitation/request`. Both are still declared in `ServerRequest` at
+`0.153.4` and this bridge listens on those exact methods, but neither the model nor
+the MCP server would raise one on request. Both mappings are covered by the adapter
+tests against the pinned schemas — `maps command approvals and user questions to
+one-turn browser interactions` drives a fake App Server through both — so what is
+unproven is the product's willingness to send them, not the bridge's handling.
 
 ## Real browser notes
 

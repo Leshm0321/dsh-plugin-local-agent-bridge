@@ -69,7 +69,7 @@ pgrep -P "$(pgrep -f 'dsh web' | head -1)"
 | 4 | Claude/Codex 从主机已安装的可执行文件启动 | 自动化 + 人工验证 | 发现与版本测试通过，且启动形态针对 Windows、macOS、Linux 在任意主机上都被钉住。Windows 和 macOS 上的真实浏览器会话都启动了已安装的 `codex app-server --stdio` 路径，以及配置为使用主机已安装 `claude` 可执行文件的官方 Claude Agent SDK。在 macOS 上观察到受管子进程就是解析出的可执行文件本身——`/Users/…/.local/bin/claude --output-format stream-json … --permission-prompt-tool stdio --resume=…`——这确认了主机 PATH 解析、抓到的原生定位符，以及 stdio 审批通道。 |
 | 5 | 两个产品都能建会话并撑住至少三轮 | 人工验证 | Codex 完成了连续三轮加一次取消。Claude 完成了多轮连续对话，包括主机重启后的恢复、工具使用、AskUserQuestion 和取消。 |
 | 6 | 文本增量显示 | 自动化 + 人工验证 | 产品集成测试断言 delta 投影。Fake Provider 和真实 Claude 运行都产出了多个文本 delta；Claude 的 delta 现在共用一个稳定的轮次级 item ID，所以一个回答渲染成一行流式输出。 |
-| 7 | 浏览器能批准或拒绝至少一个真实工具请求 | 人工验证 | 一次真实的 Claude `Write` 请求在一次性工作区里进入 `awaiting-approval`；点 `允许一次` 后工具执行完成。Fake Provider 和产品集成测试也覆盖了允许、拒绝、取消三种结局。 |
+| 7 | 浏览器能批准或拒绝至少一个真实工具请求 | 人工验证 | 一次真实的 Claude `Write` 请求在一次性工作区里进入 `awaiting-approval`；点 `允许一次` 后工具执行完成。Codex 后来在 `0.153.4` 上双向补验：先拒绝，并到磁盘上确认文件不存在（而非只是没渲染）；重试后允许，文件以准确内容落盘。Fake Provider 和产品集成测试也覆盖了允许、拒绝、取消三种结局。 |
 | 8b | 浏览器能继续产品自己已有的会话 | 自动化 + 人工验证 | 选择器列出的就是产品为该工作区枚举出的内容；真实 Claude Code 的列表里出现了一个在终端里开的会话，而渲染出的面板中没有转录文件路径。恢复被端到端证明：一个通过某桥接会话被告知要记住某个令牌的会话，从另一个从未被告知的桥接会话继续，答出了那个令牌。`includeProgrammatic: false` 被确认能隐藏桥接创建的会话——在只含这些会话的目录里，开着这个标志是 1 个，关掉是 0 个。 |
 | 8a | 浏览器能调用各产品自己的命令与技能 | 自动化 + 人工验证 | 输入 `/` 列出的是产品自己报告的内容：真实 Claude Code 给出 57 条（在它第一轮之后，因为 SDK 只在活跃 query 上暴露它们），真实 Codex `0.147.0` 给出 44 条（立即可得，使用会话的工作区目录）。插入时用各产品自己的语法——Claude Code 用 `/name`，Codex 用 `namespace:skill`——桥接自己不执行任何东西。MCP 服务器只作为不可调用的清单列出。Codex 会为每个技能报一个绝对 `SKILL.md` 路径；它在主机侧就被丢掉，并确认未出现在渲染出的面板里。 |
 | 8 | 浏览器能回答 Claude 的 AskUserQuestion；Codex 在支持时同理 | 自动化 + 人工验证 | 一次真实的 Claude AskUserQuestion 显示了 Alpha/Beta 选项、接受了浏览器的回答并完成了该轮。Codex 的 request-user-input 与 MCP 表单映射由协议测试覆盖；被测的 Codex 模型是用文本回答了要求的选择，而没有调用那个可选工具。 |
@@ -98,8 +98,8 @@ pgrep -P "$(pgrep -f 'dsh web' | head -1)"
   非位置来匹配联合——本桥读取的任何地方都没有新增必填字段。`Thread.projectId` 确实
   变成了必填，但它落在本桥从不校验的那些响应上。
 
-这两个版本上**未**重跑的：Codex 侧的审批与提问弹窗、steer、interrupt、MCP、连接丢失、
-登录拒绝。`0.147.0` 与 `0.153.4` 之间的 minor 完全没跑，仅凭 schema 对比准入。
+Codex 侧的弹窗、MCP 与连接丢失这一轮跳过了，后来补上 —— 见下文《Codex 弹窗、MCP 与连接
+丢失》。`0.147.0` 与 `0.153.4` 之间的 minor 完全没跑，仅凭 schema 对比准入。
 
 ## DeepSeek Harness 0.1.5-rc.2
 
@@ -138,6 +138,33 @@ pgrep -P "$(pgrep -f 'dsh web' | head -1)"
 
 真实启动的 Web Profile 上确认：面板打开、会话按三个工作目录分组、六个行内菜单渲染、产品
 发现列出两个产品、输入框的发送按钮绘出、目录浏览打开到主机 home 并带出面包屑与十六个条目。
+
+## Codex 弹窗、MCP 与连接丢失
+
+在 Codex `0.153.4` + DeepSeek Harness `0.1.6-alpha.1` 上跑的，补上了前面两轮升级留下的
+大部分空白。
+
+**审批，允许与拒绝双向。** 手动模式（映射为 Codex 的 `untrusted` 策略）正确升起审批卡，
+命令原文 `/bin/zsh -lc 'printf %s approved > codex-approval.txt'` 可见，三个动作齐备。
+先拒绝：Codex 回报写入被审批系统拒绝，并且到磁盘上确认了文件不存在 —— 拒绝拦住的是写
+入本身，不只是渲染。重试后允许：文件落盘，内容正好是 `approved`。Codex 下的模式菜单只
+给三项而非五项，这是对 `acceptEdits` 与 `plan` 的刻意不映射，而不是拿别的去近似。
+
+**MCP 清单。** `/` 面板把「命令与 Skill」和「MCP 服务器」分成两区。主机上配置的两个
+server 都列出，其中一个带出了版本号与工具清单，都标为不支持 —— 而且不可调用是事实而非
+标签：这些条目带 `disabled`，而同一列表里的普通 skill 不带。
+
+**连接丢失，三种情形。** 会话空闲时杀掉 App Server 什么都没变，这是对的：没有进行中的
+轮次可失败。此后的下一条输入透明重连，并拉起了新的 App Server。在**轮次运行中**杀掉，
+会话转为 `已失败`，转录里留下「与原生产品的连接已断开。」，并且断连前已收到的部分输出
+被保留而非丢弃。失败不是终态：下一条输入就把会话救回空闲，输入框始终没有被锁住。
+
+**仍然无法从浏览器触发的：** `item/tool/requestUserInput` 与
+`mcpServer/elicitation/request`。两者在 `0.153.4` 的 `ServerRequest` 里都仍有声明，本桥
+监听的也正是这两个方法名，但无论模型还是 MCP server 都不肯在被要求时发起。两条映射都有
+针对锁定 schema 的适配层测试覆盖 —— `maps command approvals and user questions to
+one-turn browser interactions` 用一个假 App Server 把两条都走了一遍 —— 所以未被证明的是
+产品愿不愿意发送，而不是本桥的处理。
 
 ## 真实浏览器验证记录
 
