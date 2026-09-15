@@ -32,7 +32,7 @@ import {
   IconPanelLeftOutline16,
   IconPlusOutline16,
   IconRefreshOutline16,
-  IconSendOutline16,
+  IconSendOutline14,
   IconSparkle16,
   IconStopFill16,
   Menu,
@@ -4115,7 +4115,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                         type="submit"
                         disabled={selectedId === undefined || (draft.trim().length === 0 && pending.length === 0)}
                       >
-                        <IconSendOutline16 /> {t('composer.send')}
+                        <IconSendOutline14 /> {t('composer.send')}
                       </ActionButton>
                     </div>
                   </div>

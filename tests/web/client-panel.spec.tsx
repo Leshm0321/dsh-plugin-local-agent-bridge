@@ -41,7 +41,7 @@ const ICON_STUBS = vi.hoisted(() => [
   'IconPanelLeftOutline16',
   'IconPlusOutline16',
   'IconRefreshOutline16',
-  'IconSendOutline16',
+  'IconSendOutline14',
   'IconSparkle16',
   'IconTrashOutline16',
   'IconStopFill16',
