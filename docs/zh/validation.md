@@ -119,6 +119,26 @@ pgrep -P "$(pgrep -f 'dsh web' | head -1)"
 传递范围无论如何都会拉到 `rc.2`，于是按 `rc.1` 钉直接依赖会留下四个未满足的 peer。在
 `rc.2` 上，解析出的每一个 dsh 包都是 `rc.2`，`pnpm peers check` 干净。
 
+## DeepSeek Harness 0.1.6-alpha.1
+
+取的是 `alpha` 标签，属于有意选择：`latest` 仍指向 `0.1.5-rc.1`，而那一套根本装不出一致
+的依赖图。插件依赖的 21 个包全部存在，没有需要迁移的，服务归属与 `ui-workspace` 的 inject
+列表相比 `0.1.5-rc.2` 也没变。
+
+两处破损，第一处正说明了「typecheck 不等于验证」。`IconSendOutline16` 从 primitives 里
+消失，只剩 14px 版本 —— 而在这个版本上真启 Profile 时，面板是**直接崩溃**而不只是编译不
+过：React #130（组件为 undefined），harness 报 `slot entry crashed in
+'sidebar.footer.action'`，表现为入口渲染出来、点了没反应。这个修复已经先于本次升级单独
+落地，因为两种尺寸在 `0.1.5-rc.2` 上都存在。
+
+第二处只在测试里：`SubprocessHandle` 新增了必填的 `control` 键 —— 一个按需的调用方字节
+通道，值可以是 `undefined`，但键本身不是可选的。本桥不请求这个通道，所以生产代码无需改
+动，三个测试替身补上这个键即可。这个 handle 在连续两个版本里都动了形状：`pid` 在
+`0.1.5-rc.2` 被移除，`control` 在这里加入。
+
+真实启动的 Web Profile 上确认：面板打开、会话按三个工作目录分组、六个行内菜单渲染、产品
+发现列出两个产品、输入框的发送按钮绘出、目录浏览打开到主机 home 并带出面包屑与十六个条目。
+
 ## 真实浏览器验证记录
 
 - 官方 DSH Loader 最初暴露了三个自动化组件测试没抓到的集成缺陷：产物里残留的原始 Host 装饰器、客户端 Remote 注入的生命周期循环，以及因为脱敏了布尔字段 `secret` 而导致的 question schema 失败。三者都已修复，并由构建或单元测试覆盖。

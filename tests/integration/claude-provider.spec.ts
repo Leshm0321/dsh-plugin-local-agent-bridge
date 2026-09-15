@@ -53,6 +53,7 @@ class FakeClaudeRuntime {
         stdin,
         stdout,
         stderr: undefined,
+        control: undefined,
         collected: {},
         done: done.promise,
         terminate: terminateMock,

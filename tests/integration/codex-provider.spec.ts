@@ -46,6 +46,7 @@ class FakeCodexProcess {
       stdin: this.clientInput,
       stdout: this.clientOutput,
       stderr: undefined,
+      control: undefined,
       collected: {},
       done: this.doneState.promise,
       terminate: () => { this.exit('SIGTERM') },

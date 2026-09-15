@@ -156,6 +156,31 @@ not resolve into a coherent graph: transitive ranges pull `rc.2` regardless, lea
 `rc.1` direct pins with four unmet peers. On `rc.2` every resolved dsh package is
 `rc.2` and `pnpm peers check` is clean.
 
+## DeepSeek Harness 0.1.6-alpha.1
+
+The `alpha` tag, taken deliberately: `latest` still points at `0.1.5-rc.1`, which
+does not resolve into a coherent graph at all. All 21 packages this plugin depends
+on exist; nothing needed a migration; service ownership and `ui-workspace`'s inject
+list are unchanged from `0.1.5-rc.2`.
+
+Two breaks, and the first is why a typecheck is not a verification. `IconSendOutline16`
+is gone from the primitives, leaving only the 14px variant — and a real Profile on
+this release crashes the panel outright rather than merely failing to compile: React
+#130, an undefined component, which the harness reports as `slot entry crashed in
+'sidebar.footer.action'`. The trigger renders and does nothing. That fix landed on
+its own, ahead of this bump, because both sizes exist at `0.1.5-rc.2`.
+
+The second is test-only: `SubprocessHandle` gained a required `control` key — a
+caller-owned byte channel whose value may be `undefined` but whose key is not
+optional. This bridge requests no such channel, so production code is unchanged and
+three test doubles name the key. That handle changed shape in two consecutive
+releases: `pid` left at `0.1.5-rc.2`, `control` arrived here.
+
+Confirmed on a booted Web Profile: the panel opens, sessions group under their three
+directories, six row menus render, product discovery answers with both products, the
+composer's send button draws, and the directory browser opens on the Host home with
+its breadcrumbs and sixteen entries.
+
 ## Real browser notes
 
 - The official DSH Loader initially exposed three integration defects that automated component tests did not catch: raw Host decorators in the bundle, a Client Remote injection lifecycle cycle, and a question-schema failure caused by redacting the boolean `secret` field. All are fixed and covered by build or unit tests.

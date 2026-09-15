@@ -50,6 +50,7 @@ function runtime(replies: Readonly<Record<string, Reply>>, resolves = true): {
         stdin: undefined,
         stdout: undefined,
         stderr: undefined,
+        control: undefined,
         collected: {
           stdout: { readFrom: () => ({ text: reply.stdout, bytes: 0, truncated: false }) },
         },
