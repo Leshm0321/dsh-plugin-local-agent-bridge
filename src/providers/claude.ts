@@ -201,6 +201,18 @@ function permissionCallback(hooks: ProviderTurnHooks): CanUseTool {
         target: null,
         questions,
       })
+      // Refusing to answer denies the call rather than allowing it with blanks:
+      // an empty answer is a thing the model would act on, and being told the
+      // operator declined is not.
+      if (resolution.kind === 'question' && resolution.declined === true) {
+        return {
+          behavior: 'deny',
+          message: 'The user declined to answer.',
+          interrupt: false,
+          toolUseID: options.toolUseID,
+          decisionClassification: 'user_reject',
+        }
+      }
       return {
         behavior: 'allow',
         updatedInput: { ...rawInput, answers: questionAnswers(questions, resolution) },
@@ -241,6 +253,21 @@ async function onElicitation(
   // vendor or MCP login URLs to the browser.
   if (request.mode === 'url') return { action: 'decline' }
   const questions = elicitationQuestions(request)
+  // Nothing to fill in is a yes/no, and the approval card is the one with three
+  // answers. Asked as a question it would draw a lone Submit and accept whatever
+  // the operator did with it.
+  if (questions.length === 0) {
+    const gate = await hooks.requestInteraction({
+      kind: 'approval',
+      safeSummary: redactText(request.message, 1_024),
+      toolName: `mcp:${request.serverName}`,
+      target: request.serverName,
+      questions: [],
+    })
+    if (gate.kind !== 'approval') return { action: 'cancel' }
+    if (gate.action === 'allow') return { action: 'accept' }
+    return { action: gate.action === 'cancel' ? 'cancel' : 'decline' }
+  }
   const resolution = await hooks.requestInteraction({
     kind: 'question',
     safeSummary: redactText(request.message, 1_024),
@@ -249,6 +276,8 @@ async function onElicitation(
     questions,
   })
   if (resolution.kind !== 'question') return { action: 'cancel' }
+  // Withheld, not empty: the server asked and is entitled to know it was refused.
+  if (resolution.declined === true) return { action: 'decline' }
   return { action: 'accept', content: elicitationContent(questions, resolution) }
 }
 

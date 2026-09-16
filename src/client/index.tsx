@@ -2242,7 +2242,14 @@ function InteractionCard({
             <ActionButton danger disabled={busy} onClick={() => { void respond({ kind: 'approval', action: 'cancel' }) }}>{t('interaction.cancelTurn')}</ActionButton>
           </>
         ) : (
-          <ActionButton primary disabled={busy} onClick={() => { void respond({ kind: 'question', answers }) }}>{t('interaction.submit')}</ActionButton>
+          <>
+            <ActionButton primary disabled={busy} onClick={() => { void respond({ kind: 'question', answers }) }}>{t('interaction.submit')}</ActionButton>
+            {/* Refusing is not submitting nothing. An empty answer is a value the
+                agent will act on; a refusal is one it is told about, and MCP
+                distinguishes the two. Without this the only way out of a form was
+                to answer it or leave the turn parked. */}
+            <ActionButton disabled={busy} onClick={() => { void respond({ kind: 'question', answers: {}, declined: true }) }}>{t('interaction.declineAnswer')}</ActionButton>
+          </>
         )}
       </div>
     </div>

@@ -971,7 +971,20 @@ export interface BridgeInteractionRespondRequest extends BridgeSessionIdRequest 
   readonly interactionId: string
   readonly resolution:
     | { readonly kind: 'approval'; readonly action: 'allow' | 'deny' | 'cancel' }
-    | { readonly kind: 'question'; readonly answers: Readonly<Record<string, readonly string[]>> }
+    | {
+      readonly kind: 'question'
+      readonly answers: Readonly<Record<string, readonly string[]>>
+      /**
+       * True when the operator refused to answer rather than answering.
+       *
+       * Additive and optional, so a Client written before this existed still
+       * parses — it simply never refuses. Refusal is not the same as an empty
+       * answer: MCP distinguishes `decline` from `accept` with nothing filled
+       * in, and a form the operator will not fill is the case the bridge
+       * previously had no way to express.
+       */
+      readonly declined?: boolean
+    }
 }
 
 export interface BridgeInteractionRespondResult {

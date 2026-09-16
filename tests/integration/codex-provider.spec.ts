@@ -126,6 +126,34 @@ class FakeCodexProcess {
       this.runtime.serverResponses.push({ method: 'approval', params: response as JsonObject })
     }
 
+    if (/yesno/i.test(text)) {
+      // The shape Codex sends to gate an MCP tool call: nothing to fill in.
+      const response = await this.server.request('mcpServer/elicitation/request', {
+        threadId,
+        turnId: null,
+        serverName: 'fixture-mcp',
+        message: 'Allow the fixture server to run a tool?',
+        mode: 'form',
+        requestedSchema: { type: 'object', properties: {} },
+      })
+      this.runtime.serverResponses.push({ method: 'yesno', params: response as JsonObject })
+    }
+
+    if (/elicitform/i.test(text)) {
+      const response = await this.server.request('mcpServer/elicitation/request', {
+        threadId,
+        turnId: null,
+        serverName: 'fixture-mcp',
+        message: 'The fixture needs an answer.',
+        mode: 'form',
+        requestedSchema: {
+          type: 'object',
+          properties: { colour: { type: 'string', title: 'Colour', enum: ['red', 'blue'] } },
+        },
+      })
+      this.runtime.serverResponses.push({ method: 'elicitform', params: response as JsonObject })
+    }
+
     if (/question/i.test(text)) {
       const response = await this.server.request('item/tool/requestUserInput', {
         threadId,
@@ -308,6 +336,58 @@ describe('CodexProviderAdapter', () => {
     ])
     await adapter.dispose()
   })
+
+  it('asks a fieldless elicitation as an approval, so it can be refused', async () => {
+    // Codex sends this shape to gate every MCP tool call. Asked as a question it
+    // drew a card with a message, no fields and a lone Submit — nothing to answer,
+    // no way to say no, and the reply was `accept` whatever the operator did.
+    for (const [action, expected] of [['allow', 'accept'], ['deny', 'decline'], ['cancel', 'cancel']] as const) {
+      const runtime = new FakeCodexRuntime()
+      const adapter = new CodexProviderAdapter(runtime.subprocess, 'codex')
+      const harness = createHooks({
+        resolveInteraction: () => ({ kind: 'approval', action }),
+      })
+      await adapter.startTurn({ text: 'yesno', images: [], hooks: harness.hooks })
+
+      expect(harness.interactions.map(item => item.kind)).toEqual(['approval'])
+      expect(harness.interactions[0]?.questions).toEqual([])
+      expect(harness.interactions[0]).toMatchObject({ toolName: 'mcp:fixture-mcp', target: 'fixture-mcp' })
+      expect(runtime.serverResponses).toEqual([{ method: 'yesno', params: { action: expected, content: null, _meta: null } }])
+      await adapter.dispose()
+    }
+  })
+
+  it('carries a refused form back as a decline, not an accept with blanks', async () => {
+    const runtime = new FakeCodexRuntime()
+    const adapter = new CodexProviderAdapter(runtime.subprocess, 'codex')
+    const harness = createHooks({
+      resolveInteraction: () => ({ kind: 'question', answers: {}, declined: true }),
+    })
+    await adapter.startTurn({ text: 'elicitform', images: [], hooks: harness.hooks })
+
+    // A form with fields stays a question — but refusing it is a thing the server
+    // is told, because an empty answer is a value it would act on.
+    expect(harness.interactions.map(item => item.kind)).toEqual(['question'])
+    expect(harness.interactions[0]?.questions[0]).toMatchObject({ id: 'colour', allowFreeText: false })
+    expect(runtime.serverResponses).toEqual([{ method: 'elicitform', params: { action: 'decline', content: null, _meta: null } }])
+    await adapter.dispose()
+  })
+
+  it('answers a form elicitation from the schema the server asked with', async () => {
+    const runtime = new FakeCodexRuntime()
+    const adapter = new CodexProviderAdapter(runtime.subprocess, 'codex')
+    const harness = createHooks({
+      resolveInteraction: () => ({ kind: 'question', answers: { colour: ['blue'] } }),
+    })
+    await adapter.startTurn({ text: 'elicitform', images: [], hooks: harness.hooks })
+
+    // The enum became options rather than a free-text field, and the answer goes
+    // back under the property id the server named.
+    expect(harness.interactions[0]?.questions[0]?.options.map(o => o.value)).toEqual(['red', 'blue'])
+    expect(runtime.serverResponses[0]?.params).toMatchObject({ action: 'accept' })
+    await adapter.dispose()
+  })
+
 
   it('steers and interrupts an active turn', async () => {
     const runtime = new FakeCodexRuntime()

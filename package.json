@@ -44,6 +44,7 @@
     "!docs/plans/**",
     "examples/profile/*.yml",
     "examples/proxy/*",
+    "examples/mcp/*",
     "README.md",
     "README.zh-CN.md",
     "LICENSE",

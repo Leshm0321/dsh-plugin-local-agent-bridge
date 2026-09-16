@@ -209,13 +209,24 @@ lost" in the transcript, and the partial output received before the cut was kept
 rather than discarded. Failure is not terminal: the next input recovered the session
 to idle with the composer never disabled.
 
-**Still not triggered from a browser:** `item/tool/requestUserInput` and
-`mcpServer/elicitation/request`. Both are still declared in `ServerRequest` at
-`0.153.4` and this bridge listens on those exact methods, but neither the model nor
-the MCP server would raise one on request. Both mappings are covered by the adapter
-tests against the pinned schemas — `maps command approvals and user questions to
-one-turn browser interactions` drives a fake App Server through both — so what is
-unproven is the product's willingness to send them, not the bridge's handling.
+**MCP elicitation, end to end, via a fixture server.** Neither product will raise
+one on request, so `examples/mcp/elicitation-fixture.mjs` exists to always raise
+one. Wired into Codex, its form elicitation rendered the enum as options and the
+bare property as free text, and the answer travelled panel → bridge → Codex → MCP
+server and back into the reply: *"Operator selected blue, with reason: …"*.
+
+That run found a real gap. Codex gates every MCP tool call with an elicitation whose
+`requestedSchema` has empty `properties` — a plain yes/no — and the bridge asked it
+as a question. Zero fields, a lone Submit, no way to refuse, and the reply was
+`accept` whatever the operator did. A fieldless elicitation is now asked as the
+approval it is, and a refused form answers `decline` rather than `accept` with
+blanks. Both shapes are pinned by `tests/integration/mcp-elicitation.spec.ts` and by
+adapter tests over the three approval outcomes.
+
+**Still not triggered from a browser:** `item/tool/requestUserInput`. It is declared
+in `ServerRequest` at `0.153.4` and the bridge listens on that exact method, but the
+model would not invoke the tool on request. Its mapping is covered by the adapter
+tests, so what is unproven is the model's willingness to send it.
 
 ## Real browser notes
 

@@ -443,7 +443,11 @@ const interactionResponseSchema = sessionIdRequestSchema.extend({
   interactionId: z.string(),
   resolution: z.union([
     z.object({ kind: z.literal('approval'), action: z.enum(['allow', 'deny', 'cancel']) }).strict(),
-    z.object({ kind: z.literal('question'), answers: z.record(z.string(), z.array(z.string())) }).strict(),
+    z.object({
+      kind: z.literal('question'),
+      answers: z.record(z.string(), z.array(z.string())),
+      declined: z.boolean().optional(),
+    }).strict(),
   ]),
 }).strict()
 

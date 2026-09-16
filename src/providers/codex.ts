@@ -1007,6 +1007,23 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
         const params = validate<McpServerElicitationRequestParams>(method, rawParams)
         if (params.mode === 'url') return { action: 'decline', content: null, _meta: null }
         const questions = mcpQuestions(params)
+        // An elicitation with nothing to fill in is a yes/no, and Codex sends one
+        // for every MCP tool call it gates. Asked as a question it drew a card with
+        // a message, no fields, and a lone Submit — no way to say no, and the reply
+        // was `accept` whatever the operator did. So it is asked as the approval it
+        // is, which already has the three answers MCP defines.
+        if (questions.length === 0) {
+          const gate = await hooks.requestInteraction({
+            kind: 'approval',
+            safeSummary: redactText(params.message, 1_024),
+            toolName: `mcp:${params.serverName}`,
+            target: params.serverName,
+            questions: [],
+          })
+          if (gate.kind !== 'approval') return { action: 'cancel', content: null, _meta: null }
+          if (gate.action === 'allow') return { action: 'accept', content: null, _meta: null }
+          return { action: gate.action === 'cancel' ? 'cancel' : 'decline', content: null, _meta: null }
+        }
         const resolution = await hooks.requestInteraction({
           kind: 'question',
           safeSummary: redactText(params.message, 1_024),
@@ -1014,6 +1031,12 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
           target: params.serverName,
           questions,
         })
+        // A refused form is `decline`, not an `accept` carrying nothing: the server
+        // asked for input and is entitled to know it was withheld rather than to
+        // read empty strings as answers.
+        if (resolution.kind === 'question' && resolution.declined === true) {
+          return { action: 'decline', content: null, _meta: null }
+        }
         return { action: 'accept', content: mcpContent(questions, resolution), _meta: null }
       }
       default:

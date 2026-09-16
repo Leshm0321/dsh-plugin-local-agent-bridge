@@ -159,12 +159,21 @@ server 都列出，其中一个带出了版本号与工具清单，都标为不�
 会话转为 `已失败`，转录里留下「与原生产品的连接已断开。」，并且断连前已收到的部分输出
 被保留而非丢弃。失败不是终态：下一条输入就把会话救回空闲，输入框始终没有被锁住。
 
-**仍然无法从浏览器触发的：** `item/tool/requestUserInput` 与
-`mcpServer/elicitation/request`。两者在 `0.153.4` 的 `ServerRequest` 里都仍有声明，本桥
-监听的也正是这两个方法名，但无论模型还是 MCP server 都不肯在被要求时发起。两条映射都有
-针对锁定 schema 的适配层测试覆盖 —— `maps command approvals and user questions to
-one-turn browser interactions` 用一个假 App Server 把两条都走了一遍 —— 所以未被证明的是
-产品愿不愿意发送，而不是本桥的处理。
+**MCP elicitation，经夹具 server 端到端验证。** 两个产品都不肯在被要求时发起，所以
+`examples/mcp/elicitation-fixture.mjs` 的存在就是为了必定发起。接进 Codex 后，它的表单
+elicitation 把 `enum` 渲染成选项、把裸属性渲染成自由文本，答案走通了整条链：面板 → 桥 →
+Codex → MCP server，再回到回复里 —— *"Operator selected blue, with reason: …"*。
+
+这一轮暴露了一个真实缺口。Codex 会用一个 `requestedSchema` 的 `properties` 为空的
+elicitation（也就是纯粹的是/否）来为每一次 MCP 工具调用把关，而本桥把它当成提问来问：零个
+字段、只有一个「提交回答」、无法拒绝，而且无论操作者做什么回的都是 `accept`。现在无字段的
+elicitation 按它本来的性质当审批来问，被拒绝的表单回的是 `decline` 而不是带空白的
+`accept`。两种形状由 `tests/integration/mcp-elicitation.spec.ts` 和覆盖三种审批结局的适配
+层测试钉住。
+
+**仍然无法从浏览器触发的：** `item/tool/requestUserInput`。它在 `0.153.4` 的
+`ServerRequest` 里有声明、本桥监听的也正是这个方法名，但模型不肯在被要求时调用那个工具。
+它的映射有适配层测试覆盖，所以未被证明的是模型愿不愿意发送。
 
 ## 真实浏览器验证记录
 

@@ -899,6 +899,30 @@ describe('LocalAgentPanel', () => {
   })
 
 
+  it('lets a question be refused rather than only answered', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      session: { ...session, status: 'awaiting-answer' },
+      pendingInteraction: interaction('question'),
+    }))
+    renderPanel(fixture.remote())
+
+    // Submitting nothing is not refusing: an empty answer is a value the agent acts
+    // on, and a form the operator will not fill had no other way out than leaving
+    // the turn parked.
+    fireEvent.click(await screen.findByRole('button', { name: en['interaction.declineAnswer'] }))
+    await waitFor(() => {
+      expect(fixture.interactionRespond).toHaveBeenCalledWith({
+        token: '',
+        bridgeSessionId: 'session-1',
+        interactionId: 'question-1',
+        resolution: { kind: 'question', answers: {}, declined: true },
+      })
+    })
+  })
+
+
   it('docks a pending interaction outside the transcript and outside the view switch', async () => {
     const fixture = new RemoteFixture()
     fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })

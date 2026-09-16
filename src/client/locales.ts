@@ -322,6 +322,7 @@ export const zh = {
   'interaction.allowOnce': '仅本次允许',
   'interaction.deny': '拒绝',
   'interaction.cancelTurn': '中止当前轮',
+  'interaction.declineAnswer': '不回答',
   'interaction.submit': '提交回答',
   'interaction.freeText': '自定义回答',
 
@@ -693,6 +694,7 @@ export const en = {
   'interaction.allowOnce': 'Allow once',
   'interaction.deny': 'Deny',
   'interaction.cancelTurn': 'Cancel turn',
+  'interaction.declineAnswer': 'Decline to answer',
   'interaction.submit': 'Submit answers',
   'interaction.freeText': 'Custom answer',
 
