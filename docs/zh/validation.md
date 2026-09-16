@@ -171,10 +171,20 @@ elicitation 按它本来的性质当审批来问，被拒绝的表单回的是 `
 `accept`。两种形状由 `tests/integration/mcp-elicitation.spec.ts` 和覆盖三种审批结局的适配
 层测试钉住。
 
-**`item/tool/requestUserInput`：仍未触发，并且现已确认它是唯一无法发送拒绝的弹窗。**
-它在 `0.153.4` 的 `ServerRequest` 里有声明、本桥监听的也正是这个方法名，但多次尝试下模型
-都不肯调用那个工具，所以实况路径仍未被证明 —— 未被证明的是模型愿不愿意发送，而不是本桥的
-处理，后者有针对锁定 schema 的适配层测试覆盖。
+**`item/tool/requestUserInput`，用替身 App Server 经真实适配层跑通。** 模型不肯在被要求
+时调用那个工具，所以 `examples/mcp/codex-app-server-fixture.mjs` 顶替了 `codex app-server`：
+把它作为 `codex` 放在 `PATH` 前面，它会被当作普通的 `Codex 0.153.4` 准入，而包含
+`userinput` 的提问会让它在轮次中发起这个请求。除了产品二进制本身，其余都是真的 —— 适配层、
+锁定 schema 的校验、面板。
+
+面板正确显示了两个问题（带选项的和自由文本的），答案也以 schema 要求的形状回去了：
+`{"answers":{"mode":{"answers":["Fast"]},"note":{"answers":["clean run"]}}}`。而且没有提供
+拒绝按钮 —— 也就是下面那一点，这次是观察到的而不只是测出来的。
+
+这个夹具第一次跑时让会话失败在协议错误上，因为它的 `Turn` 载荷漏了必填的 `items`。是本桥的
+schema 校验拦住了它。`tests/integration/mcp-elicitation.spec.ts` 现在断言夹具发出的每个
+`turn/*` 载荷都带 `items`，所以下一次遗漏会在那里被抓到，而不是表现为浏览器里一个坏掉的
+会话。
 
 在给别处加拒绝能力时顺带读了响应 schema，发现了这个限制：`ToolRequestUserInputResponse`
 只有 `{ answers }`，且 `answers` 是必填，没有任何字段能表达「操作者拒绝了」。也就是说拒绝

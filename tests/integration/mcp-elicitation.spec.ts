@@ -103,3 +103,79 @@ describe('MCP elicitation fixture', () => {
     expect(text).not.toContain('accept')
   })
 })
+
+/**
+ * The App Server fixture, checked against the schemas the adapter validates with.
+ *
+ * It is shipped for operators to put on PATH as `codex`, and it already shipped one
+ * payload the bridge refused — a `Turn` without `items` — which surfaced only as a
+ * failed session in a browser. Validating it here is how that is caught instead.
+ */
+describe('Codex App Server fixture', () => {
+  const APP_SERVER = join(process.cwd(), 'examples/mcp/codex-app-server-fixture.mjs')
+
+  it('reports a version the bridge admits', async () => {
+    const { execFile } = await import('node:child_process')
+    const { promisify } = await import('node:util')
+    const { stdout } = await promisify(execFile)(process.execPath, [APP_SERVER, '--version'])
+    expect(stdout.trim()).toMatch(/^codex-cli \d+\.\d+\.\d+$/)
+  })
+
+  it('raises request-user-input and takes the answer shape the schema requires', async () => {
+    const child = spawn(process.execPath, [APP_SERVER], { stdio: ['pipe', 'pipe', 'ignore'] })
+    const send = (message: unknown): void => { child.stdin.write(`${JSON.stringify(message)}\n`) }
+    const seen: { method: string; params: Record<string, unknown> }[] = []
+
+    const outcome = await new Promise<{ questions: unknown[]; reply: string }>((resolve, reject) => {
+      const timer = setTimeout(() => { child.kill(); reject(new Error('fixture did not finish in time')) }, 15_000)
+      let questions: unknown[] = []
+      let reply = ''
+      let buffer = ''
+      child.stdout.setEncoding('utf8')
+      child.stdout.on('data', (chunk: string) => {
+        buffer += chunk
+        for (let cut = buffer.indexOf('\n'); cut !== -1; cut = buffer.indexOf('\n')) {
+          const line = buffer.slice(0, cut).trim()
+          buffer = buffer.slice(cut + 1)
+          if (line === '') continue
+          const message = JSON.parse(line) as Message & { params?: Record<string, unknown> }
+          if (message.method !== undefined) seen.push({ method: message.method, params: message.params ?? {} })
+          if (message.id === 1) send({ jsonrpc: '2.0', id: 2, method: 'thread/start', params: {} })
+          else if (message.id === 2) {
+            const thread = (message.result?.thread ?? {}) as { id: string }
+            send({
+              jsonrpc: '2.0',
+              id: 3,
+              method: 'turn/start',
+              params: { threadId: thread.id, input: [{ type: 'text', text: 'userinput please' }] },
+            })
+          } else if (message.method === 'item/tool/requestUserInput') {
+            questions = message.params?.questions as unknown[]
+            // Exactly what `ToolRequestUserInputResponse` requires: ids to answers.
+            send({ jsonrpc: '2.0', id: message.id, result: { answers: { mode: { answers: ['Fast'] }, note: { answers: ['fixture'] } } } })
+          } else if (message.method === 'item/agentMessage/delta') {
+            reply += String(message.params?.delta ?? '')
+          } else if (message.method === 'turn/completed') {
+            clearTimeout(timer)
+            child.kill()
+            resolve({ questions, reply })
+          }
+        }
+      })
+      child.on('error', reject)
+      send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })
+    })
+
+    // Two questions: one with options, one free-text, so both render paths are driven.
+    expect(outcome.questions).toHaveLength(2)
+    expect(outcome.reply).toContain('Fast')
+
+    // Every Turn the bridge validates carries `items`; a fixture missing it fails a
+    // real session with a protocol error and nothing else to go on.
+    for (const { method, params } of seen.filter(entry => entry.method.startsWith('turn/'))) {
+      const turn = params.turn as Record<string, unknown> | undefined
+      expect(turn, method).toBeDefined()
+      expect(Object.keys(turn ?? {}), method).toContain('items')
+    }
+  })
+})

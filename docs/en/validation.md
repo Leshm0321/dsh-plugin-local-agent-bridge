@@ -223,12 +223,23 @@ approval it is, and a refused form answers `decline` rather than `accept` with
 blanks. Both shapes are pinned by `tests/integration/mcp-elicitation.spec.ts` and by
 adapter tests over the three approval outcomes.
 
-**`item/tool/requestUserInput`: still not triggered, and now known to be the one
-prompt no refusal can be sent for.** It is declared in `ServerRequest` at `0.153.4`
-and the bridge listens on that exact method, but the model would not invoke the tool
-on request across several attempts, so the live path remains unproven — what is
-unproven is the model's willingness to send it, not the bridge's handling, which the
-adapter tests cover against the pinned schema.
+**`item/tool/requestUserInput`, driven through the real adapter by a stand-in App
+Server.** The model would not invoke the tool on request, so
+`examples/mcp/codex-app-server-fixture.mjs` takes the place of `codex app-server`:
+put on `PATH` as `codex` it is admitted as an ordinary `Codex 0.153.4`, and a prompt
+containing `userinput` raises the request mid-turn. Everything but the product
+binary is real — the adapter, the pinned schema validation, the panel.
+
+The panel showed both questions, the one with options and the free-text one, and the
+answer went back in the shape the schema requires:
+`{"answers":{"mode":{"answers":["Fast"]},"note":{"answers":["clean run"]}}}`. And no
+refusal was offered, which is the point below, observed rather than only tested.
+
+The first run of that fixture failed the session with a protocol error, because its
+`Turn` payloads omitted the required `items`. The bridge's schema validation is what
+caught it. `tests/integration/mcp-elicitation.spec.ts` now asserts every `turn/*`
+payload the fixture sends carries `items`, so the next omission is caught there
+rather than as a broken session in a browser.
 
 Reading the response schema while adding refusal elsewhere turned up the limit:
 `ToolRequestUserInputResponse` is `{ answers }` with `answers` required and no field
