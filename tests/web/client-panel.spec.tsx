@@ -238,6 +238,7 @@ function interaction(kind: 'approval' | 'question'): PendingInteractionView {
       multiSelect: false,
       options: [{ value: 'Fast', label: 'Fast', description: 'Short verification' }],
     }] : [],
+    refusable: true,
     expiresAt: null,
   }
 }
@@ -922,6 +923,23 @@ describe('LocalAgentPanel', () => {
     })
   })
 
+
+  it('withholds the refusal where the product cannot be told about one', async () => {
+    const fixture = new RemoteFixture()
+    fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
+    fixture.pushRead(snapshot({
+      session: { ...session, status: 'awaiting-answer' },
+      pendingInteraction: { ...interaction('question'), refusable: false },
+    }))
+    renderPanel(fixture.remote())
+
+    // Codex's own `request_user_input` reply is `{ answers }` and nothing else, so a
+    // refusal could only be sent as blank answers — which the model reads as
+    // answers. A button whose effect is indistinguishable from answering blank is
+    // worse than no button.
+    await screen.findByRole('button', { name: en['interaction.submit'] })
+    expect(screen.queryByRole('button', { name: en['interaction.declineAnswer'] })).toBeNull()
+  })
 
   it('docks a pending interaction outside the transcript and outside the view switch', async () => {
     const fixture = new RemoteFixture()

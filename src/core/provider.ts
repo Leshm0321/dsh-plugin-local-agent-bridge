@@ -25,6 +25,11 @@ export interface ProviderInteractionRequest {
   readonly toolName: string | null
   readonly target: string | null
   readonly questions: PendingInteractionView['questions']
+  /**
+   * Whether this product can be told the operator refused. Defaults to true at
+   * the engine, because every path but one can be; the one that cannot says so.
+   */
+  readonly refusable?: boolean
 }
 
 export type ProviderInteractionResolution = BridgeInteractionRespondRequest['resolution']

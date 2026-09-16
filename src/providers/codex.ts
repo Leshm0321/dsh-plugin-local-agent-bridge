@@ -1000,6 +1000,10 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
           toolName: 'request-user-input',
           target: null,
           questions,
+          // This response is `{ answers }` and nothing else — the protocol has no
+          // field for a refusal. Sending one as empty answers would have the model
+          // read it as answers, so the panel does not offer what cannot be said.
+          refusable: false,
         })
         return { answers: answersOf(questions, resolution) }
       }

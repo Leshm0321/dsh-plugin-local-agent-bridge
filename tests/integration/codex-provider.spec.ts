@@ -337,6 +337,18 @@ describe('CodexProviderAdapter', () => {
     await adapter.dispose()
   })
 
+  it('marks request-user-input as something no refusal can be sent for', async () => {
+    const runtime = new FakeCodexRuntime()
+    const adapter = new CodexProviderAdapter(runtime.subprocess, 'codex')
+    const harness = createHooks()
+    await adapter.startTurn({ text: 'question', images: [], hooks: harness.hooks })
+
+    // The response schema is `{ answers }` with no field for a refusal, so the
+    // panel must not offer one. Every other prompt can carry it.
+    expect(harness.interactions[0]).toMatchObject({ toolName: 'request-user-input', refusable: false })
+    await adapter.dispose()
+  })
+
   it('asks a fieldless elicitation as an approval, so it can be refused', async () => {
     // Codex sends this shape to gate every MCP tool call. Asked as a question it
     // drew a card with a message, no fields and a lone Submit — nothing to answer,

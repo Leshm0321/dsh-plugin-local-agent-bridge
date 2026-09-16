@@ -1087,6 +1087,9 @@ export class BridgeSessionEngine {
       toolName: request.toolName,
       target: request.target,
       questions: request.questions,
+      // True unless the adapter says otherwise: every prompt but Codex's
+      // `request_user_input` can carry a refusal, and that one says so.
+      refusable: request.refusable ?? true,
       expiresAt: null,
     })
     const deferred = Promise.withResolvers<ProviderInteractionResolution>()

@@ -459,6 +459,16 @@ export interface PendingInteractionView {
   readonly toolName: string | null
   readonly target: string | null
   readonly questions: readonly BridgeQuestion[]
+  /**
+   * Whether refusing is something this product can be told about.
+   *
+   * Not every prompt can carry a refusal. Codex's `request_user_input` response
+   * is `{ answers }` and nothing else — there is no field for "the operator
+   * declined" — so a refusal there could only be sent as empty answers, which the
+   * model reads as answers. The panel therefore offers refusal only where it
+   * means something, rather than offering a button whose effect is a lie.
+   */
+  readonly refusable: boolean
   readonly expiresAt: number | null
 }
 

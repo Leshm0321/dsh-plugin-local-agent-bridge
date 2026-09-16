@@ -2247,8 +2247,14 @@ function InteractionCard({
             {/* Refusing is not submitting nothing. An empty answer is a value the
                 agent will act on; a refusal is one it is told about, and MCP
                 distinguishes the two. Without this the only way out of a form was
-                to answer it or leave the turn parked. */}
-            <ActionButton disabled={busy} onClick={() => { void respond({ kind: 'question', answers: {}, declined: true }) }}>{t('interaction.declineAnswer')}</ActionButton>
+                to answer it or leave the turn parked.
+                Offered only where the product can be told: Codex's own
+                `request_user_input` reply has no field for a refusal, and a button
+                whose effect is indistinguishable from answering blank is worse than
+                no button. */}
+            {interaction.refusable && (
+              <ActionButton disabled={busy} onClick={() => { void respond({ kind: 'question', answers: {}, declined: true }) }}>{t('interaction.declineAnswer')}</ActionButton>
+            )}
           </>
         )}
       </div>

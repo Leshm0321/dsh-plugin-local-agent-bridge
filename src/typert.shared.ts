@@ -194,6 +194,7 @@ const interactionSchema = z.object({
   toolName: z.string().nullable(),
   target: z.string().nullable(),
   questions: z.array(questionSchema),
+  refusable: z.boolean(),
   expiresAt: z.number().nullable(),
 }).strict()
 

@@ -171,9 +171,17 @@ elicitation 按它本来的性质当审批来问，被拒绝的表单回的是 `
 `accept`。两种形状由 `tests/integration/mcp-elicitation.spec.ts` 和覆盖三种审批结局的适配
 层测试钉住。
 
-**仍然无法从浏览器触发的：** `item/tool/requestUserInput`。它在 `0.153.4` 的
-`ServerRequest` 里有声明、本桥监听的也正是这个方法名，但模型不肯在被要求时调用那个工具。
-它的映射有适配层测试覆盖，所以未被证明的是模型愿不愿意发送。
+**`item/tool/requestUserInput`：仍未触发，并且现已确认它是唯一无法发送拒绝的弹窗。**
+它在 `0.153.4` 的 `ServerRequest` 里有声明、本桥监听的也正是这个方法名，但多次尝试下模型
+都不肯调用那个工具，所以实况路径仍未被证明 —— 未被证明的是模型愿不愿意发送，而不是本桥的
+处理，后者有针对锁定 schema 的适配层测试覆盖。
+
+在给别处加拒绝能力时顺带读了响应 schema，发现了这个限制：`ToolRequestUserInputResponse`
+只有 `{ answers }`，且 `answers` 是必填，没有任何字段能表达「操作者拒绝了」。也就是说拒绝
+只能以空答案的形式发出，而模型会把空答案当成答案。所以这个弹窗现在上报 `refusable: false`，
+面板对它不再提供拒绝按钮 —— 与其给一个效果和「答空白」无法区分的按钮，不如不给。其余每一种
+弹窗（两个产品的审批、两个产品的 MCP elicitation、Claude 的 AskUserQuestion）都能承载拒绝，
+也都提供了。
 
 ## 真实浏览器验证记录
 

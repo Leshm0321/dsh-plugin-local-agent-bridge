@@ -223,10 +223,21 @@ approval it is, and a refused form answers `decline` rather than `accept` with
 blanks. Both shapes are pinned by `tests/integration/mcp-elicitation.spec.ts` and by
 adapter tests over the three approval outcomes.
 
-**Still not triggered from a browser:** `item/tool/requestUserInput`. It is declared
-in `ServerRequest` at `0.153.4` and the bridge listens on that exact method, but the
-model would not invoke the tool on request. Its mapping is covered by the adapter
-tests, so what is unproven is the model's willingness to send it.
+**`item/tool/requestUserInput`: still not triggered, and now known to be the one
+prompt no refusal can be sent for.** It is declared in `ServerRequest` at `0.153.4`
+and the bridge listens on that exact method, but the model would not invoke the tool
+on request across several attempts, so the live path remains unproven — what is
+unproven is the model's willingness to send it, not the bridge's handling, which the
+adapter tests cover against the pinned schema.
+
+Reading the response schema while adding refusal elsewhere turned up the limit:
+`ToolRequestUserInputResponse` is `{ answers }` with `answers` required and no field
+for a declining operator. A refusal could therefore only be sent as blank answers,
+which the model reads as answers. So this prompt now reports `refusable: false` and
+the panel withholds the refusal for it rather than offering a button whose effect is
+indistinguishable from answering blank. Every other prompt — both products'
+approvals, both products' MCP elicitations, Claude's AskUserQuestion — can carry a
+refusal and offers one.
 
 ## Real browser notes
 
