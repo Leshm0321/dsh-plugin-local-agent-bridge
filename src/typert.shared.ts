@@ -465,12 +465,24 @@ const sendResultSchema = z.object({
   bridgeTurnId: z.string(),
 }).strict()
 
+/**
+ * One boundary codec.
+ *
+ * The schema is handed over as a factory rather than a value: since
+ * `0.1.6-alpha.2` the protocol materializes it on first boundary use, so a
+ * descriptor table costs nothing to declare in a realm that never validates
+ * against it. The schemas here are already built, so the factory just returns
+ * one — but it has to be a factory, because the contract is the caller's.
+ * @param typeSymbol - the wire type name this codec speaks for.
+ * @param schema - the schema to validate with.
+ * @returns the codec descriptor.
+ */
 function codec(typeSymbol: string, schema: z.ZodType): {
   readonly mode: 'strict'
   readonly typeSymbol: string
-  readonly schema: z.ZodType
+  readonly create: () => z.ZodType
 } {
-  return { mode: 'strict', typeSymbol, schema }
+  return { mode: 'strict', typeSymbol, create: () => schema }
 }
 
 function parameter(name: string, schema: z.ZodType) {

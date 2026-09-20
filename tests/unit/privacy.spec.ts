@@ -200,7 +200,7 @@ describe('the gate is asked by everything', () => {
       expect(parameter, `${entry.method} takes a request, so the token has somewhere to travel`).toBeDefined()
       // The schemas are `.strict()`, so a token the schema does not declare is not
       // ignored — it fails the whole call. The field has to be there.
-      const shape = (parameter!.codec.schema as unknown as { shape?: Record<string, unknown> }).shape
+      const shape = (parameter!.codec.create() as unknown as { shape?: Record<string, unknown> }).shape
       expect(shape, `${entry.method} takes an object request`).toBeDefined()
       if (!Object.hasOwn(shape!, 'token')) missing.push(entry.method)
     }
