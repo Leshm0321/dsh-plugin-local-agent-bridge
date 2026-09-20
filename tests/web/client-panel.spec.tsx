@@ -845,10 +845,13 @@ describe('LocalAgentPanel', () => {
     renderPanel(fixture.remote())
 
     await screen.findByPlaceholderText(en['composer.placeholder'])
-    // 243s of wall clock, 240s of it waiting on a person: the fold reports the 3s it
+    // 243s of wall clock, 240s of them waiting on a person: the fold reports the 3s it
     // actually worked, and names the wait rather than absorbing it.
     expect(await screen.findByText('processed in 3.0s')).toBeTruthy()
-    expect(screen.getByText('4m00s of it waiting on you')).toBeTruthy()
+    // The two numbers add up to the wall clock rather than nesting, so the wait is
+    // named as the separate span it is — "of it" read as though the wait were part
+    // of the 3s, which made a correct pair of numbers look like broken arithmetic.
+    expect(screen.getByText('plus 4m00s waiting on you')).toBeTruthy()
     expect(screen.queryByText('processed in 4m03s')).toBeNull()
   })
 

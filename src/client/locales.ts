@@ -191,7 +191,7 @@ export const zh = {
   'turn.working': '处理中 {value}',
   'turn.processed': '已处理 {value}',
   'turn.waiting': '等你决定 {value}',
-  'turn.waited': '其中等待授权 {value}',
+  'turn.waited': '另等你决定 {value}',
   'turn.steps': '{count} 步',
 
   // Images pasted into the composer.
@@ -574,7 +574,7 @@ export const en = {
   'turn.working': 'working {value}',
   'turn.processed': 'processed in {value}',
   'turn.waiting': 'waiting on you {value}',
-  'turn.waited': '{value} of it waiting on you',
+  'turn.waited': 'plus {value} waiting on you',
   'turn.steps': '{count} steps',
 
   'image.remove': 'Remove this image',
