@@ -39,11 +39,7 @@ import {
   RiskConfirmation,
   useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type {
-  InjectFace,
-  PropsRuntime,
-  TranslateNS,
-} from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { BridgeAuthorized } from '../types.ts'
 import type {
   RemoteResult,
