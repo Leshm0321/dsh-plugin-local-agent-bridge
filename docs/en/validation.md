@@ -288,13 +288,18 @@ composer and Codex answered `BRIDGE-IMG-1551`; a second, `BRIDGE-IMG-2ND`, confi
 it. Data-URL image input is therefore re-verified on this version rather than carried
 over from `0.153.4`.
 
-**Claude Code 2.1.278 is admitted, and the one path that could be driven was the
-failure path.** Both products appear selectable with their real versions, and the
-model selector names the actual model — `claude-opus-5[1m]`, not a preset label. A
-turn could not be completed: the Host's Claude OAuth session has expired, which
-`claude -p` confirms independently. The bridge classified it correctly rather than
-reporting a generic failure — status `needs host login`, with the instruction to log
-in on the Host and refresh. A real 2.1.278 streaming turn remains outstanding.
+**Claude Code 2.1.278, including the path that only appears when the Host is
+logged out.** The first attempt found the Host's OAuth session expired, which
+`claude -p` confirmed independently — and the bridge classified it rather than
+reporting a generic failure: status `needs host login`, with the instruction to log
+in on the Host and refresh. After the operator logged back in, the rest followed on
+the same version. A turn streamed (`CLAUDE-1278-OK`), and the model selector names
+the actual model, `claude-opus-5[1m]`, which it reports only once a query is live —
+before the first turn the control says so rather than guessing. In auto mode a
+`Write` landed with exactly `CLAUDE-APPROVAL-OK`; in manual mode the same tool
+raised a `canUseTool` card naming the absolute path, and refusing it left
+`claude-deny.txt` absent from disk, so the refusal stopped the write rather than
+only the rendering.
 
 **A label was wrong, and only a real turn with a real wait showed it.** The folded
 turn chip read `processed in 15s` beside `19s of it waiting on you`. Both numbers
