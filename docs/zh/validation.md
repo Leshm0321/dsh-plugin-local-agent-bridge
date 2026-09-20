@@ -81,7 +81,7 @@ pgrep -P "$(pgrep -f 'dsh web' | head -1)"
 | 14 | DSH 保持绑定回环，文档拒绝裸公网暴露 | 人工验证 | 真实 Web Profile 打印的是 `http://127.0.0.1:3080`。README 与安全运维要求 TLS 加带认证的私有访问，并明确禁止把 Harness 端口直接暴露出去。 |
 | 15 | 卸载/主机退出后不留受管 Claude/Codex 进程树 | 自动化 + 人工验证 | 产品清理测试通过。真实主机关停后，进程扫描发现命令行里提到那个隔离 DSH 安装或一次性工作区的 Claude/Codex/Node/CMD 进程为零。 |
 | 16 | 全新安装能通过构建、测试、Profile 加载器和浏览器端到端 | 自动化 + 人工验证 | 在 Windows 和 macOS 上都验证过。两边 DSH CLI `0.1.0-rc.7` 都安装了链接进来的插件、组合了官方 bundle、启动了 Web Profile、投递了客户端模块并完成了浏览器流程；Windows 还额外覆盖了移动端布局。远程 Profile 补丁在两边都禁用了 `directory-picker` 并插入了 `directory-picker-browse` 与 `ui-directory-picker-browse`，`--dump-config` 显示三行都在且没有加载器 name 不匹配告警。Windows、macOS、Linux 的启动形态另有可在任意主机上运行的单元测试钉住。 |
-| 17 | 不受支持的版本被显式拦下 | 自动化 + 人工验证 | 版本解析与准入测试强制 Codex `>=0.147.0 <0.154.0` 和 Claude Code `>=2.1.220 <2.2.0`；未验证的版本需要显式的 `allowExperimentalVersions`。macOS 那轮确认了一个真实的 Codex `0.144.6` 被拒。被拒的产品还会**被显示为被拒**：它仍然在列表里但不可选，面板同时给出已安装版本和准许范围。此前客户端会把所有非 ready 的产品直接丢掉，于是操作者只能看着它凭空消失、毫无解释。 |
+| 17 | 不受支持的版本被显式拦下 | 自动化 + 人工验证 | 版本解析与准入测试强制 Codex `>=0.147.0 <0.156.0` 和 Claude Code `>=2.1.220 <2.2.0`；未验证的版本需要显式的 `allowExperimentalVersions`。macOS 那轮确认了一个真实的 Codex `0.144.6` 被拒。被拒的产品还会**被显示为被拒**：它仍然在列表里但不可选，面板同时给出已安装版本和准许范围。此前客户端会把所有非 ready 的产品直接丢掉，于是操作者只能看着它凭空消失、毫无解释。 |
 | 18 | README 记录确切版本、条款、升级流程和安全部署前提 | 人工验证 | README 列出了 DSH/Codex/Claude/SDK 版本、MIT 与产品条款、一次只升一个组件的验证方式、回环绑定、TLS、带认证的私有访问、Host/Origin 处理、空闲过期和访问日志。 |
 
 ## Codex 0.153.4 与 Claude Code 2.1.266
@@ -192,6 +192,47 @@ schema 校验拦住了它。`tests/integration/mcp-elicitation.spec.ts` 现在�
 面板对它不再提供拒绝按钮 —— 与其给一个效果和「答空白」无法区分的按钮，不如不给。其余每一种
 弹窗（两个产品的审批、两个产品的 MCP elicitation、Claude 的 AskUserQuestion）都能承载拒绝，
 也都提供了。
+
+## Codex 0.155.1 与 DeepSeek Harness 0.1.6-alpha.2
+
+主机升级到 Codex `0.155.1`、Claude Code `2.1.278`；schema 锁定移到 `0.155.1`，Codex
+准入范围放宽到 `>=0.147.0 <0.156.0`。下面这些是在真实启动的 Web Profile 上、针对真实
+产品观察到的，不是从 schema 差异推出来的。
+
+**这一版需要改代码，原因是新增的征询模式。** `0.155.1` 在 `openai/form` 旁边加了
+`openaiForm`，又加了 `openai/userVerification` —— 一种设备认证式的审批，在所有模式里
+只有它既没有 `message` 也没有 `requestedSchema`。适配器原先在判定模式之前就去取
+schema，于是一个不认识的模式会变成协议错误、直接让会话失败。现在它先判模式，渲染不了
+的一律拒绝，和原本拒绝 `url` 的办法一致。补测试时发现了另一半：适配器里这个请求的类型
+对新变体写错了两处 —— `description` 是必填的，而 `message` 根本不在它身上。
+
+**审批走了两遍，因为这一版正是改写 `cwd` 类型的那一版。** 手动模式弹出的卡片原样带着
+命令 `/bin/zsh -lc 'printf %s CWD-RETYPE-OK > approval-155.txt'`。先拒绝：Codex 报告
+写入被拒，并到磁盘上确认文件不存在。重试后允许：13 字节落盘，内容正好是
+`CWD-RETYPE-OK`，没有结尾换行。
+
+**MCP 征询，两种形状都验了。** 把 `examples/mcp/elicitation-fixture.mjs` 注册进去后，
+`ask_yes_no` 画出的是审批卡片 —— 而不是一个只有 Submit 的空表单 —— 而且拒绝真的送到了
+服务端：夹具回显 `operator answered: {"action":"decline"}`。`ask_operator` 画出表单，
+答案回来是 `{"action":"accept","content":{"colour":"red", …}}`。其中自由文本那一项在
+渲染出的工具结果里显示为 `[REDACTED]`，这是面板对形似令牌的字符串做的展示层脱敏；枚举
+那一项原样回来，正说明真实答案确实到达了服务端。验完已把夹具从 `~/.codex/config.toml`
+中移除。
+
+**图片。** 用 canvas 画了一张写着 `BRIDGE-IMG-1551` 的 PNG 粘进输入框，Codex 回答
+`BRIDGE-IMG-1551`；第二张 `BRIDGE-IMG-2ND` 再次确认。所以 data URL 形式的图片输入是在
+这一版上重新验过的，不是从 `0.153.4` 沿用下来的。
+
+**Claude Code 2.1.278 已准入，而唯一能跑通的是失败路径。** 两个产品都以真实版本号出现
+在可选列表里，模型选择器显示的是实际模型 —— `claude-opus-5[1m]`，不是预设名。但一轮对话
+跑不完：主机上 Claude 的 OAuth 会话已过期，`claude -p` 独立确认了这一点。桥接没有报成
+笼统的失败，而是分类正确 —— 状态为「需在主机登录」，并提示到主机上重新登录后刷新。2.1.278
+上真实的流式对话仍然欠着。
+
+**有一处文案是错的，而且只有真实对话加上真实等待才看得出来。** 折叠后的轮次摘要写着
+`已处理 15s`，旁边跟着 `其中等待授权 19s`。两个数都对 —— 35 秒墙钟时间拆成两段 —— 但
+「其中」宣称等待包含在处理里，于是一对正确的数字读起来像算错了。现在等待被如实写成另外
+一段。
 
 ## 真实浏览器验证记录
 

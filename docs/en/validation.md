@@ -111,7 +111,7 @@ confidential source. Reports retain only generic success facts.
 | 14 | DSH remains loopback-bound and docs reject bare public exposure | Manually verified | The real Web Profile printed `http://127.0.0.1:3080`. README and security operations require TLS plus authenticated private access and explicitly prohibit exposing the Harness port directly. |
 | 15 | Unload/Host exit leaves no managed Claude/Codex process tree | Automated + manually verified | Provider cleanup tests pass. After real Host shutdown, a process scan found zero Claude/Codex/Node/CMD processes whose command line referenced the isolated DSH install or disposable workspace. |
 | 16 | A fresh install passes build, tests, Profile loader, and browser E2E | Automated + manually verified | Verified on Windows and on macOS. On both, DSH CLI `0.1.0-rc.7` installed the linked plugin, composed the official bundles, booted the Web Profile, served the Client module, and completed browser flows; Windows also covered mobile layout. The remote Profile patch disabled `directory-picker` and inserted `directory-picker-browse` plus `ui-directory-picker-browse` on both, with `--dump-config` showing all three rows and no loader name-mismatch warning. The launch form for Windows, macOS, and Linux is additionally pinned by unit tests that run on any host. |
-| 17 | Unsupported versions are blocked explicitly | Automated + manually verified | Version parsing and admission tests enforce Codex `>=0.147.0 <0.154.0` and Claude Code `>=2.1.220 <2.2.0`; unverified versions require explicit `allowExperimentalVersions`. The macOS run confirmed a real Codex `0.144.6` being refused. A rejected product is also *shown* as rejected: it stays listed but unselectable, and the panel names both the installed version and the admitted range. Previously the Client dropped every non-ready product, so the operator watched it vanish with no explanation. |
+| 17 | Unsupported versions are blocked explicitly | Automated + manually verified | Version parsing and admission tests enforce Codex `>=0.147.0 <0.156.0` and Claude Code `>=2.1.220 <2.2.0`; unverified versions require explicit `allowExperimentalVersions`. The macOS run confirmed a real Codex `0.144.6` being refused. A rejected product is also *shown* as rejected: it stays listed but unselectable, and the panel names both the installed version and the admitted range. Previously the Client dropped every non-ready product, so the operator watched it vanish with no explanation. |
 | 18 | README records exact versions, terms, upgrade procedure, and secure deployment prerequisites | Manually verified | README lists the DSH/Codex/Claude/SDK versions, MIT/vendor terms, one-component-at-a-time upgrade validation, loopback binding, TLS, authenticated private access, Host/Origin handling, idle expiry, and access logging. |
 
 ## Codex 0.153.4 and Claude Code 2.1.266
@@ -249,6 +249,58 @@ the panel withholds the refusal for it rather than offering a button whose effec
 indistinguishable from answering blank. Every other prompt — both products'
 approvals, both products' MCP elicitations, Claude's AskUserQuestion — can carry a
 refusal and offers one.
+
+## Codex 0.155.1 and DeepSeek Harness 0.1.6-alpha.2
+
+The Host moved to Codex `0.155.1` and Claude Code `2.1.278`; the schema pin moved
+to `0.155.1` and the admitted Codex range to `>=0.147.0 <0.156.0`. What follows was
+observed on a booted Web Profile against the real products, not inferred from the
+schema diff.
+
+**The new elicitation modes are the reason this release needed code.** `0.155.1`
+added `openaiForm` beside `openai/form`, and `openai/userVerification` — a
+device-authenticated approval that, alone among the modes, carries no `message` and
+no `requestedSchema`. The adapter reached for the schema before knowing the mode, so
+an unrecognised one would have turned into a protocol error that failed the session.
+It now decides the mode first and declines anything it cannot render, the way it
+already declined `url`. Writing the tests found the second half: the type this
+adapter had for the request was wrong about the new variant in two ways —
+`description` is required on it, and `message` is not a field it has at all.
+
+**Approval, both ways, because this is the release that retyped `cwd`.** Manual mode
+raised the card with the command verbatim, `/bin/zsh -lc 'printf %s CWD-RETYPE-OK >
+approval-155.txt'`. Denied first: Codex reported the write as rejected, and the file
+was confirmed absent from disk. Allowed on the retry: 13 bytes landed, `CWD-RETYPE-OK`
+with no trailing newline.
+
+**MCP elicitation, both shapes.** With `examples/mcp/elicitation-fixture.mjs`
+registered, `ask_yes_no` drew an approval card — not a form with a lone Submit — and
+the refusal reached the server: the fixture echoed `operator answered:
+{"action":"decline"}`. `ask_operator` drew the form, and the answers came back as
+`{"action":"accept","content":{"colour":"red", …}}`. The free-text answer reads
+`[REDACTED]` in the rendered tool result, which is the panel redacting a
+token-shaped string for display; the enum answer arriving verbatim is what shows the
+real values reached the server. The fixture was removed from `~/.codex/config.toml`
+afterwards.
+
+**Images.** A canvas-drawn PNG reading `BRIDGE-IMG-1551` was pasted into the
+composer and Codex answered `BRIDGE-IMG-1551`; a second, `BRIDGE-IMG-2ND`, confirmed
+it. Data-URL image input is therefore re-verified on this version rather than carried
+over from `0.153.4`.
+
+**Claude Code 2.1.278 is admitted, and the one path that could be driven was the
+failure path.** Both products appear selectable with their real versions, and the
+model selector names the actual model — `claude-opus-5[1m]`, not a preset label. A
+turn could not be completed: the Host's Claude OAuth session has expired, which
+`claude -p` confirms independently. The bridge classified it correctly rather than
+reporting a generic failure — status `needs host login`, with the instruction to log
+in on the Host and refresh. A real 2.1.278 streaming turn remains outstanding.
+
+**A label was wrong, and only a real turn with a real wait showed it.** The folded
+turn chip read `processed in 15s` beside `19s of it waiting on you`. Both numbers
+were right — 35s of wall clock, split — but "of it" claims the wait is inside the
+work, so a correct pair read as broken arithmetic. The wait is now named as the
+separate span it is.
 
 ## Real browser notes
 
