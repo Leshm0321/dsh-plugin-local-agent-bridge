@@ -126,6 +126,38 @@ class FakeCodexProcess {
       this.runtime.serverResponses.push({ method: 'approval', params: response as JsonObject })
     }
 
+    if (/verification/i.test(text)) {
+      // The mode 0.155.1 added: a device-authenticated approval, carrying a
+      // challenge and a title and — unlike every other mode — no `message` and no
+      // `requestedSchema`.
+      const response = await this.server.request('mcpServer/elicitation/request', {
+        threadId,
+        turnId: null,
+        serverName: 'fixture-mcp',
+        mode: 'openai/userVerification',
+        title: 'Verify this device',
+        description: 'Sign the challenge to prove this device is yours.',
+        challenge: 'fixture-challenge',
+      })
+      this.runtime.serverResponses.push({ method: 'verification', params: response as JsonObject })
+    }
+
+    if (/aliasform/i.test(text)) {
+      // `openaiForm` is the alias 0.155.1 added beside `openai/form`.
+      const response = await this.server.request('mcpServer/elicitation/request', {
+        threadId,
+        turnId: null,
+        serverName: 'fixture-mcp',
+        message: 'Alias mode still renders.',
+        mode: 'openaiForm',
+        requestedSchema: {
+          type: 'object',
+          properties: { colour: { type: 'string', title: 'Colour', enum: ['red'] } },
+        },
+      })
+      this.runtime.serverResponses.push({ method: 'aliasform', params: response as JsonObject })
+    }
+
     if (/yesno/i.test(text)) {
       // The shape Codex sends to gate an MCP tool call: nothing to fill in.
       const response = await this.server.request('mcpServer/elicitation/request', {
@@ -346,6 +378,35 @@ describe('CodexProviderAdapter', () => {
     // The response schema is `{ answers }` with no field for a refusal, so the
     // panel must not offer one. Every other prompt can carry it.
     expect(harness.interactions[0]).toMatchObject({ toolName: 'request-user-input', refusable: false })
+    await adapter.dispose()
+  })
+
+  it('declines an elicitation mode it cannot render rather than failing the turn', async () => {
+    const runtime = new FakeCodexRuntime()
+    const adapter = new CodexProviderAdapter(runtime.subprocess, 'codex')
+    const harness = createHooks()
+    await adapter.startTurn({ text: 'verification', images: [], hooks: harness.hooks })
+
+    // A device-authenticated approval is the same category as a `url` elicitation —
+    // an authentication flow this bridge does not forward to a browser. It also
+    // carries no schema, so reaching for one turned an unknown mode into a protocol
+    // error that failed the session.
+    expect(harness.interactions).toEqual([])
+    expect(runtime.serverResponses).toEqual([{ method: 'verification', params: { action: 'decline', content: null, _meta: null } }])
+    await adapter.dispose()
+  })
+
+  it('renders the alias form mode the same as the one it aliases', async () => {
+    const runtime = new FakeCodexRuntime()
+    const adapter = new CodexProviderAdapter(runtime.subprocess, 'codex')
+    const harness = createHooks({
+      resolveInteraction: () => ({ kind: 'question', answers: { colour: ['red'] } }),
+    })
+    await adapter.startTurn({ text: 'aliasform', images: [], hooks: harness.hooks })
+
+    expect(harness.interactions.map(item => item.kind)).toEqual(['question'])
+    expect(harness.interactions[0]?.questions[0]?.options.map(o => o.value)).toEqual(['red'])
+    expect(runtime.serverResponses[0]?.params).toMatchObject({ action: 'accept' })
     await adapter.dispose()
   })
 

@@ -52,7 +52,7 @@ It exists for one prompt. `item/tool/requestUserInput` is Codex's own built-in t
 was the one interaction the bridge handles that could not be seen in a browser.
 
 `--version` answers inside the admitted range, so version admission passes and the
-product appears selectable as an ordinary `Codex 0.153.4`.
+product appears selectable as an ordinary `Codex 0.155.1`.
 
 ## Using it
 

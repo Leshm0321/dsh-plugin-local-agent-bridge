@@ -6,16 +6,16 @@ import type {
   SubprocessHandle,
   SubprocessRuntime,
 } from '@deepseek-ai/dsh-subprocess'
-import agentMessageDeltaSchema from '../../generated/codex/0.153.4/schema/v2/AgentMessageDeltaNotification.json'
-import commandApprovalSchema from '../../generated/codex/0.153.4/schema/CommandExecutionRequestApprovalParams.json'
-import fileApprovalSchema from '../../generated/codex/0.153.4/schema/FileChangeRequestApprovalParams.json'
-import itemCompletedSchema from '../../generated/codex/0.153.4/schema/v2/ItemCompletedNotification.json'
-import itemStartedSchema from '../../generated/codex/0.153.4/schema/v2/ItemStartedNotification.json'
-import reasoningDeltaSchema from '../../generated/codex/0.153.4/schema/v2/ReasoningSummaryTextDeltaNotification.json'
-import turnCompletedSchema from '../../generated/codex/0.153.4/schema/v2/TurnCompletedNotification.json'
-import userInputSchema from '../../generated/codex/0.153.4/schema/ToolRequestUserInputParams.json'
-import mcpElicitationSchema from '../../generated/codex/0.153.4/schema/McpServerElicitationRequestParams.json'
-import permissionsApprovalSchema from '../../generated/codex/0.153.4/schema/PermissionsRequestApprovalParams.json'
+import agentMessageDeltaSchema from '../../generated/codex/0.155.1/schema/v2/AgentMessageDeltaNotification.json'
+import commandApprovalSchema from '../../generated/codex/0.155.1/schema/CommandExecutionRequestApprovalParams.json'
+import fileApprovalSchema from '../../generated/codex/0.155.1/schema/FileChangeRequestApprovalParams.json'
+import itemCompletedSchema from '../../generated/codex/0.155.1/schema/v2/ItemCompletedNotification.json'
+import itemStartedSchema from '../../generated/codex/0.155.1/schema/v2/ItemStartedNotification.json'
+import reasoningDeltaSchema from '../../generated/codex/0.155.1/schema/v2/ReasoningSummaryTextDeltaNotification.json'
+import turnCompletedSchema from '../../generated/codex/0.155.1/schema/v2/TurnCompletedNotification.json'
+import userInputSchema from '../../generated/codex/0.155.1/schema/ToolRequestUserInputParams.json'
+import mcpElicitationSchema from '../../generated/codex/0.155.1/schema/McpServerElicitationRequestParams.json'
+import permissionsApprovalSchema from '../../generated/codex/0.155.1/schema/PermissionsRequestApprovalParams.json'
 import { BridgeError } from '../core/errors.ts'
 import type {
   BridgeEventDraft,
@@ -93,10 +93,21 @@ type McpServerElicitationRequestParams = {
   readonly threadId: string
   readonly turnId: string | null
   readonly serverName: string
-  readonly message: string
 } & (
-  | { readonly mode: 'url'; readonly url: string; readonly elicitationId: string }
-  | { readonly mode: 'form' | 'openai/form'; readonly requestedSchema: JsonObject }
+  | { readonly mode: 'url'; readonly message: string; readonly url: string; readonly elicitationId: string }
+  | {
+    readonly mode: 'form' | 'openai/form' | 'openaiForm'
+    readonly message: string
+    readonly requestedSchema: JsonObject
+  }
+  // A device-authenticated approval. Alone among the modes it carries no
+  // `message` — a challenge to sign, and prose describing what signing it means.
+  | {
+    readonly mode: 'openai/userVerification'
+    readonly title: string
+    readonly description: string
+    readonly challenge: string
+  }
 )
 
 interface ItemNotification {
@@ -226,15 +237,24 @@ function questionViews(params: ToolRequestUserInputParams): BridgeQuestion[] {
   }))
 }
 
-function mcpQuestions(params: McpServerElicitationRequestParams): BridgeQuestion[] {
-  if (params.mode === 'url') return []
+/** The elicitation modes that carry a schema for the panel to render. */
+function isFormElicitation(
+  params: McpServerElicitationRequestParams,
+): params is Extract<McpServerElicitationRequestParams, { requestedSchema: JsonObject }> {
+  return params.mode === 'form' || params.mode === 'openai/form' || params.mode === 'openaiForm'
+}
+
+function mcpQuestions(
+  params: Extract<McpServerElicitationRequestParams, { requestedSchema: JsonObject }>,
+): BridgeQuestion[] {
   const schema = object(params.requestedSchema, 'MCP elicitation schema')
+  const message = params.message
   const properties = schema.properties === undefined ? null : object(schema.properties, 'MCP elicitation properties')
   if (properties === null) {
     return [{
       id: 'response',
       header: 'Input',
-      prompt: params.message,
+      prompt: message,
       secret: false,
       allowFreeText: true,
       multiSelect: false,
@@ -247,7 +267,7 @@ function mcpQuestions(params: McpServerElicitationRequestParams): BridgeQuestion
     return {
       id,
       header: typeof property.title === 'string' ? property.title : id,
-      prompt: typeof property.description === 'string' ? property.description : params.message,
+      prompt: typeof property.description === 'string' ? property.description : message,
       secret: property.writeOnly === true || property.format === 'password',
       allowFreeText: choices.length === 0,
       multiSelect: property.type === 'array',
@@ -659,11 +679,12 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
         threadId: state.threadId as string,
         input: [
           { type: 'text', text, text_elements: [] },
-          // Data URLs, which this App Server accepts: verified against 0.153.4
+          // Data URLs, which this App Server accepts: verified against 0.155.1
           // rather than assumed, since the schema only says the field is a string.
-          // Re-verified on the version bump rather than carried over — a solid-red
-          // raster pasted into the composer came back named, so the model reads
-          // them and does not merely tolerate the field.
+          // Re-verified on each version bump rather than carried over — a PNG
+          // reading BRIDGE-IMG-1551 was pasted into the composer and came back
+          // read aloud, so the model sees them and does not merely tolerate the
+          // field.
           ...images.map(image => ({
             type: 'image' as const,
             url: `data:${image.mediaType};base64,${image.dataBase64}`,
@@ -1009,7 +1030,15 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
       }
       case 'mcpServer/elicitation/request': {
         const params = validate<McpServerElicitationRequestParams>(method, rawParams)
-        if (params.mode === 'url') return { action: 'decline', content: null, _meta: null }
+        // Declined rather than rendered, and declined rather than crashed on.
+        //
+        // `url` can be an authentication flow, and this bridge never forwards a
+        // vendor or MCP login URL to the browser. `openai/userVerification` is the
+        // same category — a device-authenticated approval carrying a challenge —
+        // and 0.155.1 added it. Anything else new lands here too: a mode this
+        // bridge cannot render has no schema to read, and reaching for one turned
+        // an unknown mode into a protocol error that failed the session.
+        if (!isFormElicitation(params)) return { action: 'decline', content: null, _meta: null }
         const questions = mcpQuestions(params)
         // An elicitation with nothing to fill in is a yes/no, and Codex sends one
         // for every MCP tool call it gates. Asked as a question it drew a card with

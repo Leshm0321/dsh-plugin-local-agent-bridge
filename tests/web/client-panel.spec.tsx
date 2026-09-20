@@ -179,8 +179,8 @@ const catalog: BridgeCatalogResult = {
     id: 'codex',
     displayName: 'Codex',
     installed: true,
-    version: '0.153.4',
-    supportedRange: '>=0.147.0 <0.154.0',
+    version: '0.155.1',
+    supportedRange: '>=0.147.0 <0.156.0',
     permissionModes: [],
     selectableModels: true,
     compatibility: 'supported',
@@ -1101,7 +1101,7 @@ describe('LocalAgentPanel', () => {
             displayName: 'Codex',
             installed: true,
             version: '0.144.6',
-            supportedRange: '>=0.147.0 <0.154.0',
+            supportedRange: '>=0.147.0 <0.156.0',
             permissionModes: [],
             selectableModels: true,
             compatibility: 'unsupported',
@@ -1128,7 +1128,7 @@ describe('LocalAgentPanel', () => {
 
     expect(await screen.findByText(en['diagnostics.heading'])).toBeTruthy()
     // The rejected version and the admitted range are both named.
-    expect(screen.getByText(/Codex 0\.144\.6 installed; this bridge admits >=0\.147\.0 <0\.154\.0/)).toBeTruthy()
+    expect(screen.getByText(/Codex 0\.144\.6 installed; this bridge admits >=0\.147\.0 <0\.156\.0/)).toBeTruthy()
     // A missing product points at the PATH of the process that runs DSH, which
     // is the actual cause when the product works in the operator's own shell.
     expect(screen.getByText(/PATH of the process running DeepSeek Harness/)).toBeTruthy()
@@ -1691,7 +1691,7 @@ describe('LocalAgentPanel', () => {
     // left, and that form describes the *next* session rather than this one — which
     // is the whole reason this session states its own.
     const opening = within(lead.parentElement as HTMLElement)
-    expect(opening.getByText('Codex 0.153.4')).toBeTruthy()
+    expect(opening.getByText('Codex 0.155.1')).toBeTruthy()
     // Whether a tool call stops to ask is the difference between watching and
     // walking away, so the mode in force is stated rather than left to the toolbar.
     expect(opening.getByText(en['mode.manual'])).toBeTruthy()

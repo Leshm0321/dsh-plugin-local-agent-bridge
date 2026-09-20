@@ -56,10 +56,10 @@ describe('redaction', () => {
 
 describe('version compatibility', () => {
   it('parses product output and pins the verified versions', () => {
-    expect(parseProductVersion('codex-cli 0.153.4')).toBe('0.153.4')
-    expect(parseProductVersion('Claude Code v2.1.266')).toBe('2.1.266')
+    expect(parseProductVersion('codex-cli 0.155.1')).toBe('0.155.1')
+    expect(parseProductVersion('Claude Code v2.1.278')).toBe('2.1.278')
     expect(parseProductVersion('unknown')).toBeNull()
-    expect(supportedVersionRange('codex')).toBe('>=0.147.0 <0.154.0')
+    expect(supportedVersionRange('codex')).toBe('>=0.147.0 <0.156.0')
     expect(supportedVersionRange('claude')).toBe('>=2.1.220 <2.2.0')
     expect(supportedVersionRange('fake')).toBeNull()
   })
@@ -70,9 +70,10 @@ describe('version compatibility', () => {
     expect(compatibilityFor('codex', '0.147.0', false)).toBe('supported')
     expect(compatibilityFor('codex', '0.150.2', false)).toBe('supported')
     expect(compatibilityFor('codex', '0.153.4', false)).toBe('supported')
+    expect(compatibilityFor('codex', '0.155.1', false)).toBe('supported')
     expect(compatibilityFor('codex', '0.146.9', false)).toBe('unsupported')
-    expect(compatibilityFor('codex', '0.154.0', false)).toBe('unsupported')
-    expect(compatibilityFor('codex', '0.154.0', true)).toBe('unknown')
+    expect(compatibilityFor('codex', '0.156.0', false)).toBe('unsupported')
+    expect(compatibilityFor('codex', '0.156.0', true)).toBe('unknown')
   })
 
   it('rejects unsupported versions unless experimental compatibility is enabled', () => {
@@ -81,7 +82,7 @@ describe('version compatibility', () => {
     expect(compatibilityFor('codex', '0.160.0', true)).toBe('unknown')
     expect(compatibilityFor('claude', null, false)).toBe('unknown')
     expect(compatibilityFor('claude', '2.1.220', false)).toBe('supported')
-    expect(compatibilityFor('claude', '2.1.266', false)).toBe('supported')
+    expect(compatibilityFor('claude', '2.1.278', false)).toBe('supported')
     expect(compatibilityFor('claude', '2.1.219', false)).toBe('unsupported')
     expect(compatibilityFor('claude', '2.2.0', false)).toBe('unsupported')
     expect(compatibilityFor('claude', '2.2.0', true)).toBe('unknown')
@@ -267,10 +268,10 @@ describe('Typert descriptors', () => {
     expect(request).toBeDefined()
     // Every gated request carries the unlock token, so a payload without one is
     // refused before the Host is reached — the wire and the gate agree.
-    expect(request?.codec.schema.safeParse({ providerId: 'codex', workspaceId: 'workspace-1' }).success).toBe(false)
-    expect(request?.codec.schema.safeParse({ token: '', providerId: 'codex', workspaceId: 'workspace-1' }).success).toBe(true)
-    expect(request?.codec.schema.safeParse({ token: '', providerId: 'other', workspaceId: 'workspace-1' }).success).toBe(false)
-    expect(request?.codec.schema.safeParse({
+    expect(request?.codec.create().safeParse({ providerId: 'codex', workspaceId: 'workspace-1' }).success).toBe(false)
+    expect(request?.codec.create().safeParse({ token: '', providerId: 'codex', workspaceId: 'workspace-1' }).success).toBe(true)
+    expect(request?.codec.create().safeParse({ token: '', providerId: 'other', workspaceId: 'workspace-1' }).success).toBe(false)
+    expect(request?.codec.create().safeParse({
       token: '',
       providerId: 'codex',
       workspaceId: 'workspace-1',
