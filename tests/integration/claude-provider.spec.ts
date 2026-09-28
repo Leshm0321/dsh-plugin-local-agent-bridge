@@ -296,7 +296,7 @@ describe('ClaudeProviderAdapter', () => {
             message: 'Authenticate',
             url: 'https://example.test/oauth/authorize',
             elicitationId: 'url-1',
-          } as ElicitationRequest, { signal: new AbortController().signal }))
+          } as ElicitationRequest, { signal: new AbortController().signal, requestId: 'req-elicit' }))
           callbackResults.push(await onElicitation({
             mode: 'form',
             serverName: 'fixture-server',
@@ -305,7 +305,7 @@ describe('ClaudeProviderAdapter', () => {
               type: 'object',
               properties: { mode: { type: 'string', enum: ['Fast', 'Full'] } },
             },
-          } as ElicitationRequest, { signal: new AbortController().signal }))
+          } as ElicitationRequest, { signal: new AbortController().signal, requestId: 'req-elicit' }))
           yield message({
             type: 'result',
             subtype: 'success',
