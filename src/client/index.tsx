@@ -20,21 +20,21 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // simply never fires and the Privacy page is not there to register.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
-  IconAlarmClockOutline16,
-  IconArchiveOutline20,
-  IconBranchOutline16,
-  IconCloseOutline16,
-  IconCodeOutline16,
-  IconDataOutline16,
-  IconEllipsisOutline16,
-  IconFolderClose16,
-  IconFolderOpenOutline16,
-  IconPanelLeftOutline16,
-  IconPlusOutline16,
-  IconRefreshOutline16,
-  IconSendOutline14,
-  IconSparkle16,
-  IconStopFill16,
+  IconAlarmClockOutlineRegular,
+  IconArchiveOutlineRegular,
+  IconBranchOutlineRegular,
+  IconCloseOutlineRegular,
+  IconCodeOutlineRegular,
+  IconDataOutlineRegular,
+  IconEllipsisOutlineRegular,
+  IconFolderCloseRegular,
+  IconFolderOpenOutlineRegular,
+  IconPanelLeftOutlineRegular,
+  IconPlusOutlineRegular,
+  IconRefreshOutlineRegular,
+  IconSendOutlineRegular,
+  IconSparkleRegular,
+  IconStopFillRegular,
   Menu,
   RiskConfirmation,
   useDismissOnOutsidePointer,
@@ -753,7 +753,7 @@ function DirectoryBrowser({
             title={entry.path}
             onClick={() => { onNavigate(entry.path) }}
           >
-            <IconFolderClose16 />
+            <IconFolderCloseRegular />
             <span className="lab-browse-name">{entry.name}</span>
           </button>
         ))}
@@ -1202,7 +1202,7 @@ function Repository({ repository, t }: { repository: BridgeRepository; t: PanelT
         upstream === null ? t('repo.noUpstream') : t('repo.tracking', { upstream }),
       ].join(' · ')}
     >
-      <IconBranchOutline16 size={13} />
+      <IconBranchOutlineRegular size={13} />
       <span className="lab-repo-branch">{branch}</span>
       {(added > 0 || removed > 0) && (
         <span className="lab-repo-diff">
@@ -1497,7 +1497,7 @@ function ModelPicker({
           disabled
           title={resolved === null ? t('model.unavailable') : t('model.resolved', { name: resolved })}
         >
-          <IconSparkle16 size={14} />
+          <IconSparkleRegular size={14} />
           <span className={resolved === null ? 'lab-model-name' : 'lab-model-name lab-model-name--inherited'}>
             {resolved ?? t('model.default')}
           </span>
@@ -1521,7 +1521,7 @@ function ModelPicker({
         title={inherited ? t('model.resolved', { name: resolved ?? '' }) : t('model.label')}
         onClick={() => { setOpen(current => !current) }}
       >
-        <IconSparkle16 size={14} />
+        <IconSparkleRegular size={14} />
         <span className={inherited ? 'lab-model-name lab-model-name--inherited' : 'lab-model-name'}>{label}</span>
       </button>
       {open && (
@@ -1690,7 +1690,7 @@ function RateLimits({ limits, t }: { limits: readonly BridgeRateLimit[]; t: Pane
       className={`lab-quota${tightest.status === 'rejected' ? ' lab-quota--out' : tightest.status === 'warning' ? ' lab-quota--warn' : ''}`}
       title={`${t('quota.title')}\n${detail}`}
     >
-      <IconDataOutline16 size={14} />
+      <IconDataOutlineRegular size={14} />
       {percent === null ? t(`quota.${tightest.status}`) : t('quota.used', { percent })}
     </span>
   )
@@ -1822,7 +1822,7 @@ function AttachPicker({
                 title={match.path}
                 onClick={() => { onPick(match) }}
               >
-                {match.directory ? <IconFolderClose16 /> : <IconCodeOutline16 />}
+                {match.directory ? <IconFolderCloseRegular /> : <IconCodeOutlineRegular />}
                 <span className="lab-attach-name">{match.name}{match.directory ? '/' : ''}</span>
                 <span className="lab-attach-path">{match.path}</span>
               </button>
@@ -1910,7 +1910,7 @@ function AttachPicker({
                     else onHostPick(entry.path, false)
                   }}
                 >
-                  {entry.directory ? <IconFolderClose16 /> : <IconCodeOutline16 />}
+                  {entry.directory ? <IconFolderCloseRegular /> : <IconCodeOutlineRegular />}
                   <span className="lab-attach-name">{entry.name}{entry.directory ? '/' : ''}</span>
                 </button>
               ))}
@@ -3436,7 +3436,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                   </div>
                   <div className="lab-titlebar-actions">
                     <ActionButton icon aria-label={t('panel.close')} title={t('panel.close')} onClick={() => { setOpen(false) }}>
-                      <IconCloseOutline16 />
+                      <IconCloseOutlineRegular />
                     </ActionButton>
                   </div>
                 </header>
@@ -3460,7 +3460,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                   aria-expanded={!sidebarCollapsed}
                   onClick={() => { setSidebarCollapsed(current => !current) }}
                 >
-                  <IconPanelLeftOutline16 />
+                  <IconPanelLeftOutlineRegular />
                 </ActionButton>
                 <div>
                   <h2 className="lab-title">{t('panel.name')}</h2>
@@ -3482,7 +3482,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                     {/* The same glyph mirrored: the primitive set has only the
                         left-hand one, and a mirrored pair reads as a pair in a way
                         two different icons would not. */}
-                    <span className="lab-mirror"><IconPanelLeftOutline16 /></span>
+                    <span className="lab-mirror"><IconPanelLeftOutlineRegular /></span>
                   </ActionButton>
                 )}
                 <ActionButton
@@ -3493,13 +3493,13 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                   disabled={notifyDecided}
                   onClick={() => { void askToNotify() }}
                 >
-                  <span className={notifyArmed ? undefined : 'lab-bell-off'}><IconAlarmClockOutline16 /></span>
+                  <span className={notifyArmed ? undefined : 'lab-bell-off'}><IconAlarmClockOutlineRegular /></span>
                 </ActionButton>
                 <ActionButton icon aria-label={t('panel.refresh')} title={t('panel.refresh')} onClick={() => { void refresh() }}>
-                  <IconRefreshOutline16 />
+                  <IconRefreshOutlineRegular />
                 </ActionButton>
                 <ActionButton icon aria-label={t('panel.close')} title={t('panel.close')} onClick={() => { setOpen(false) }}>
-                  <IconCloseOutline16 />
+                  <IconCloseOutlineRegular />
                 </ActionButton>
               </div>
             </header>
@@ -3531,7 +3531,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                       title={`${session.title} · ${session.workspaceTitle} · ${t(`status.${session.status}`)}`}
                       onClick={() => { setSelectedId(session.bridgeSessionId) }}
                     >
-                      {session.providerId === 'claude' ? <IconSparkle16 size={14} /> : <IconCodeOutline16 />}
+                      {session.providerId === 'claude' ? <IconSparkleRegular size={14} /> : <IconCodeOutlineRegular />}
                       {/* A busy session is the one thing worth seeing without
                           expanding, so it gets a dot rather than a word. */}
                       {BUSY_STATUSES.includes(session.status) && <span className="lab-rail-busy" />}
@@ -3673,7 +3673,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                                 title={t('workspace.remove')}
                                 onClick={() => { void removeDirectory(workspace.id) }}
                               >
-                                <IconCloseOutline16 />
+                                <IconCloseOutlineRegular />
                               </button>
                             </span>
                           </div>
@@ -3793,7 +3793,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                                     setRowMenuFor(current => current === session.bridgeSessionId ? undefined : session.bridgeSessionId)
                                   }}
                                 >
-                                  <IconEllipsisOutline16 />
+                                  <IconEllipsisOutlineRegular />
                                 </button>
                               )}
                               items={[
@@ -3836,7 +3836,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                         disabled={!BUSY_STATUSES.includes(snapshot.session.status)}
                         onClick={() => { void remote.sessionCancel({ bridgeSessionId: snapshot.session.bridgeSessionId }) }}
                       >
-                        <IconStopFill16 /> {t('session.cancel')}
+                        <IconStopFillRegular /> {t('session.cancel')}
                       </ActionButton>
                       {/* Only where there is somewhere to hand it to. With one
                           product installed this is every session's dead button. */}
@@ -3847,12 +3847,12 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                           title={t('handoff.hint', { name: target.displayName })}
                           onClick={() => { void handOff(target.id) }}
                         >
-                          {target.id === 'claude' ? <IconSparkle16 size={14} /> : <IconCodeOutline16 />}
+                          {target.id === 'claude' ? <IconSparkleRegular size={14} /> : <IconCodeOutlineRegular />}
                           {t('handoff.to', { name: target.displayName })}
                         </ActionButton>
                       ))}
                       <ActionButton onClick={() => { void archiveSelected(snapshot.session.bridgeSessionId) }}>
-                        <IconArchiveOutline20 size={16} /> {t('session.archive')}
+                        <IconArchiveOutlineRegular size={16} /> {t('session.archive')}
                       </ActionButton>
                     </div>
                   )}
@@ -3987,7 +3987,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                     <span className="lab-composer-where">
                       {snapshot !== undefined && (
                         <span className="lab-cwd" title={t('cwd.label')}>
-                          <IconFolderOpenOutline16 size={14} />
+                          <IconFolderOpenOutlineRegular size={14} />
                           <span className="lab-cwd-name">{snapshot.session.workspaceTitle}</span>
                         </span>
                       )}
@@ -4014,7 +4014,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                             title={t('image.remove')}
                             onClick={() => { removeImage(image.id) }}
                           >
-                            <IconCloseOutline16 size={12} />
+                            <IconCloseOutlineRegular size={12} />
                           </button>
                         </span>
                       ))}
@@ -4058,7 +4058,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                           disabled={selectedId === undefined}
                           onClick={() => { setAttachOpen(current => !current) }}
                         >
-                          <IconPlusOutline16 size={14} />
+                          <IconPlusOutlineRegular size={14} />
                         </button>
                         {attachOpen && (
                           <AttachPicker
@@ -4124,7 +4124,7 @@ export function LocalAgentPanel({ wide, remote: hostRemote, speechLocale, t, wor
                         type="submit"
                         disabled={selectedId === undefined || (draft.trim().length === 0 && pending.length === 0)}
                       >
-                        <IconSendOutline14 /> {t('composer.send')}
+                        <IconSendOutlineRegular /> {t('composer.send')}
                       </ActionButton>
                     </div>
                   </div>

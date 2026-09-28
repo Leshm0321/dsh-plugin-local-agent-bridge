@@ -12,14 +12,14 @@
  * do exactly that and says so.
  */
 import {
-  IconCheckOutline16,
-  IconCloseOutline16,
-  IconCodeOutline16,
-  IconEditOutline16,
-  IconFolderClose16,
-  IconFolderOpen16,
-  IconPlusOutline16,
-  IconTrashOutline16,
+  IconCheckOutlineRegular,
+  IconCloseOutlineRegular,
+  IconCodeOutlineRegular,
+  IconEditOutlineRegular,
+  IconFolderCloseRegular,
+  IconFolderOpenRegular,
+  IconPlusOutlineRegular,
+  IconTrashOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { useEffect, useMemo, useState } from 'react'
@@ -309,7 +309,7 @@ export function FilesPane({
                     disabled={file.truncated}
                     onClick={() => { setEditing(file.path); setBuffer(file.content); setError(undefined) }}
                   >
-                    <IconEditOutline16 />
+                    <IconEditOutlineRegular />
                   </button>
                 )
                 : (
@@ -322,7 +322,7 @@ export function FilesPane({
                       disabled={saving}
                       onClick={() => { void save() }}
                     >
-                      <IconCheckOutline16 />
+                      <IconCheckOutlineRegular />
                     </button>
                     <button
                       type="button"
@@ -331,7 +331,7 @@ export function FilesPane({
                       title={t('files.cancel')}
                       onClick={() => { setEditing(null); setError(undefined) }}
                     >
-                      <IconCloseOutline16 />
+                      <IconCloseOutlineRegular />
                     </button>
                   </>
                 )
@@ -348,7 +348,7 @@ export function FilesPane({
           {loading && <p className="lab-browse-note">{t('browse.loading')}</p>}
           {!loading && error === undefined && file === undefined && (
             <div className="lab-files-empty">
-              <IconCodeOutline16 />
+              <IconCodeOutlineRegular />
               <p className="lab-files-empty-title">{t('files.pick')}</p>
               <p className="lab-browse-note">{t('files.pickHint')}</p>
             </div>
@@ -392,7 +392,7 @@ export function FilesPane({
                 title={t('files.newFile')}
                 onClick={() => { setNaming({ kind: 'file', at: '' }); setName('') }}
               >
-                <IconPlusOutline16 />
+                <IconPlusOutlineRegular />
               </button>
               <button
                 type="button"
@@ -401,7 +401,7 @@ export function FilesPane({
                 title={t('files.newDirectory')}
                 onClick={() => { setNaming({ kind: 'directory', at: '' }); setName('') }}
               >
-                <IconFolderClose16 />
+                <IconFolderCloseRegular />
               </button>
             </>
           )}
@@ -423,10 +423,10 @@ export function FilesPane({
               }}
             />
             <button type="button" className="lab-files-action" aria-label={t('files.confirm')} onClick={() => { void commitName() }}>
-              <IconCheckOutline16 />
+              <IconCheckOutlineRegular />
             </button>
             <button type="button" className="lab-files-action" aria-label={t('files.cancel')} onClick={() => { setNaming(null) }}>
-              <IconCloseOutline16 />
+              <IconCloseOutlineRegular />
             </button>
           </div>
         )}
@@ -445,8 +445,8 @@ export function FilesPane({
               }}
             >
               {entry.directory
-                ? (open.has(entry.path) ? <IconFolderOpen16 /> : <IconFolderClose16 />)
-                : <IconCodeOutline16 />}
+                ? (open.has(entry.path) ? <IconFolderOpenRegular /> : <IconFolderCloseRegular />)
+                : <IconCodeOutlineRegular />}
               <span className="lab-files-name">{entry.name}</span>
               {entry.bytes !== null && <span className="lab-files-size">{formatBytes(entry.bytes)}</span>}
             </button>
@@ -460,7 +460,7 @@ export function FilesPane({
                     title={t('files.newIn', { name: entry.name })}
                     onClick={() => { setNaming({ kind: 'file', at: entry.path }); setName('') }}
                   >
-                    <IconPlusOutline16 />
+                    <IconPlusOutlineRegular />
                   </button>
                 )}
                 <button
@@ -470,7 +470,7 @@ export function FilesPane({
                   title={t('files.rename', { name: entry.name })}
                   onClick={() => { setNaming({ kind: 'rename', at: entry.path }); setName(entry.name) }}
                 >
-                  <IconEditOutline16 />
+                  <IconEditOutlineRegular />
                 </button>
                 <button
                   type="button"
@@ -479,7 +479,7 @@ export function FilesPane({
                   title={t('files.delete', { name: entry.name })}
                   onClick={() => { void remove(entry.path, entry.directory) }}
                 >
-                  <IconTrashOutline16 />
+                  <IconTrashOutlineRegular />
                 </button>
               </span>
             )}
@@ -607,7 +607,7 @@ export function DiffPane({
               title={entry.path}
               onClick={() => { void open(entry) }}
             >
-              <IconCodeOutline16 />
+              <IconCodeOutlineRegular />
               <span className="lab-files-name">{entry.path}</span>
               <span className="lab-diff-counts">
                 {entry.untracked

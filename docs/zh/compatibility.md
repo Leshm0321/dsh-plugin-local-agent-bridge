@@ -4,7 +4,7 @@
 
 | 面 | 版本 | 策略 |
 | --- | --- | --- |
-| DeepSeek Harness | `0.1.6-alpha.2` | 对外的 Host 与 Client 插件 API 面向提交 `ddefc45fbc7f8e46dd73185e68295696d1297887`。构建、类型检查、lint 与自动化测试套件在其上全部通过，并且真实启动过一个 Web Profile 确认面板加载、会话分组、目录浏览仍能解析。这是 `alpha` 标签 —— 比它下面那条 `rc` 线是更弱的保证，属于有意选择：`latest` 与 `next` 都停在 `0.1.5-rc.2`，落后一个 minor。这一版在本插件用到的面上只带来一处破坏性改动：`TypertCodec` 的 `schema` 字段变成了 `create()` 工厂。 |
+| DeepSeek Harness | `0.1.7-rc.2` | 对外的 Host 与 Client 插件 API 面向提交 `477b4f420553e8a52c2fbccc464d7561b239c443`。构建、类型检查、lint 与自动化测试套件在其上全部通过，并且真实启动过一个 Web Profile 确认面板加载、会话分组、目录浏览可用，并跑通了一轮真实对话。这次用的是 `rc` 标签而不是 `alpha` —— `latest` 与 `next` 现在都指向这里，比 `alpha` 的 `0.1.7-alpha.2` 还新，自 `0.1.5` 以来第一次「更强的那条线同时也是更新的那条」。这一版在本插件用到的面上只带来一处破坏性改动：图标集从 82 个带尺寸后缀的导出变成 188 个带笔画粗细后缀的（94 个字形 × `Regular`/`Medium`），像素尺寸挪到了 `IconProps.size` 这个 prop 上。每个字形都保留了自己的绘制尺寸，所以面板用到的 19 个只是改名、没有改大小。这一版还要求它自己构建时用的那套 cordis 底座 —— `cordis` `4.0.4`、`schemastery` `3.18.4`、`cordis-plugin-include` `1.0.9` —— `pnpm peers check` 是一个一个报出来的。 |
 | Codex CLI / App Server | `>=0.147.0 <0.159.0` | 支持。JSON Schema 锁定在生成自 `0.158.0` 的产物上。范围跨了好几个 minor，因为本桥读取的那些 schema 在其间只有加法：没有删除、没有丢弃联合分支、没有新增必填字段。确实动了三处形状，但都不在本桥依赖的地方 —— `Thread.projectId` 在 `0.153.4` 变为必填，位于本桥从不校验的响应上；审批里的 `cwd` 在 `0.155.1` 从 `AbsolutePathBuf` 改写为 `LegacyAppPathString`，两者都是普通字符串；`0.158.0` 则把图片输入从「`url` 必填」放宽为「`url` 或 `fileId`」，本桥发的 data URL 依然有效。`0.155.1` 还新增了 MCP 征询模式：`openai/form` 旁边多了 `openaiForm`，以及 `openai/userVerification` —— 后者本桥按拒绝 `url` 征询的同一套办法拒绝。`0.147.0`、`0.153.4`、`0.155.1`、`0.158.0` 各自对真实产品跑过；它们之间的 minor 仅凭这份对比准入。 |
 | Claude Code CLI | `>=2.1.220 <2.2.0` | 准许 2.1 之内的补丁版本；`2.2` 需要重新验证。以 SDK `0.3.220` 验证。 |
 | Claude Agent SDK | `0.3.220` | 精确锁定的依赖。 |
