@@ -6,16 +6,16 @@ import type {
   SubprocessHandle,
   SubprocessRuntime,
 } from '@deepseek-ai/dsh-subprocess'
-import agentMessageDeltaSchema from '../../generated/codex/0.155.1/schema/v2/AgentMessageDeltaNotification.json'
-import commandApprovalSchema from '../../generated/codex/0.155.1/schema/CommandExecutionRequestApprovalParams.json'
-import fileApprovalSchema from '../../generated/codex/0.155.1/schema/FileChangeRequestApprovalParams.json'
-import itemCompletedSchema from '../../generated/codex/0.155.1/schema/v2/ItemCompletedNotification.json'
-import itemStartedSchema from '../../generated/codex/0.155.1/schema/v2/ItemStartedNotification.json'
-import reasoningDeltaSchema from '../../generated/codex/0.155.1/schema/v2/ReasoningSummaryTextDeltaNotification.json'
-import turnCompletedSchema from '../../generated/codex/0.155.1/schema/v2/TurnCompletedNotification.json'
-import userInputSchema from '../../generated/codex/0.155.1/schema/ToolRequestUserInputParams.json'
-import mcpElicitationSchema from '../../generated/codex/0.155.1/schema/McpServerElicitationRequestParams.json'
-import permissionsApprovalSchema from '../../generated/codex/0.155.1/schema/PermissionsRequestApprovalParams.json'
+import agentMessageDeltaSchema from '../../generated/codex/0.158.0/schema/v2/AgentMessageDeltaNotification.json'
+import commandApprovalSchema from '../../generated/codex/0.158.0/schema/CommandExecutionRequestApprovalParams.json'
+import fileApprovalSchema from '../../generated/codex/0.158.0/schema/FileChangeRequestApprovalParams.json'
+import itemCompletedSchema from '../../generated/codex/0.158.0/schema/v2/ItemCompletedNotification.json'
+import itemStartedSchema from '../../generated/codex/0.158.0/schema/v2/ItemStartedNotification.json'
+import reasoningDeltaSchema from '../../generated/codex/0.158.0/schema/v2/ReasoningSummaryTextDeltaNotification.json'
+import turnCompletedSchema from '../../generated/codex/0.158.0/schema/v2/TurnCompletedNotification.json'
+import userInputSchema from '../../generated/codex/0.158.0/schema/ToolRequestUserInputParams.json'
+import mcpElicitationSchema from '../../generated/codex/0.158.0/schema/McpServerElicitationRequestParams.json'
+import permissionsApprovalSchema from '../../generated/codex/0.158.0/schema/PermissionsRequestApprovalParams.json'
 import { BridgeError } from '../core/errors.ts'
 import type {
   BridgeEventDraft,
@@ -679,12 +679,12 @@ export class CodexProviderAdapter implements NativeProviderAdapter {
         threadId: state.threadId as string,
         input: [
           { type: 'text', text, text_elements: [] },
-          // Data URLs, which this App Server accepts: verified against 0.155.1
+          // Data URLs, which this App Server accepts: verified against 0.158.0
           // rather than assumed, since the schema only says the field is a string.
-          // Re-verified on each version bump rather than carried over — a PNG
-          // reading BRIDGE-IMG-1551 was pasted into the composer and came back
-          // read aloud, so the model sees them and does not merely tolerate the
-          // field.
+          // 0.158.0 is the release that moved `url` out of the image variant's own
+          // properties into an `anyOf` beside `fileId`, so re-verifying was the
+          // point rather than a formality — a PNG reading BRIDGE-IMG-1580 was
+          // pasted into the composer and came back read aloud.
           ...images.map(image => ({
             type: 'image' as const,
             url: `data:${image.mediaType};base64,${image.dataBase64}`,

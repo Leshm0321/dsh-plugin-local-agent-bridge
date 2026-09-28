@@ -17,21 +17,28 @@ import { redactText } from './redaction.ts'
  * protocol has moved only additively across them. Comparing the generated schemas
  * at each step — matching unions by discriminator rather than by position, since
  * an inserted variant shifts every index after it — finds no message removed and
- * no field newly required anywhere this bridge reads. Two fields did change:
- * `Thread.projectId` became mandatory at 0.153.4, on responses this bridge never
- * validates, and `cwd` on a permissions approval was retyped from
- * `AbsolutePathBuf` to `LegacyAppPathString` at 0.155.1 — both plain strings, so
- * the shape is unmoved.
+ * no field newly required anywhere this bridge reads. Three shapes did change,
+ * none of them under this bridge: `Thread.projectId` became mandatory at 0.153.4,
+ * on responses this bridge never validates; `cwd` on a permissions approval was
+ * retyped from `AbsolutePathBuf` to `LegacyAppPathString` at 0.155.1, both plain
+ * strings; and at 0.158.0 an image input stopped requiring `url` outright and
+ * became `url` or `fileId` — a widening, so the data URL this bridge sends still
+ * validates.
  *
- * 0.147.0, 0.153.4 and 0.155.1 were each run against the real product; the minors
- * between them were not, and are admitted on that comparison rather than on a
- * smoke run.
+ * That last one is why the diff is read and not trusted: comparing the two schemas
+ * mechanically reports `url` as *removed*, because it moved out of the variant's
+ * own properties and into an `anyOf` branch. Six such findings across three
+ * notifications were one widening.
+ *
+ * 0.147.0, 0.153.4, 0.155.1 and 0.158.0 were each run against the real product; the
+ * minors between them were not, and are admitted on that comparison rather than on
+ * a smoke run.
  *
  * Claude Code stays inside 2.1: the Agent SDK is the protocol client here, and a
  * major or minor step on either side is a pairing question rather than a range one.
  */
 const VERSION_RANGES: Record<'codex' | 'claude', string> = {
-  codex: '>=0.147.0 <0.156.0',
+  codex: '>=0.147.0 <0.159.0',
   claude: '>=2.1.220 <2.2.0',
 }
 
