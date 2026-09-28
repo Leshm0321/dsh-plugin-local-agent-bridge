@@ -307,6 +307,78 @@ were right — 35s of wall clock, split — but "of it" claims the wait is insid
 work, so a correct pair read as broken arithmetic. The wait is now named as the
 separate span it is.
 
+## Codex 0.158.0, dsh 0.1.7-rc.2 and Agent SDK 0.3.283
+
+Three upgrades in one round, landed and verified separately. The Host moved to
+Codex `0.158.0` and Claude Code `2.1.283`; the schema pin moved to `0.158.0`, the
+admitted Codex range to `>=0.147.0 <0.159.0`, dsh from the `alpha` tag to `rc`, and
+the Agent SDK from `0.3.220` to the `0.3.283` that pairs with the installed CLI.
+
+**A mechanical schema diff would have blocked this Codex release for the wrong
+reason.** Comparing the ten schemas this bridge reads reported six removed
+properties — `url` off `UserInput`'s image variant and `image_url` off
+`FunctionCallOutputContentItem`, once per notification that embeds them. Reading
+the schema showed one change, not six: `url` moved out of the variant's own
+properties into an `anyOf` beside a new `fileId`, so the field is optional only in
+the sense that there is now a second way to give an image. A widening read as a
+removal. This is the second time a diff tool has produced a confident wrong answer
+about these schemas — the first was 373 false "newly required" findings from
+comparing union variants by array index — and the rule it earns is the same:
+whatever the tool flags, read that part of the schema.
+
+That change is also the field this bridge sends, so the re-verification was the
+point rather than a formality: a PNG reading `BRIDGE-IMG-1580` was pasted into the
+composer and Codex read it back. An approval was raised, allowed, and
+`codex-158.txt` landed at 12 bytes of exactly `RANGE-158-OK`. The other two Codex
+changes are additive and outside what this bridge reads: `mcpToolCall` gained
+`mcpAppUi`, `openai/userVerification` gained `_meta`.
+
+**dsh 0.1.7 is the first release where the stronger tag is also the newer one.**
+`0.1.7-rc.2` shipped on 2026-09-24, two days after `0.1.7-alpha.2`, and `latest`
+and `next` both point at it — so the plugin left the `alpha` line it had been on
+since `0.1.6`.
+
+Its one break was the icon set, rebuilt around stroke weight instead of pixel size:
+82 size-suffixed exports became 188 weight-suffixed ones (94 glyphs ×
+`Regular`/`Medium`), with size moving to an `IconProps.size` prop. The glyphs were
+redrawn, not renamed — the old artwork was a fill-only path on a 14 viewBox, the new
+one is drawn on 16 with a stroke. Every one of the 19 this panel uses keeps its own
+drawn size, which was checked glyph by glyph before the rename, so the ten call
+sites already passing `size` stayed correct.
+
+A passing typecheck is not enough here, and the reason is on record: when
+`IconSendOutline16` disappeared at `0.1.6-alpha.1`, the result in a real Profile was
+React #130 taking the whole panel down. So the panel was counted in a booted
+Profile: all 36 SVGs draw real artwork (3–4 paths each) at 14×14 or 16×16, including
+the ten inside the collapsed session rail, which are `display:none` rather than
+broken. A real Codex turn answered `DSH-017-OK` on the same Profile.
+
+One reported break turned out to be self-inflicted. A scratch install that bumped
+only the dsh version strings left `schemastery` at `3.18.2` while `dsh-settings`
+pulled `3.18.4`, and the two copies disagreed about a new `Volatile` mode in
+`SchemaOutput` — surfacing as a config-schema error at `src/index.ts:169`. Moving
+the foundation trio together (`cordis` `4.0.4`, `schemastery` `3.18.4`,
+`cordis-plugin-include` `1.0.9`) left one copy and no error. `pnpm peers check`
+names these one at a time, so it took three rounds to see all three.
+
+**The Agent SDK had drifted 63 patches behind its own CLI.** The SDK's patch number
+tracks the CLI's — `0.3.N` pairs with `2.1.N` — so a pin of `0.3.220` against an
+installed `2.1.283` meant this repo's own "upgrade the SDK and CLI together" rule
+had been broken for months without incident. No production code changed to close
+it: `0.3.283` made `requestId` required on `CanUseTool` and the elicitation
+callback, but that value exists for hosts answering *out of band*, and this bridge
+answers in band, so only two test fixtures needed the field. The new option fields
+were read rather than assumed past: `title` and `description` are already used, and
+`defaultToNo` — "open the prompt on its decline option and offer no one-key approve
+shortcut" — is already satisfied, since the approval card autofocuses nothing and
+the repository's only `autoFocus` is on the session-rename input.
+
+Verified on the real pairing: a turn streamed `SDK-283-OK`; in manual mode a `Write`
+raised a `canUseTool` card naming the absolute path, and refusing it left
+`sdk-283-deny.txt` absent from disk; aborting a long turn reaped the `claude`
+subprocess, leaving only Codex's app-server, which is a per-session transport and is
+meant to stay.
+
 ## Real browser notes
 
 - The official DSH Loader initially exposed three integration defects that automated component tests did not catch: raw Host decorators in the bundle, a Client Remote injection lifecycle cycle, and a question-schema failure caused by redacting the boolean `secret` field. All are fixed and covered by build or unit tests.
