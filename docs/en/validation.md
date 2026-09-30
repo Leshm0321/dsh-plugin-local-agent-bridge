@@ -379,6 +379,38 @@ raised a `canUseTool` card naming the absolute path, and refusing it left
 subprocess, leaving only Codex's app-server, which is a per-session transport and is
 meant to stay.
 
+## DeepSeek Harness 0.2.0-rc.2
+
+The first minor this plugin has followed, and the quietest upgrade in the record.
+Nothing broke. All 21 dependencies exist at `0.2.0-rc.2`; the cordis foundation set
+it requires — `cordis` `~4.0.4`, `schemastery` `~3.18.4`, `cordis-plugin-include`
+`~1.0.9` — is exactly what the repository already pinned for `0.1.7`, so the
+two-copies trap that produced a phantom break last round could not recur. The
+package set the lockfile reaches is unchanged: nothing new to add to the
+minimum-release-age exclusions, nothing gone from them, 209 names still valid. A
+clean re-resolve left no `0.1.7` behind and `pnpm peers check` clean; both typecheck
+projects report zero errors and all 292 tests pass.
+
+That is a weak claim on its own, and this record says why: a green typecheck has
+twice failed to predict a real Profile on this project — `IconSendOutline16` at
+`0.1.6-alpha.1` took the panel down with React #130, and `uiWorkspace` degraded
+silently on its fiber chain. So the Profile was booted and counted: 46 SVGs all
+drawing real artwork, both products admitted at `Codex 0.158.0` and
+`Claude Code 2.1.283`, the panel measured at 1242×862 inside a 1280×900 viewport
+with no overflow, no bridge error in the Host log, and no plugin error in the
+browser console. A Codex approval was raised with its command verbatim, allowed,
+and `dsh-020.txt` landed at 12 bytes of exactly `MINOR-020-OK`. The hand-off opened
+a Claude session in the same directory carrying the previous prompt unsent, and
+that session answered `DSH-020-CLAUDE-OK`. After both turns the Profile held only
+Codex's app-server, the per-session transport that is meant to stay.
+
+One behaviour is worth naming because it looks like a plugin fault and is not.
+`0.2.0` adds a one-time preview notice that opens modal over the Harness on first
+load. It covers the sidebar footer, so the first click at the panel trigger lands
+on the notice and the panel does not open. Dismissing the notice restores the
+trigger. Nothing to fix here — but an operator meeting it will read it as the
+bridge failing to open.
+
 ## Real browser notes
 
 - The official DSH Loader initially exposed three integration defects that automated component tests did not catch: raw Host decorators in the bundle, a Client Remote injection lifecycle cycle, and a question-schema failure caused by redacting the boolean `secret` field. All are fixed and covered by build or unit tests.
