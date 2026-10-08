@@ -356,7 +356,7 @@ export const zh = {
   'status.orphaned': '会话已失联',
 
   // Why a status changed, when the status word alone does not say it.
-  'note.cancelling-turn': '正在中止本机上正在进行的轮次。',
+  'note.cancelling-turn': '等本机上的产品停下这一轮。',
   'note.host-restarted-resumable': '主机已重启。下一条消息会恢复原生会话。',
   'note.host-restarted-orphaned': '主机在原生会话建立标识之前就重启了，该会话无法恢复。',
 
@@ -398,7 +398,7 @@ export const zh = {
   'error.NATIVE_SESSION_ORPHANED': '原生产品的会话已无法恢复。',
   'error.TURN_CONFLICT': '该会话已有一个正在进行的轮次。',
   'error.INTERACTION_EXPIRED': '该授权或提问已失效。',
-  'error.USER_CANCELLED': '该轮次已被中止。',
+  'error.USER_CANCELLED': '已经做完的部分不会撤销。',
   'error.CONTEXT_LIMIT': '原生产品已达到上下文长度上限。',
   'error.PROVIDER_USAGE_LIMIT': '产品在它的模型服务上触达了用量或频率上限。请稍后再试，或检查它登录所用的套餐。',
   'error.PROVIDER_UNAVAILABLE': '产品连不上它的模型服务。请稍后重试。',
@@ -728,7 +728,7 @@ export const en = {
   'status.failed': 'Failed',
   'status.orphaned': 'Orphaned',
 
-  'note.cancelling-turn': 'Cancelling the active native turn.',
+  'note.cancelling-turn': 'Waiting for the product on the Host to stop.',
   'note.host-restarted-resumable': 'The Host restarted. The next message will resume the native session.',
   'note.host-restarted-orphaned': 'The Host restarted before the native session identity was established, so it cannot be resumed.',
 
@@ -766,7 +766,7 @@ export const en = {
   'error.NATIVE_SESSION_ORPHANED': 'The native product session can no longer be resumed.',
   'error.TURN_CONFLICT': 'This session already has an active turn.',
   'error.INTERACTION_EXPIRED': 'This approval or question is no longer active.',
-  'error.USER_CANCELLED': 'The turn was cancelled.',
+  'error.USER_CANCELLED': 'Anything it had already done stays done.',
   'error.CONTEXT_LIMIT': 'The native product reached its context limit.',
   'error.PROVIDER_USAGE_LIMIT': 'The product hit a usage or rate limit on its model service. Wait, or check the plan it signs in with.',
   'error.PROVIDER_UNAVAILABLE': 'The product could not reach its model service. Try again shortly.',

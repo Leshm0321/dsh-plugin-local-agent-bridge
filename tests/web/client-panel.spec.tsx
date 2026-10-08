@@ -1062,6 +1062,24 @@ describe('LocalAgentPanel', () => {
     }
   })
 
+  it('says something under a cancellation label that the label does not', () => {
+    // Each of these rows is a label and a sentence, and the sentence used to restate
+    // the label: "正在中止" over "正在中止本机上正在进行的轮次", "已中止" over
+    // "该轮次已被中止". Read together they said the same thing twice. Checked in both
+    // languages by the verb they share, since the Chinese pair repeats in meaning
+    // without repeating character for character.
+    const rows = [
+      ['status.cancelling', 'note.cancelling-turn'],
+      ['row.cancelled', 'error.USER_CANCELLED'],
+    ] as const
+    for (const [label, sentence] of rows) {
+      expect(zh[label]).toContain('中止')
+      expect(zh[sentence], `zh ${sentence}`).not.toContain('中止')
+      expect(en[label]).toMatch(/cancel/i)
+      expect(en[sentence], `en ${sentence}`).not.toMatch(/cancel/i)
+    }
+  })
+
   it('renders persisted status events from any build without leaking a dictionary key', async () => {
     const fixture = new RemoteFixture()
     fixture.sessionsList.mockResolvedValue({ ok: true, value: [session] })
