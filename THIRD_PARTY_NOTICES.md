@@ -14,7 +14,7 @@ Upstream: <https://github.com/openai/codex>
 
 ## Anthropic Claude Agent SDK and Claude Code
 
-The project depends on `@anthropic-ai/claude-agent-sdk` `0.3.283` and launches a user-installed Claude Code CLI `2.1.283`. The npm package declares `SEE LICENSE IN README.md`; Anthropic documents Agent SDK use under its Commercial Terms. The plugin does not distribute Claude Code, copy its credentials, provide Claude login, or present itself as an official Anthropic product.
+The project depends on `@anthropic-ai/claude-agent-sdk` `0.3.293` and launches a user-installed Claude Code CLI `2.1.293`. The npm package declares `SEE LICENSE IN README.md`; Anthropic documents Agent SDK use under its Commercial Terms. The plugin does not distribute Claude Code, copy its credentials, provide Claude login, or present itself as an official Anthropic product.
 
 Anthropic's Agent SDK overview states that, unless separately approved, third-party developers should not offer `claude.ai` login or rate-limit functionality and should use the documented API-key authentication methods. This private bridge does not implement a login ceremony, but the fact that a Host's existing Claude Code login works through the SDK must not be presented as Anthropic approval. Reconfirm the applicable authentication, branding, and distribution terms before expanding beyond a private single-user experiment.
 
