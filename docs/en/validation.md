@@ -411,6 +411,62 @@ on the notice and the panel does not open. Dismissing the notice restores the
 trigger. Nothing to fix here — but an operator meeting it will read it as the
 bridge failing to open.
 
+## Codex 0.161.0, the turn-error mapping, and Agent SDK 0.3.293
+
+The Host moved to Codex `0.161.0` and Claude Code `2.1.293`. Codex was blocked by
+`<0.159.0` and is now admitted to `<0.162.0`; the Agent SDK followed the CLI to
+`0.3.293`. `dsh` stays on `0.2.0-rc.2`, still `latest` and `next`: the newer
+`0.2.1-alpha.1` passes every check but pulls the cordis foundation set onto alpha
+prereleases too, which buys nothing.
+
+**The schema diff was wrong a third time, and now covers both directions.** It
+reported six union variants removed from `CodexErrorInfo`; the union had gone from
+`oneOf` to `anyOf` with all six intact plus a branch accepting any string or
+object. The differ now recognises a property or variant that moved into a union
+branch. It also now compares what this bridge *sends* — eight requests and five
+answers to server requests — because a field newly required there is the one kind of
+change the server rejects outright. Nothing this bridge sends gained a required field.
+
+**Reading that union found a bug older than any of these upgrades.** Of the twenty
+error codes Codex names, the turn-failure mapping recognised two. The other eighteen
+— usage limits, rate limits, an overloaded upstream, four kinds of dropped stream,
+and the new `tooManyDenials` caused by the operator's own refusals — all reached the
+browser as "the product could not be started", for a product that had started and
+run. They are now four categories by what the operator can do: wait or check the
+plan, retry shortly, reconsider the denials, or — for anything unrecognised — simply
+"the product ended the turn with an error". And Codex's own sentence, which every
+failure carries and which the bridge used to store where nothing read it, now
+travels in the retained `bridge/error` event.
+
+That last part was not hypothetical. The first real image turn on `0.161.0` failed in
+six seconds and left behind only the generic sentence, so there was no way to say
+what had happened.
+
+**The configured model service was failing throughout, and it was proven not to be
+Codex.** Turns hung or failed both through the bridge and through `codex exec` run
+directly. Codex `0.161.0` also warns that `disable_response_storage` in the Host's
+config is ignored, which looked like the cause — until `0.158.0`, installed into a
+scratch directory without touching the Host's own CLI, printed the same warning and
+failed identically at the same moment: `408 Request Timeout: stream disconnected
+before completion` from the proxy's `/v1/responses`. Same config, same proxy, two
+versions, one failure: the service, not the release.
+
+That outage became the real-product test of the new mapping. A turn through the panel
+failed in 11.7 seconds and read **"The product could not reach its model service. Try
+again shortly."** — and the retained event held `PROVIDER_UNAVAILABLE` with Codex's
+408 sentence verbatim. So what `0.161.0` was actually seen to do is: accept
+`initialize`, `thread/start` and `turn/start`; deliver failed turn completions that
+validate against its schemas; honour `turn/interrupt` three times. What it was not
+seen to do, because nothing upstream answered: stream a turn, round-trip an
+approval, read back an image. The data-URL record in the adapter therefore still
+names `0.158.0`.
+
+**The SDK was taken within ten hours of its release, deliberately.** pnpm's default
+minimum release age blocks it; asking for the version made pnpm add nine exclusions
+itself (the SDK and its eight per-platform binaries, which `0.3.283` had too). On
+the real pairing a turn streamed `SDK-293-OK`, and a `Write` refused in manual mode
+left `sdk-293-deny.txt` absent from disk.
+
 ## Real browser notes
 
 - The official DSH Loader initially exposed three integration defects that automated component tests did not catch: raw Host decorators in the bundle, a Client Remote injection lifecycle cycle, and a question-schema failure caused by redacting the boolean `secret` field. All are fixed and covered by build or unit tests.
