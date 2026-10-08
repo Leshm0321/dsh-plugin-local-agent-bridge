@@ -28,17 +28,31 @@ import { redactText } from './redaction.ts'
  * That last one is why the diff is read and not trusted: comparing the two schemas
  * mechanically reports `url` as *removed*, because it moved out of the variant's
  * own properties and into an `anyOf` branch. Six such findings across three
- * notifications were one widening.
+ * notifications were one widening. 0.161.0 did it again from the other side: the
+ * turn error union went from `oneOf` to `anyOf` and gained a branch that accepts
+ * any string or object, so six variants read as removed when none were. It also
+ * means an error code this bridge has never heard of now validates instead of
+ * failing as a protocol error, so whatever maps a failed turn cannot assume the
+ * list is closed.
  *
- * 0.147.0, 0.153.4, 0.155.1 and 0.158.0 were each run against the real product; the
- * minors between them were not, and are admitted on that comparison rather than on
- * a smoke run.
+ * The comparison covers both directions. What this bridge receives breaks if a
+ * property it reads goes away; what it sends — `turn/start`, `thread/resume`, the
+ * answers to approvals — breaks if the server starts requiring a field it does not
+ * send. Through 0.161.0 nothing it sends has gained a required field.
+ *
+ * 0.147.0, 0.153.4, 0.155.1 and 0.158.0 were each run against the real product.
+ * 0.161.0 was run as far as its model service allowed: the real App Server accepted
+ * initialize, thread start and turn start, delivered a failed turn's completion
+ * that validated against these schemas, and honoured interruption — but the
+ * configured upstream stopped answering, so no turn streamed, no approval round-
+ * tripped and no image was read back on it. The minors between are admitted on
+ * the comparison alone.
  *
  * Claude Code stays inside 2.1: the Agent SDK is the protocol client here, and a
  * major or minor step on either side is a pairing question rather than a range one.
  */
 const VERSION_RANGES: Record<'codex' | 'claude', string> = {
-  codex: '>=0.147.0 <0.159.0',
+  codex: '>=0.147.0 <0.162.0',
   claude: '>=2.1.220 <2.2.0',
 }
 

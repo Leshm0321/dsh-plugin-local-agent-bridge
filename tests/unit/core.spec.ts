@@ -56,10 +56,10 @@ describe('redaction', () => {
 
 describe('version compatibility', () => {
   it('parses product output and pins the verified versions', () => {
-    expect(parseProductVersion('codex-cli 0.158.0')).toBe('0.158.0')
-    expect(parseProductVersion('Claude Code v2.1.283')).toBe('2.1.283')
+    expect(parseProductVersion('codex-cli 0.161.0')).toBe('0.161.0')
+    expect(parseProductVersion('Claude Code v2.1.293')).toBe('2.1.293')
     expect(parseProductVersion('unknown')).toBeNull()
-    expect(supportedVersionRange('codex')).toBe('>=0.147.0 <0.159.0')
+    expect(supportedVersionRange('codex')).toBe('>=0.147.0 <0.162.0')
     expect(supportedVersionRange('claude')).toBe('>=2.1.220 <2.2.0')
     expect(supportedVersionRange('fake')).toBeNull()
   })
@@ -72,18 +72,22 @@ describe('version compatibility', () => {
     expect(compatibilityFor('codex', '0.153.4', false)).toBe('supported')
     expect(compatibilityFor('codex', '0.155.1', false)).toBe('supported')
     expect(compatibilityFor('codex', '0.158.0', false)).toBe('supported')
+    expect(compatibilityFor('codex', '0.161.0', false)).toBe('supported')
     expect(compatibilityFor('codex', '0.146.9', false)).toBe('unsupported')
-    expect(compatibilityFor('codex', '0.159.0', false)).toBe('unsupported')
-    expect(compatibilityFor('codex', '0.159.0', true)).toBe('unknown')
+    expect(compatibilityFor('codex', '0.162.0', false)).toBe('unsupported')
+    expect(compatibilityFor('codex', '0.162.0', true)).toBe('unknown')
   })
 
   it('rejects unsupported versions unless experimental compatibility is enabled', () => {
+    // Far outside the range on purpose. This test is about the experimental switch,
+    // not the boundary — the boundary has its own test — and a version just past the
+    // current upper bound fell inside it at every widening.
     expect(compatibilityFor('codex', '0.147.9', false)).toBe('supported')
-    expect(compatibilityFor('codex', '0.160.0', false)).toBe('unsupported')
-    expect(compatibilityFor('codex', '0.160.0', true)).toBe('unknown')
+    expect(compatibilityFor('codex', '0.200.0', false)).toBe('unsupported')
+    expect(compatibilityFor('codex', '0.200.0', true)).toBe('unknown')
     expect(compatibilityFor('claude', null, false)).toBe('unknown')
     expect(compatibilityFor('claude', '2.1.220', false)).toBe('supported')
-    expect(compatibilityFor('claude', '2.1.283', false)).toBe('supported')
+    expect(compatibilityFor('claude', '2.1.293', false)).toBe('supported')
     expect(compatibilityFor('claude', '2.1.219', false)).toBe('unsupported')
     expect(compatibilityFor('claude', '2.2.0', false)).toBe('unsupported')
     expect(compatibilityFor('claude', '2.2.0', true)).toBe('unknown')

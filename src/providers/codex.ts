@@ -6,16 +6,16 @@ import type {
   SubprocessHandle,
   SubprocessRuntime,
 } from '@deepseek-ai/dsh-subprocess'
-import agentMessageDeltaSchema from '../../generated/codex/0.158.0/schema/v2/AgentMessageDeltaNotification.json'
-import commandApprovalSchema from '../../generated/codex/0.158.0/schema/CommandExecutionRequestApprovalParams.json'
-import fileApprovalSchema from '../../generated/codex/0.158.0/schema/FileChangeRequestApprovalParams.json'
-import itemCompletedSchema from '../../generated/codex/0.158.0/schema/v2/ItemCompletedNotification.json'
-import itemStartedSchema from '../../generated/codex/0.158.0/schema/v2/ItemStartedNotification.json'
-import reasoningDeltaSchema from '../../generated/codex/0.158.0/schema/v2/ReasoningSummaryTextDeltaNotification.json'
-import turnCompletedSchema from '../../generated/codex/0.158.0/schema/v2/TurnCompletedNotification.json'
-import userInputSchema from '../../generated/codex/0.158.0/schema/ToolRequestUserInputParams.json'
-import mcpElicitationSchema from '../../generated/codex/0.158.0/schema/McpServerElicitationRequestParams.json'
-import permissionsApprovalSchema from '../../generated/codex/0.158.0/schema/PermissionsRequestApprovalParams.json'
+import agentMessageDeltaSchema from '../../generated/codex/0.161.0/schema/v2/AgentMessageDeltaNotification.json'
+import commandApprovalSchema from '../../generated/codex/0.161.0/schema/CommandExecutionRequestApprovalParams.json'
+import fileApprovalSchema from '../../generated/codex/0.161.0/schema/FileChangeRequestApprovalParams.json'
+import itemCompletedSchema from '../../generated/codex/0.161.0/schema/v2/ItemCompletedNotification.json'
+import itemStartedSchema from '../../generated/codex/0.161.0/schema/v2/ItemStartedNotification.json'
+import reasoningDeltaSchema from '../../generated/codex/0.161.0/schema/v2/ReasoningSummaryTextDeltaNotification.json'
+import turnCompletedSchema from '../../generated/codex/0.161.0/schema/v2/TurnCompletedNotification.json'
+import userInputSchema from '../../generated/codex/0.161.0/schema/ToolRequestUserInputParams.json'
+import mcpElicitationSchema from '../../generated/codex/0.161.0/schema/McpServerElicitationRequestParams.json'
+import permissionsApprovalSchema from '../../generated/codex/0.161.0/schema/PermissionsRequestApprovalParams.json'
 import { BridgeError } from '../core/errors.ts'
 import type {
   BridgeEventDraft,

@@ -81,7 +81,7 @@ pgrep -P "$(pgrep -f 'dsh web' | head -1)"
 | 14 | DSH 保持绑定回环，文档拒绝裸公网暴露 | 人工验证 | 真实 Web Profile 打印的是 `http://127.0.0.1:3080`。README 与安全运维要求 TLS 加带认证的私有访问，并明确禁止把 Harness 端口直接暴露出去。 |
 | 15 | 卸载/主机退出后不留受管 Claude/Codex 进程树 | 自动化 + 人工验证 | 产品清理测试通过。真实主机关停后，进程扫描发现命令行里提到那个隔离 DSH 安装或一次性工作区的 Claude/Codex/Node/CMD 进程为零。 |
 | 16 | 全新安装能通过构建、测试、Profile 加载器和浏览器端到端 | 自动化 + 人工验证 | 在 Windows 和 macOS 上都验证过。两边 DSH CLI `0.1.0-rc.7` 都安装了链接进来的插件、组合了官方 bundle、启动了 Web Profile、投递了客户端模块并完成了浏览器流程；Windows 还额外覆盖了移动端布局。远程 Profile 补丁在两边都禁用了 `directory-picker` 并插入了 `directory-picker-browse` 与 `ui-directory-picker-browse`，`--dump-config` 显示三行都在且没有加载器 name 不匹配告警。Windows、macOS、Linux 的启动形态另有可在任意主机上运行的单元测试钉住。 |
-| 17 | 不受支持的版本被显式拦下 | 自动化 + 人工验证 | 版本解析与准入测试强制 Codex `>=0.147.0 <0.159.0` 和 Claude Code `>=2.1.220 <2.2.0`；未验证的版本需要显式的 `allowExperimentalVersions`。macOS 那轮确认了一个真实的 Codex `0.144.6` 被拒。被拒的产品还会**被显示为被拒**：它仍然在列表里但不可选，面板同时给出已安装版本和准许范围。此前客户端会把所有非 ready 的产品直接丢掉，于是操作者只能看着它凭空消失、毫无解释。 |
+| 17 | 不受支持的版本被显式拦下 | 自动化 + 人工验证 | 版本解析与准入测试强制 Codex `>=0.147.0 <0.162.0` 和 Claude Code `>=2.1.220 <2.2.0`；未验证的版本需要显式的 `allowExperimentalVersions`。macOS 那轮确认了一个真实的 Codex `0.144.6` 被拒。被拒的产品还会**被显示为被拒**：它仍然在列表里但不可选，面板同时给出已安装版本和准许范围。此前客户端会把所有非 ready 的产品直接丢掉，于是操作者只能看着它凭空消失、毫无解释。 |
 | 18 | README 记录确切版本、条款、升级流程和安全部署前提 | 人工验证 | README 列出了 DSH/Codex/Claude/SDK 版本、MIT 与产品条款、一次只升一个组件的验证方式、回环绑定、TLS、带认证的私有访问、Host/Origin 处理、空闲过期和访问日志。 |
 
 ## Codex 0.153.4 与 Claude Code 2.1.266
