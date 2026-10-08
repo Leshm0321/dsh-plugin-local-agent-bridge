@@ -66,6 +66,17 @@ class FakeCodexProcess {
     })
   }
 
+  fail(codexErrorInfo: unknown, message: string): void {
+    if (this.activeThreadId === null || this.activeTurnId === null) return
+    this.server.notify('turn/completed', {
+      threadId: this.activeThreadId,
+      turn: {
+        ...turn(this.activeTurnId, 'failed'),
+        error: { message, codexErrorInfo, additionalDetails: null },
+      },
+    })
+  }
+
   exit(signal: NodeJS.Signals | null = null): void {
     if (this.terminated) return
     this.terminated = true
@@ -254,7 +265,9 @@ class FakeCodexProcess {
         changes: [{ path: 'fixture.txt', diff: '+fixture', kind: { type: 'update', move_path: null } }],
       },
     })
-    if (!/hold/i.test(text)) this.complete()
+    const failing = /^fail (.+)$/s.exec(text)
+    if (failing !== null) this.fail(JSON.parse(failing[1] as string), 'Codex says why it stopped.')
+    else if (!/hold/i.test(text)) this.complete()
   }
 }
 
@@ -480,6 +493,37 @@ describe('CodexProviderAdapter', () => {
     await expect(active).rejects.toMatchObject({ code: 'USER_CANCELLED' })
     expect(runtime.latest().requests.some(request => request.method === 'turn/interrupt')).toBe(true)
     await adapter.dispose()
+  })
+
+  it('names why a turn failed instead of claiming the product would not start', async () => {
+    // Before this mapping, eighteen of Codex's twenty codes reached the browser as
+    // "the product could not be started" — for a product that had started, run,
+    // and then hit a usage limit, an overloaded upstream, or the operator's own
+    // denials. Each row is one code and the category the operator should see.
+    const cases: readonly [unknown, string][] = [
+      ['usageLimitExceeded', 'PROVIDER_USAGE_LIMIT'],
+      ['rateLimitExceeded', 'PROVIDER_USAGE_LIMIT'],
+      ['serverOverloaded', 'PROVIDER_UNAVAILABLE'],
+      [{ responseStreamDisconnected: { httpStatusCode: null } }, 'PROVIDER_UNAVAILABLE'],
+      ['tooManyDenials', 'TOO_MANY_DENIALS'],
+      ['contextWindowExceeded', 'CONTEXT_LIMIT'],
+      ['unauthorized', 'HOST_AUTH_REQUIRED'],
+      ['sandboxError', 'PROVIDER_TURN_FAILED'],
+      // A code this bridge has never heard of. Since 0.161.0 the schema accepts
+      // any string here, so it arrives — and must not be dressed up as a cause.
+      ['someCodeFromTheFuture', 'PROVIDER_TURN_FAILED'],
+    ]
+    for (const [info, expected] of cases) {
+      const runtime = new FakeCodexRuntime()
+      const adapter = new CodexProviderAdapter(runtime.subprocess, 'codex')
+      const harness = createHooks()
+      const result = adapter.startTurn({ text: `fail ${JSON.stringify(info)}`, images: [], hooks: harness.hooks })
+      await expect(result, JSON.stringify(info)).rejects.toMatchObject({ code: expected })
+      // Codex's own sentence is what the retained error records, so a failure can
+      // be diagnosed from the event log rather than only from its category.
+      await expect(result).rejects.toMatchObject({ message: 'Codex says why it stopped.' })
+      await adapter.dispose()
+    }
   })
 
   it('resumes an existing thread and rejects every account login request', async () => {

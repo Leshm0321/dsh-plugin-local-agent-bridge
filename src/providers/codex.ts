@@ -29,6 +29,7 @@ import { redactText, redactValue } from '../core/redaction.ts'
 import type {
   BridgeCompletion,
   BridgeCompletionsResult,
+  BridgeErrorCode,
   BridgeModel,
   BridgeModelsResult,
   BridgeNativeSession,
@@ -298,14 +299,59 @@ function mcpContent(
   }))
 }
 
+/**
+ * What a failed turn's error code means for the operator.
+ *
+ * Codex names the failure, but this mapping used to recognise two codes and send
+ * the other eighteen to PROVIDER_START_FAILED — so a usage limit, an overloaded
+ * upstream and the operator's own denials all read as "the product could not be
+ * started", for a product that had started and run. Grouped by what the operator
+ * can do: wait or check the plan, retry shortly, or reconsider the denials.
+ *
+ * Not exhaustive on purpose. Since 0.161.0 the union ends in a branch accepting any
+ * string or object, so a code added after this list was written arrives intact
+ * instead of failing validation, and lands on the generic turn failure rather than
+ * on a claim about why.
+ */
+const CODEX_TURN_ERRORS: Readonly<Record<string, BridgeErrorCode>> = {
+  contextWindowExceeded: 'CONTEXT_LIMIT',
+  unauthorized: 'HOST_AUTH_REQUIRED',
+  sessionBudgetExceeded: 'PROVIDER_USAGE_LIMIT',
+  usageLimitExceeded: 'PROVIDER_USAGE_LIMIT',
+  rateLimitExceeded: 'PROVIDER_USAGE_LIMIT',
+  flexUnavailable: 'PROVIDER_UNAVAILABLE',
+  serverOverloaded: 'PROVIDER_UNAVAILABLE',
+  internalServerError: 'PROVIDER_UNAVAILABLE',
+  // The object-shaped codes: Codex names these by the one key they carry.
+  httpConnectionFailed: 'PROVIDER_UNAVAILABLE',
+  responseStreamConnectionFailed: 'PROVIDER_UNAVAILABLE',
+  responseStreamDisconnected: 'PROVIDER_UNAVAILABLE',
+  responseTooManyFailedAttempts: 'PROVIDER_UNAVAILABLE',
+  tooManyDenials: 'TOO_MANY_DENIALS',
+}
+
 function turnFailure(turn: CodexTurn): BridgeError | null {
   if (turn.status === 'completed') return null
   if (turn.status === 'interrupted') return new BridgeError('USER_CANCELLED')
   const error = turn.error as unknown as JsonObject | null
-  if (error?.codexErrorInfo === 'contextWindowExceeded') return new BridgeError('CONTEXT_LIMIT')
-  const message = error === null ? '' : JSON.stringify(redactValue(error))
-  if (/auth|login|oauth|unauthori[sz]ed/i.test(message)) return new BridgeError('HOST_AUTH_REQUIRED')
-  return new BridgeError('PROVIDER_START_FAILED')
+  const info = error?.codexErrorInfo
+  // A string code, or an object whose single key is the code.
+  const code = typeof info === 'string'
+    ? info
+    : info !== null && typeof info === 'object' && !Array.isArray(info)
+      ? Object.keys(info)[0]
+      : undefined
+  // Codex's own sentence travels as the message, so the retained bridge/error
+  // event records why the turn failed. The panel still renders the localised
+  // category for the code; BridgeError redacts whatever it is given.
+  const detail = typeof error?.message === 'string' ? error.message : undefined
+  const mapped = code === undefined ? undefined : CODEX_TURN_ERRORS[code]
+  if (mapped !== undefined) return new BridgeError(mapped, detail, error)
+  // No recognised code: keep the old reading of the text for an expired login,
+  // which is the one cause the operator has to fix on the Host itself.
+  const text = error === null ? '' : JSON.stringify(redactValue(error))
+  if (/auth|login|oauth|unauthori[sz]ed/i.test(text)) return new BridgeError('HOST_AUTH_REQUIRED', detail, error)
+  return new BridgeError('PROVIDER_TURN_FAILED', detail, error)
 }
 
 /**

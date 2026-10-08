@@ -210,6 +210,14 @@ export type BridgeErrorCode =
   | 'INTERACTION_EXPIRED'
   | 'USER_CANCELLED'
   | 'CONTEXT_LIMIT'
+  // A turn the product started and then ended with an error. Distinct from
+  // PROVIDER_START_FAILED, which every one of these used to be reported as: the
+  // product ran fine, so "could not be started" sent the operator to debug the
+  // wrong thing. Split by what the operator can do about it.
+  | 'PROVIDER_USAGE_LIMIT'
+  | 'PROVIDER_UNAVAILABLE'
+  | 'TOO_MANY_DENIALS'
+  | 'PROVIDER_TURN_FAILED'
   | 'CONNECTION_LOST'
   | 'CLEANUP_FAILED'
   | 'INVALID_REQUEST'
