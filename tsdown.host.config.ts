@@ -1,6 +1,13 @@
 import { defineConfig } from 'tsdown'
 import { typertPlugin } from '@deepseek-ai/dsh-typert-generator/tsdown'
 
+// Only the decorator-lowering transform is wanted from this plugin. Its
+// writeBundle has never emitted anything for this repository — it looks for a
+// package.json between lib/ and the workspace root and stops at the root — and
+// from 0.2.1 it locates that root by requiring a packages/ directory, which a
+// standalone plugin repository does not have, so it throws instead.
+const { writeBundle: _writeBundle, ...typert } = typertPlugin()
+
 export default defineConfig({
   name: 'dsh-plugin-local-agent-bridge',
   entry: {
@@ -16,5 +23,5 @@ export default defineConfig({
   dts: false,
   clean: false,
   sourcemap: true,
-  plugins: [typertPlugin()],
+  plugins: [typert],
 })
