@@ -467,6 +467,52 @@ itself (the SDK and its eight per-platform binaries, which `0.3.283` had too). O
 the real pairing a turn streamed `SDK-293-OK`, and a `Write` refused in manual mode
 left `sdk-293-deny.txt` absent from disk.
 
+## Codex 0.163.0, dsh 0.2.1-rc.2 and Agent SDK 0.3.303
+
+The Host moved to Codex `0.163.0` (blocked by `<0.162.0`, now admitted to
+`<0.164.0`) and Claude Code `2.1.303`; the SDK followed to `0.3.303`, and dsh moved
+to `0.2.1-rc.2` — now `latest` and `next`, and requiring stable foundation releases
+where `0.2.1-alpha.1` had needed alphas.
+
+**The schema differ no longer cries wolf on union kinds.** It now pools `oneOf` and
+`anyOf` and reports a change of kind as one finding. Replayed against the
+`0.158.0` → `0.161.0` pair that produced six false removals, it reports none. Against
+`0.163.0` it found one change that looked breaking — a listed skill's `path` retyped
+from `AbsolutePathBuf` to `LegacyAppPathString` — which is a plain string either way,
+on a field this bridge reads past without keeping. Nothing it sends gained a
+required field; `turn/start` gained two optional ones.
+
+**dsh 0.2.1 broke the build, not the plugin.** Its `dsh-typert-generator` tsdown
+plugin now finds the workspace root by requiring a `packages/` directory beside
+`tsconfig.host.json` — the Harness monorepo's layout — and throws in any standalone
+repository, with no option to name the root. That plugin's `writeBundle` had never
+emitted anything here: it walks up from `lib/` for a package and stops at the root.
+So the build keeps the plugin's decorator-lowering transform and drops that step, and
+the output was compared against a `0.2.0` build with the full plugin: identical, 45
+files. This affects every external plugin built outside the monorepo, not only this
+one.
+
+A scratch run first showed `cordis-plugin-loader` stuck at `1.0.5` and two copies of
+`schemastery`. That was an old lockfile carried over by `git archive` and not
+deleted — the incremental-install trap this repository recorded at the very start.
+A clean re-resolve gave one copy of every foundation package.
+
+**On a booted `0.2.1-rc.2` Profile:** the panel opened at 1242×862 with all 56 icons
+drawing real paths; both products were admitted at their new versions; neither the
+browser console nor the Host log carried a bridge error. On Claude Code `2.1.303` with
+SDK `0.3.303` a turn streamed `SDK-303-OK`, and a `Write` refused in manual mode left
+`sdk-303-deny.txt` absent from disk, after which the `claude` subprocess was reaped.
+The Harness itself changed around the panel — a new "Automation" entry in the
+sidebar, and "More" where the footer said "Settings" — without moving the panel's
+trigger.
+
+**Codex `0.163.0` was verified less than any release before it,** because the
+configured model service has now been failing for more than eleven days. On both
+`0.2.0` and `0.2.1` Profiles the real App Server accepted `initialize`,
+`thread/start` and `turn/start` and honoured `turn/interrupt`; the upstream neither
+answered nor failed, so no turn reached completion, and the error mapping fixed last
+round could not be seen on it again.
+
 ## Real browser notes
 
 - The official DSH Loader initially exposed three integration defects that automated component tests did not catch: raw Host decorators in the bundle, a Client Remote injection lifecycle cycle, and a question-schema failure caused by redacting the boolean `secret` field. All are fixed and covered by build or unit tests.
