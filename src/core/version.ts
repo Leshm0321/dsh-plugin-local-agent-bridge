@@ -23,7 +23,8 @@ import { redactText } from './redaction.ts'
  * retyped from `AbsolutePathBuf` to `LegacyAppPathString` at 0.155.1, both plain
  * strings; and at 0.158.0 an image input stopped requiring `url` outright and
  * became `url` or `fileId` — a widening, so the data URL this bridge sends still
- * validates.
+ * validates. 0.163.0 gave a listed skill's `path` the same retype as `cwd`, on a
+ * field this bridge reads past without keeping.
  *
  * That last one is why the diff is read and not trusted: comparing the two schemas
  * mechanically reports `url` as *removed*, because it moved out of the variant's
@@ -33,26 +34,30 @@ import { redactText } from './redaction.ts'
  * any string or object, so six variants read as removed when none were. It also
  * means an error code this bridge has never heard of now validates instead of
  * failing as a protocol error, so whatever maps a failed turn cannot assume the
- * list is closed.
+ * list is closed. The comparison now pools `oneOf` and `anyOf` and reports a change
+ * of union kind as that, so this one reads as one finding instead of six.
  *
  * The comparison covers both directions. What this bridge receives breaks if a
  * property it reads goes away; what it sends — `turn/start`, `thread/resume`, the
  * answers to approvals — breaks if the server starts requiring a field it does not
- * send. Through 0.161.0 nothing it sends has gained a required field.
+ * send. Through 0.163.0 nothing it sends has gained a required field — that
+ * release added `parentTurnId` and `rootTurnId` to `turn/start`, both optional.
  *
  * 0.147.0, 0.153.4, 0.155.1 and 0.158.0 were each run against the real product.
  * 0.161.0 was run as far as its model service allowed: the real App Server accepted
  * initialize, thread start and turn start, delivered a failed turn's completion
  * that validated against these schemas, and honoured interruption — but the
  * configured upstream stopped answering, so no turn streamed, no approval round-
- * tripped and no image was read back on it. The minors between are admitted on
- * the comparison alone.
+ * tripped and no image was read back on it. 0.163.0 got less: the same upstream
+ * neither answered nor failed, so the real App Server accepted initialize, thread
+ * start and turn start and honoured interruption, and no turn reached completion
+ * on it at all. The minors between are admitted on the comparison alone.
  *
  * Claude Code stays inside 2.1: the Agent SDK is the protocol client here, and a
  * major or minor step on either side is a pairing question rather than a range one.
  */
 const VERSION_RANGES: Record<'codex' | 'claude', string> = {
-  codex: '>=0.147.0 <0.162.0',
+  codex: '>=0.147.0 <0.164.0',
   claude: '>=2.1.220 <2.2.0',
 }
 
